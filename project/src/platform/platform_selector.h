@@ -1,14 +1,6 @@
 #pragma once
 
-#if defined(USE_X11)
-#include "x11_backend.c"
+#include "platform.h"
 
-#elif defined(USE_SDL)
-#include "sdl_backend.c"
-
-#elif defined(USE_RAYLIB)
-#include "raylib_backend.c"
-
-#else
-#error "No backend selected!"
-#endif
+// Platform backends implement platform_main() function
+// The backend is selected at compile time via build flags
