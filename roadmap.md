@@ -1,89 +1,96 @@
-**Here is your fully customized, ultra-beginner-friendly Handmade Hero Roadmap**, tailored to:
+# 🧭 **UPDATED HANDMADE HERO ROADMAP (Linux + PURE X11 BACKEND)**
 
-* You’re new to **C**
-* You’re new to **Linux / Ubuntu**
-* You’re building **your own platform layer**
-* You want **X11 backend** + **Raylib backend**
-* You can put in ~**2 hours/day, 5 days/week** (≈10 hrs/week)
-* You want to actually *understand* everything, not just copy Casey
-
-This roadmap is designed to take about **2.5–3 years**, the realistic pace for what you want to do.
-
-Let’s go.
+**Your optimized, realistic, Linux-native Handmade Hero journey**
+**~2–2.5 years @ 10 hrs/week**, fully aligned with Casey’s episodes.
 
 ---
 
-# 🧭 **THE HANDMADE HERO ROADMAP**
+# ✔️ QUICK SUMMARY OF CHANGES
 
-### (Beginner → Engine Architect → Confident C Programmer)
+You now have:
 
----
-
-# 📍 **PHASE 0 — Prep Phase (1–2 months)**
-
-“Become dangerous in C and Ubuntu.”
-
-### 🎯 Goals
-
-* You can use the terminal confidently
-* You can compile C programs with `clang` and `gcc`
-* You know pointers, structs, memory basics
-* You understand how Makefiles work
-* You know how to debug a crash
-
-### ✔️ Step-by-step
-
-#### **1. Linux / Ubuntu Basics**
-
-* Learn: `cd`, `ls`, `cp`, `mv`, `rm`, `apt`, `sudo`, `chmod`
-* Learn how to:
-
-  * Install packages
-  * Compile from terminal
-  * Work with files & directories
-  * Use VS Code or Neovim efficiently
-
-#### **2. C Language Basics**
-
-Not a full course — just enough to follow Casey.
-
-Focus on:
-
-* `struct`, arrays, pointers
-* `typedef` and function pointers
-* manual memory (stack vs heap)
-* header / source separation
-* building with `clang main.c -o main`
-
-Do NOT learn "modern OOP C" or "C++ patterns".
-Stick to: **C89, simple, minimalistic.**
-
-#### **3. Essential Tools**
-
-* Install:
-
-  * `clang`
-  * `gdb`
-  * `make`
-  * `valgrind`
-  * `lldb` (optional)
-  * Raylib development headers
-
-Test that **VSCode C/C++ extension** works OR **Neovim + clangd**.
+- **One X11 backend** → using X11, XShm, POSIX, pthreads, dlopen
+- **One Raylib backend** → optional sanity-check backend
+- **Primary dev path = X11 backend**
+- **Matching Windows → Linux episode mapping**
+- **New “Linux Platform Fundamentals Phase”**
+- **New “Backend Maturity Levels”**
+- **New validation checklist**
+- **Realistic weekly schedule**
 
 ---
 
-# 📍 **PHASE 1 — Base Project & Platform Layer Skeleton (2–3 months)**
+# 🌑 **PHASE 0 — Project Setup (DONE)**
 
-“You build Casey’s Linux layer *before* following him.”
+You already have:
 
-### 🎯 Goals
+- C compiler (clang or gcc)
+- `build.sh` / `run.sh`
+- Project structure
+- X11 backend foundation
+- Raylib backend option
+- `platform.h` / `game.h` clear separation
 
-* You understand "platform layer" boundaries
-* You can create a window in X11
-* You can receive input events
-* You can do timing & large file reading
-* Raylib backend is created in parallel, but minimal
+---
+
+# 🌒 **PHASE 1 — Linux Platform Fundamentals (2–4 weeks)**
+
+This prepares you for translating Win32 → Linux correctly.
+
+## 🎯 Goals
+
+Understand the Linux equivalents of Casey’s Windows assumptions.
+
+### ✔️ Learn Linux memory model
+
+- `mmap()` vs `VirtualAlloc`
+- Demand paging
+- Overcommit
+- Anonymous mappings
+- File-backed mappings
+
+### ✔️ Learn Linux file descriptor model
+
+Everything is a file descriptor:
+
+- X11 connection
+- Audio device
+- Gamepad
+- Files
+- Sockets
+
+### ✔️ Learn pthreads basics
+
+- `pthread_create`
+- `pthread_join`
+- `pthread_mutex_*`
+- Scheduling differences from Win32
+
+### ✔️ Learn X11 fundamental concepts
+
+- Message queue (`XNextEvent`)
+- Xlib is _not thread-safe_ without `XInitThreads()`
+- X11 is _network-transparent_ (unlike Win32)
+- How MIT-SHM speedup works
+
+### ✔️ Required reads
+
+```bash
+man mmap
+man clock_gettime
+man pthread_create
+man XInitThreads
+man XCreateWindow
+man XShmPutImage
+```
+
+**Why this matters:**
+Casey assumes a Windows-style mental model.
+You must “translate” that into Unix thinking.
+
+---
+
+# 🌓 **PHASE 2 — Build the Pure X11 Platform Layer (2–4 months)**
 
 ### ✔️ You build **this structure**:
 
@@ -107,157 +114,212 @@ my_game/
         ├── platform_selector.h
         │
         ├── x11_backend.c
-        ├── sdl_backend.c
         └── raylib_backend.c
 ```
 
-### ✔️ Implement these low-level features:
+---
 
-#### **X11 Backend**
+## 📌 **Episode Mapping (Windows → Linux)**
 
-* Create window
-* Handle:
-
-  * Key input
-  * Mouse input
-  * Resize events
-* Add `XShm` if brave (optional later)
-* Software buffer + blitting to X11 window
-
-#### **Raylib Backend**
-
-* Create window
-* Basic draw texture
-* Basic input
-* Match same API shape as X11 backend
-
-### ❗ No audio, no threading, no OpenGL yet
-
-Just the minimum platform “shell.”
+| Casey Episode | Windows API        | Your Linux API                           |
+| ------------- | ------------------ | ---------------------------------------- |
+| 1–3           | Win32 Window + GDI | **X11 Window + XShm + software blitter** |
+| 4–6           | Win32 Input        | **X11 keyboard + mouse**                 |
+| 7             | XInput gamepads    | **evdev or SDL2-only for controllers**   |
+| 8–10          | QPC timing         | **clock_gettime / nanosleep**            |
+| 11–18         | DirectSound        | **PulseAudio or ALSA**                   |
+| 19–21         | Win32 file IO      | **POSIX open/read/write/mmap**           |
+| 22–25         | Hot Reload         | **dlopen + dlsym + stat**                |
 
 ---
 
-# 📍 **PHASE 2 — Follow Handmade Hero (Platform Layer Weeks) (3–6 months)**
+## 🔵 **Backend Maturity Model** _(New + Important)_
 
-“You follow Casey’s platform layer episodes and port everything to X11.”
+### 🥇 **PRIMARY BACKEND:**
 
-This is where real learning happens.
+### **`x11_backend.c` (pure Linux, authoritative)**
 
-### 🎯 Goals
+This should always be the version you treat as “real Handmade.”
+
+Contains:
+
+- X11 window
+- XShmPutImage
+- POSIX timing
+- POSIX file IO
+- pthreads
+- Pulse/ALSA
+- dlopen hot-reload
+
+### 🥈 **SECONDARY BACKEND:**
+
+### `raylib_backend.c`
+
+Used for:
+
+- sanity checks
+- debugging
+- verifying game layer correctness
+
+But **NOT** for following Casey’s episodes.
+
+---
+
+## 🧩 **Phase 2 Milestones (Linux Replacements for Windows Episodes)**
+
+---
+
+## 🔹 **Milestone 1: Window + Backbuffer**
 
 Implement:
 
-* **Frame timing**
-* **Audio output from your X11 layer**
-* **File I/O**
-* **Controller input (SDL2 optional)**
-* **High-resolution timers**
-* **Software rendering**
-* **Back-buffer**
+- X11 display connection
+- Create Window
+- Create MIT-SHM shared image
+- Software backbuffer in RAM
+- Blit it with `XShmPutImage`
+- Frame pacing at ~60Hz
 
-### ✔️ Recreate Casey’s Windows layer equivalent in Linux
-
-These episodes include:
-
-* Sound buffer generation → ALSA / Pulse
-* X11 event loop refinements
-* Multithreading
-* Memory arenas
-* Platform services
-
-Raylib backend at this point:
-
-* Just mirror the platform interface
-* Raylib handles audio + rendering for you
-* But game logic remains identical
+Use Casey’s workflow, but map Win32 → X11.
 
 ---
 
-# 📍 **PHASE 3 — Follow Casey’s Game Logic (6–12 months)**
+## 🔹 **Milestone 2: Input**
 
-“You’re now only writing gameplay code, not platform code.”
+Implement:
 
-This is the LONGEST but most fun part.
+- X11 keyboard events (`XKeyEvent`)
+- X11 mouse events
+- Translate to your `game_input` struct
 
-Casey begins building:
+Gamepad options:
 
-* entity system
-* hero movement
-* collision system
-* 2D world mapping
-* renderer pipeline
-* debug system
-* memory arenas
-* asset pipeline
-* audio mixing
-* DOS-style debug tools
-
-### 🎯 Your job:
-
-* Write EXACTLY the game logic he writes
-* But create your OWN C code flow
-* Keep both backends working
-
-### ✔️ Learning outcomes:
-
-* working **game loop**
-* full **software renderer**
-* entity/component management
-* asset loading pipeline
-* lighting
-* audio mixing
-* tools and debug overlays
-
-This is the heart of the project.
+- **SDL2 gamepad subsystem** (recommended)
+- OR direct **evdev** if you want pure Linux
 
 ---
 
-# 📍 **PHASE 4 — Engine Engineer Mastery (Year 2–3)**
+## 🔹 **Milestone 3: Timing**
 
-“You understand everything Casey did, and now can extend it.”
+Implement:
 
-### 🎯 Optional but recommended:
+```c
+clock_gettime(CLOCK_MONOTONIC, &start);
+nanosleep();
+```
 
-* Implement OpenGL backend (instead of X11 software blit)
-* Multi-threaded job system
-* Vectorized SIMD routines
-* ECS / hybrid ECS
-* 2D animation system
-* Custom tooling GUI (like imgui but handmade)
+Replace Windows:
 
-### ✨ This is when you REALLY become a low-level programmer.
-
----
-
-# 📍 THE REALISTIC TIMELINE (W/ YOUR SCHEDULE)
-
-| Phase                            | Duration    |
-| -------------------------------- | ----------- |
-| Phase 0 – Prep                   | 1–2 months  |
-| Phase 1 – Base platform skeleton | 2–3 months  |
-| Phase 2 – Platform episodes      | 3–6 months  |
-| Phase 3 – Game logic             | 6–12 months |
-| Phase 4 – Extensions             | 1–2 years   |
-
-### ⭐ Total realistic time:
-
-## **2.5–3 years**, not 7–8 years.
-
-Why the big difference?
-Because we **avoid rewriting everything twice** at the same time.
+- `QueryPerformanceCounter` → `clock_gettime`
+- `Sleep()` → `nanosleep()`
 
 ---
 
-# 📁 Want me to generate this next?
+## 🔹 **Milestone 4: Audio Output**
 
-### 💾 *A full Casey-style project template for Ubuntu:*
+Two paths:
 
-* `build/`
-* `build.sh`
-* `run.sh`
-* `code/platform/x11`
-* `code/platform/raylib`
-* `game/`
-* `handmadehero_main.c`
-* minimal window + backbuffer + input
+### ⭐ Recommended: PulseAudio Simple API
 
+Simple, stable, less boilerplate.
+
+### Alternative: ALSA PCM
+
+Harder, more control.
+
+Implement:
+
+- Audio buffer callback
+- Low-latency ring buffer
+- Write samples each frame
+
+---
+
+## 🔹 **Milestone 5: File IO**
+
+Implement:
+
+- `open() / read() / write()`
+- `stat()`
+- `mmap()` file loading
+- Directory iteration (`opendir`, `readdir`)
+
+---
+
+## 🔹 **Milestone 6: Hot Reload**
+
+Implement:
+
+- `dlopen()` on game code
+- `dlsym()` to load `game_update()`
+- Compare timestamps using `stat()`
+- Reload `.so` on change
+
+This is the biggest Handmade Hero feature.
+
+---
+
+# 🌔 **PHASE 3 — Pure Game Development**
+
+Everything in this phase is **platform-independent**.
+
+You follow Casey **exactly** from episode ~26 to ~400.
+
+Includes:
+
+- World simulation
+- Entities & collisions
+- Hero movement
+- Tile maps
+- Rendering pipeline (software)
+- Animation system
+- Audio mixing
+- Debug tools
+- Memory arenas
+- Asset system
+- Intro to OpenGL (you can skip or adapt)
+
+This is where 70% of Handmade Hero’s content lives.
+
+---
+
+# 🌕 **PHASE 4 — Advanced Engine Work**
+
+Optional but powerful.
+
+Includes:
+
+- Multi-threaded work queue (`pthread`)
+- SIMD optimizations with SSE/AVX
+- Real-time debug panel
+- File watching
+- Asset building tools
+- OpenGL Renderer (if you want)
+- Profiling tools
+- Memory diagnostics
+- ECS-like data-oriented structures
+
+---
+
+# 🧪 **NEW: Dual-Backend Validation Suite**
+
+(Ensures your game layer is 100% portable)
+
+Each frame:
+
+1. Update game with X11 backend
+2. Update game with Raylib backend
+3. Hash final backbuffer
+4. Compare hashes
+
+```c
+uint64_t hash = 0;
+for (int i = 0; i < width*height*4; i++)
+    hash = (hash * 1315423911u) + pixels[i];
+```
+
+If both backends output the same buffer → your game logic is platform-independent.
+
+Huge confidence booster.
+
+---

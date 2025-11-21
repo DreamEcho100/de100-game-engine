@@ -3,7 +3,7 @@
 
 #include "platform.h"
 
-// X11 backend implementation
-// Implements platform_main() using X11/Xlib
+// X11 MIT-SHM backend implementation
+// Uses shared memory for zero-copy pixel transfer
 
 #endif
