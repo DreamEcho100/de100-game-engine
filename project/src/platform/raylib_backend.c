@@ -3,7 +3,7 @@
 #include <raylib.h>
 #include <stdlib.h>
 
-static uint32_t rgba_format(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+static inline uint32_t rgba_format(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
   return (a << 24) | (r << 16) | (g << 8) | b;
 }
 

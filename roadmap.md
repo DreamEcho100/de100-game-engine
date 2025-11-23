@@ -111,7 +111,6 @@ my_game/
     │
     └── platform/
         ├── platform.h
-        ├── platform_selector.h
         │
         ├── x11_backend.c
         └── raylib_backend.c

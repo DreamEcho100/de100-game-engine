@@ -3,7 +3,7 @@
 BACKEND=$1
 
 if [ -z "$BACKEND" ]; then
-    BACKEND="raylib"
+    BACKEND="x11"
 fi
 
 echo "Running with backend: $BACKEND"

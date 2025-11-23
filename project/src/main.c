@@ -1,4 +1,4 @@
-#include "./platform/platform_selector.h"
+#include "./platform/platform.h"
 
 int main() {
   return platform_main();
