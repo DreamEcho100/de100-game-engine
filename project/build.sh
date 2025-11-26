@@ -29,4 +29,3 @@ else
 fi
 
 clang $SRC src/platform/base.c -o build/game $FLAGS
-

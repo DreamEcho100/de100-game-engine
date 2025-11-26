@@ -1,4 +1,29 @@
-./project/build/**
-project/build/**
-project/build
+# Build outputs
+build/
+*.o
+*.so
+*.a
+*.exe
+*.out
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Compiled binaries
+handmade_hero
+day002_x11
+day002_raylib
+
+# Logs
+*.log
+
+#
 _ignore/**

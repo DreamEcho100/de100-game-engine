@@ -8,4 +8,6 @@ fi
 
 echo "Running with backend: $BACKEND"
 
+mkdir -p build
+
 ./build.sh "$BACKEND" && ./build/game
