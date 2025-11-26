@@ -7,7 +7,7 @@ sudo apt update
 sudo apt install \
 build-essential clang \
   libx11-dev libxext-dev libxrandr-dev libxi-dev libxfixes-dev libxshmfence-dev \
-  build-essential cmake git libglfw3-dev libxft-dev libgl1-mesa-dev libxcursor-dev libpulse-dev \
+  build-essential cmake git libglfw3-dev libxft-dev libgl1-mesa-dev libxcursor-dev libpulse-dev libfreetype6-dev \
   libasound2-dev \
   mesa-common-dev libgl1-mesa-dev \
   libsdl2-dev \

@@ -1,0 +1,4 @@
+./project/build/**
+project/build/**
+project/build
+_ignore/**
