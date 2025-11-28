@@ -1,29 +1,3 @@
-/**
- * ====================================================================
- * DAY 002: OPENING A WINDOW (X11 VERSION)
- * ====================================================================
- *
- * Casey's Lesson: Create a window and handle basic window events
- *
- * What we're learning:
- * 1. How to create a window
- * 2. How to handle window events (resize, close, paint, etc.)
- * 3. Message/Event loop basics
- * 4. Simple rendering (flashing black/white on repaint)
- *
- * WEB DEV ANALOGY:
- * Think of this like creating an HTML page that responds to events:
- * - Creating window = document.createElement('div')
- * - Event loop = addEventListener() for various events
- * - Painting = updating the canvas or DOM
- *
- * X11 CONCEPTS:
- * - Display: Connection to the X server (like WebSocket to server)
- * - Window: The actual window object (like a DOM element)
- * - Event: User interactions (like DOM events: click, resize, etc.)
- * - XEvent: Structure that holds event data (like JavaScript Event object)
- */
-
 #define _POSIX_C_SOURCE 199309L // Enable POSIX functions like nanosleep, sleep
 #include <X11/X.h>
 #include <stdint.h>
@@ -201,11 +175,185 @@ inline file_scoped_fn void resize_back_buffer(Display *display, int width,
   //   // vs
   //   for (let i = 0; i < 1000000; i++) buf[i] = 0;  // Like memset() - slow!
   //
+  // ═══════════════════════════════════════════════════════════════════════
+  // 📚 CASEY'S DAY 4 PATTERN: VirtualAlloc() vs calloc() vs mmap()
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // What Casey does on Windows (Day 4):
+  //
+  //   BitmapMemory = VirtualAlloc(
+  //       0,                  // Let OS choose address
+  //       BitmapMemorySize,   // Size in bytes
+  //       MEM_COMMIT,         // Reserve + commit (ready to use)
+  //       PAGE_READWRITE      // Read/write access
+  //   );
+  //
+  //   // Later, free:
+  //   VirtualFree(BitmapMemory, 0, MEM_RELEASE);
+  //
+  // ───────────────────────────────────────────────────────────────────────
+  // THREE WAYS TO ALLOCATE ON LINUX:
+  // ───────────────────────────────────────────────────────────────────────
+  //
+  // Option A: calloc() [CURRENT - Day 1-20] ✅
+  // ────────────────────────────────────────────
+  //   g_PixelData = calloc(1, buffer_size);
+  //   // Later: free(g_PixelData);
+  //
+  //   ✅ Simple, portable, works perfectly for learning
+  //   ✅ OS zeros memory via copy-on-write (fast!)
+  //   ✅ Good enough for Day 1-20 (back buffer only)
+  //   ❌ Goes through malloc allocator (adds overhead)
+  //   ❌ Can't use mprotect() for debug traps
+  //   ❌ Not 1:1 with Casey's VirtualAlloc pattern
+  //
+  // Option B: mmap() [CASEY'S PATTERN - Day 4+] ⚡
+  // ──────────────────────────────────────────────
+  //   #include <sys/mman.h>
+  //
+  //   g_PixelData = mmap(
+  //       NULL,                      // Let OS choose address
+  //       buffer_size,               // Size in bytes
+  //       PROT_READ | PROT_WRITE,    // Read/write access
+  //       MAP_PRIVATE | MAP_ANONYMOUS, // Private, not file-backed
+  //       -1, 0                      // No file descriptor
+  //   );
+  //   if (g_PixelData == MAP_FAILED) { /* error */ }
+  //
+  //   // Later: munmap(g_PixelData, buffer_size);
+  //
+  //   ✅ Direct OS control (no malloc overhead)
+  //   ✅ EXACT equivalent to Casey's VirtualAlloc
+  //   ✅ Can use mprotect(PROT_NONE) for debug traps
+  //   ✅ Page-aligned memory (cache-friendly)
+  //   ✅ Can reserve/commit/decommit for large allocations
+  //   ⚠️  Must track size for munmap (calloc doesn't need this)
+  //   ⚠️  Slightly more complex (MAP_FAILED vs NULL check)
+  //
+  //   Debug Mode Trap (Casey's VirtualProtect equivalent):
+  //
+  //   #ifdef DEBUG
+  //   // Instead of freeing, make old buffer UNTOUCHABLE
+  //   mprotect(old_buffer, old_size, PROT_NONE);
+  //   // Any access = instant crash with stack trace! 🐛
+  //   #endif
+  //
+  // Option C: Reserve-Once-Commit-As-Needed [DAY 25+] 🚀
+  // ───────────────────────────────────────────────────
+  //   // At startup (ONCE):
+  //   g_BackBufferRegion = mmap(
+  //       NULL,
+  //       10MB,              // Reserve HUGE region
+  //       PROT_NONE,         // Not accessible yet!
+  //       MAP_PRIVATE | MAP_ANONYMOUS,
+  //       -1, 0
+  //   );
+  //   // RAM used: 0 bytes ✅
+  //   // Address space claimed: 10MB ✅
+  //
+  //   // On resize: COMMIT only what we need
+  //   size_t needed = width * height * 4;
+  //   mprotect(g_BackBufferRegion, needed, PROT_READ | PROT_WRITE);
+  //   // RAM used: `needed` bytes ✅
+  //   // Address NEVER CHANGES! ✅
+  //
+  //   Benefits:
+  //   ✅ Stable address (never changes, easier debugging)
+  //   ✅ No munmap/mmap overhead on resize
+  //   ✅ Can grow/shrink by just changing protection
+  //   ✅ Perfect for frame-to-frame consistency
+  //   ⚠️  Overkill for simple back buffer at Day 4
+  //   💡 Casey uses this for game memory arenas (Day 25+)
+  //
+  // ───────────────────────────────────────────────────────────────────────
+  // WHY NOT USE mmap() NOW?
+  // ───────────────────────────────────────────────────────────────────────
+  //
+  // Casey's Philosophy: "Don't optimize before you understand."
+  //
+  // At Day 4:
+  // - calloc() teaches the CONCEPTS (allocate, free, lifetime)
+  // - Back buffer is simple (just pixels, resize occasionally)
+  // - No need for virtual memory control YET
+  // - Focus on RENDERING, not memory management minutiae
+  //
+  // At Day 25+ (Memory System Episode):
+  // - Casey builds proper memory architecture
+  // - Platform provides big arenas (permanent + transient)
+  // - Game NEVER calls malloc/free (uses arena allocators)
+  // - NOW mmap() reserve/commit is ESSENTIAL
+  //
+  // Timeline:
+  //   Day 1-20:  calloc() ✅ (learn rendering)
+  //   Day 25+:   mmap()   ✅ (proper architecture)
+  //
+  // ───────────────────────────────────────────────────────────────────────
+  // HOW VIRTUAL MEMORY ADDRESSES WORK
+  // ───────────────────────────────────────────────────────────────────────
+  //
+  // Common Misconception:
+  // "Does OS remember what address it gave me and return the same one?"
+  //
+  // ❌ NO! Each mmap(NULL, ...) gets a RANDOM available address.
+  //
+  // Visual:
+  //
+  //   void* ptr1 = mmap(NULL, 2MB, ...);  // OS: "Here's 0x7fff0000"
+  //   munmap(ptr1, 2MB);                   // OS: "OK, freed"
+  //   void* ptr2 = mmap(NULL, 4MB, ...);  // OS: "Here's 0x8fff0000"
+  //   (different!)
+  //
+  // How Casey Gets Stable Addresses:
+  //
+  //   Method 1: SAVE the pointer in a global (what we do now)
+  //   ────────────────────────────────────────────────────────
+  //   global_var void* g_PixelData = NULL;
+  //
+  //   g_PixelData = mmap(...);  // Save whatever OS gives us
+  //   // Every frame: use g_PixelData (same address because we saved it!)
+  //
+  //   Method 2: REQUEST specific address with MAP_FIXED (Day 25+)
+  //   ────────────────────────────────────────────────────────────
+  //   void* permanent = mmap(
+  //       (void*)0x100000000,  // ← REQUEST this exact address
+  //       64MB,
+  //       PROT_READ | PROT_WRITE,
+  //       MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,  // ← FIXED!
+  //       -1, 0
+  //   );
+  //   // permanent = 0x100000000 FOREVER (never changes!)
+  //
+  //   Visual (Game Memory Map - Day 25+):
+  //   ┌─────────────────────────────────────────────┐
+  //   │ 0x100000000 - Permanent Storage (64MB) ✅   │ ← Fixed address
+  //   │ 0x200000000 - Transient Storage (32MB) ✅   │ ← Fixed address
+  //   │ 0x300000000 - Debug Storage     (16MB) ✅   │ ← Fixed address
+  //   └─────────────────────────────────────────────┘
+  //
+  //   Benefits:
+  //   - Same addresses every run (reproducible bugs!)
+  //   - Can save pointers to disk (save games)
+  //   - Easier debugging ("0x100001234 is always player struct")
+  //
+  // ───────────────────────────────────────────────────────────────────────
+  // CURRENT CHOICE: calloc() (Simple, Correct for Day 4)
+  // ───────────────────────────────────────────────────────────────────────
+  //
   g_PixelData = calloc(1, buffer_size); // Allocate AND zero (fastest!)
   if (!g_PixelData) {
     fprintf(stderr, "ERROR: Failed to allocate pixel buffer\n");
     return;
   }
+  //
+  // TODO(Day 25+): Replace with mmap() when building memory system
+  // TODO(Day 25+): Add debug mode mprotect() traps for use-after-free
+  // TODO(Day 25+): Consider reserve-once-commit-as-needed pattern
+  //
+  // References:
+  // - Casey Day 4:  VirtualAlloc basics
+  // - Casey Day 25: Memory system architecture
+  // - man mmap(2):  Linux virtual memory API
+  // - man mprotect(2): Memory protection changes
   // STEP 4: Create XImage wrapper
   // XImage is like ImageData - it describes the pixel format
 
@@ -647,11 +795,11 @@ int platform_main() {
         }
       }
 
-      if (test_x < g_BufferWidth - 1) {
+      if (test_x + 1 < g_BufferWidth - 1) {
         test_x += 1;
       } else {
         test_x = 0;
-        if (test_y < g_BufferHeight - 1 || test_y + 75 < g_BufferHeight - 1) {
+        if (test_y + 75 < g_BufferHeight - 1) {
           test_y += 75;
         } else {
           test_y = 0;
