@@ -59,6 +59,10 @@ int platform_main() {
    */
   SetTargetFPS(60);
 
+  // Moving pixel test (same as X11 version)
+  int test_x = 0;
+  int test_y = 0;
+
   /**
    * EVENT LOOP
    *
@@ -91,8 +95,7 @@ int platform_main() {
      * });
      */
     if (IsWindowResized()) {
-      printf("Window resized to: %dx%d - Color: %s\n", GetScreenWidth(),
-             GetScreenHeight());
+      printf("Window resized to: %dx%d\n", GetScreenWidth(), GetScreenHeight());
     }
 
     /**
@@ -176,6 +179,37 @@ int platform_main() {
     // In X11, we did: pixels[i * width + i] = white
     // In Raylib, we just call: DrawLine()!
     DrawLine(0, 0, diagonal_length - 1, diagonal_length - 1, WHITE);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🎨 MOVING GREEN PIXEL TEST (Same as X11 version)
+    // ═══════════════════════════════════════════════════════════════════
+    //
+    // X11 version:
+    //   pixels[test_offset] = 0x00FF00;  // Direct pixel manipulation
+    //
+    // Raylib version:
+    //   DrawPixel(test_x, test_y, GREEN);  // High-level API call
+    //
+    // Both do the same thing - draw a green pixel at (test_x, test_y)
+    //
+
+    // Update position (move right, wrap and jump down)
+    if (test_x < width - 1) {
+      test_x += 1;
+    } else {
+      test_x = 0;
+      if (test_y < height - 1 || test_y + 75 < height - 1) {
+        test_y += 75; // Jump down 75 rows (matches X11 version)
+      } else {
+        test_y = 0; // Reset to top
+      }
+    }
+
+    // Draw the green pixel
+    DrawPixel(test_x, test_y, GREEN);
+
+    // Alternative: Draw a slightly bigger point (easier to see)
+    // DrawRectangle(test_x, test_y, 2, 2, GREEN);  // 2×2 pixel square
 
     /**
      * END DRAWING
