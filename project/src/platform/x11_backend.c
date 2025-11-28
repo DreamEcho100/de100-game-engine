@@ -51,7 +51,6 @@
 
 global_var bool g_Running =
     true; // Should we keep running? (like a React state)
-global_var bool g_IsWhite = true;       // Current background color toggle
 global_var XImage *g_BackBuffer = NULL; // X11 image wrapper
 global_var void *g_PixelData = NULL;    // Raw pixel memory (our canvas!)
 global_var int g_BufferWidth = 0;       // Current buffer dimensions
@@ -363,7 +362,7 @@ inline file_scoped_fn void handle_event(Display *display, Window window,
     // X11 can send multiple expose events for different regions
     if (event->xexpose.count != 0)
       break;
-    printf("Repainting window - Color: %s\n", g_IsWhite ? "WHITE" : "BLACK");
+    printf("Repainting window");
     update_window(display, window, 0, 0, g_BufferWidth, g_BufferHeight);
     break;
   }
@@ -555,6 +554,10 @@ int platform_main() {
    */
   resize_back_buffer(display, g_BufferWidth, g_BufferHeight);
 
+  int test_offset = 0;
+  int test_y = 0;
+  int test_x = 0;
+
   /**
    * STEP 8: EVENT LOOP (THE HEART OF THE PROGRAM)
    *
@@ -584,23 +587,27 @@ int platform_main() {
   while (g_Running) {
     XEvent event;
 
-    /**
-     * WAIT FOR NEXT EVENT
-     *
-     * XNextEvent() blocks (waits) until an event arrives.
-     * Like await in JavaScript - execution stops here until event.
-     *
-     * When an event arrives, it's stored in the 'event' variable.
-     */
-    XNextEvent(display, &event);
+    // /**
+    //  * WAIT FOR NEXT EVENT
+    //  *
+    //  * XNextEvent() blocks (waits) until an event arrives.
+    //  * Like await in JavaScript - execution stops here until event.
+    //  *
+    //  * When an event arrives, it's stored in the 'event' variable.
+    //  */
+    // XNextEvent(display, &event);
 
-    /**
-     * HANDLE THE EVENT
-     *
-     * This is like calling your event handler function.
-     * Our handle_event() is like Casey's MainWindowCallback()
-     */
-    handle_event(display, window, &event);
+    while (XPending(display) > 0) {
+      XNextEvent(display, &event);
+      handle_event(display, window, &event);
+    }
+    // /**
+    //  * HANDLE THE EVENT
+    //  *
+    //  * This is like calling your event handler function.
+    //  * Our handle_event() is like Casey's MainWindowCallback()
+    //  */
+    // handle_event(display, window, &event);
 
     // ═══════════════════════════════════════════════════════════════════
     // 🎨 DRAW DIAGONAL LINE (Learning Exercise - Day 3)
@@ -640,6 +647,19 @@ int platform_main() {
         }
       }
 
+      if (test_x < g_BufferWidth - 1) {
+        test_x += 1;
+      } else {
+        test_x = 0;
+        if (test_y < g_BufferHeight - 1 || test_y + 75 < g_BufferHeight - 1) {
+          test_y += 75;
+        } else {
+          test_y = 0;
+        }
+      }
+      test_offset = test_y * g_BufferWidth + test_x;
+
+      pixels[test_offset] = 0x00FF00; //
       // Display the result
       update_window(display, window, 0, 0, g_BufferWidth, g_BufferHeight);
     }

@@ -1,20 +1,3 @@
-/**
- * ====================================================================
- * DAY 002: OPENING A WINDOW (RAYLIB VERSION)
- * ====================================================================
- *
- * Casey's Lesson: Create a window and handle basic window events
- *
- * This does the EXACT same thing as the X11 version, but with Raylib!
- *
- * RAYLIB ADVANTAGE:
- * Raylib is like React compared to vanilla DOM manipulation.
- * It abstracts away platform differences and handles many details
- * automatically.
- *
- * What takes 200+ lines in X11 takes ~30 lines in Raylib!
- */
-
 #include <raylib.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -77,13 +60,6 @@ int platform_main() {
   SetTargetFPS(60);
 
   /**
-   * STATE: Color toggle
-   *
-   * Same as g_IsWhite in X11 version
-   */
-  bool isWhite = true;
-
-  /**
    * EVENT LOOP
    *
    * WindowShouldClose() checks if:
@@ -115,9 +91,8 @@ int platform_main() {
      * });
      */
     if (IsWindowResized()) {
-      isWhite = !isWhite;
       printf("Window resized to: %dx%d - Color: %s\n", GetScreenWidth(),
-             GetScreenHeight(), isWhite ? "WHITE" : "BLACK");
+             GetScreenHeight());
     }
 
     /**
@@ -164,7 +139,43 @@ int platform_main() {
      *
      * ClearBackground() fills the entire window with a color
      */
-    ClearBackground(isWhite ? WHITE : BLACK);
+    ClearBackground(BLACK);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🎨 DRAW DIAGONAL LINE (Learning Exercise - Day 3)
+    // ═══════════════════════════════════════════════════════════════════
+    //
+    // RAYLIB vs X11 COMPARISON:
+    //
+    // X11 (manual pixel manipulation):
+    //   uint32_t *pixels = (uint32_t *)g_PixelData;
+    //   for (int i = 0; i < min(width, height); i++) {
+    //       int offset = i * width + i;
+    //       pixels[offset] = 0xFFFFFFFF;  // White pixel
+    //   }
+    //   XPutImage(display, window, gc, backBuffer, ...);
+    //
+    // Raylib (high-level drawing API):
+    //   DrawLine(x1, y1, x2, y2, WHITE);  // One line! 🎯
+    //
+    // Both do the SAME thing, but Raylib abstracts away:
+    // - Pixel addressing math (offset = y * width + x)
+    // - Bounds checking
+    // - Back buffer management
+    // - Blitting to screen
+    //
+    // This is like comparing:
+    // - Canvas 2D API: ctx.strokeRect(x, y, w, h)
+    // - WebGL: Setting up buffers, shaders, vertices...
+    //
+    int width = GetScreenWidth();
+    int height = GetScreenHeight();
+    int diagonal_length = width < height ? width : height;
+
+    // Draw diagonal line from top-left (0,0) to bottom-right
+    // In X11, we did: pixels[i * width + i] = white
+    // In Raylib, we just call: DrawLine()!
+    DrawLine(0, 0, diagonal_length - 1, diagonal_length - 1, WHITE);
 
     /**
      * END DRAWING
