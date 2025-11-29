@@ -1,7 +1,3 @@
-This `llm.txt` file is a guide for Copilot, AI assistants, or any automated tool to understand how to assist "DreamEcho100" in his Handmade Hero Linux port project. It encapsulates your objectives, learning philosophy, and style preferences.
-
----
-
 # 📝 LLM Guidelines for Handmade Hero Port (Linux)
 
 ## 1. Context About the User
@@ -826,9 +822,7 @@ Fast iteration beats careful planning.
 > "The goal is to try things fast. If your build is slow, you try fewer things.
 >  If you try fewer things, you find fewer good ideas."
 
----
-
-## 14. Casey's Common Sayings & Mantras
+### Summary of Key Phrases to Use When Mentoring and other Guidelines
 
 These phrases embody Casey's philosophy. Use them when mentoring:
 
@@ -874,4 +868,271 @@ These phrases embody Casey's philosophy. Use them when mentoring:
 
 ---
 
-End of `llm.txt`
+
+## 15. Passing Values, References & Function Pointers — Casey Style
+
+Casey is extremely consistent about this:
+
+* ✔ **Pass by value for small PODs** (ints, floats, structs < 32 bytes)
+* ✔ **Pass by pointer when the callee is supposed to modify the caller’s data**
+* ✔ **Avoid “pass by const reference” nonsense** (that’s a C++ abstraction)
+* ✔ **Avoid heap allocations when passing things**
+* ✔ **Function pointers are fine — but only when you *need* indirection**
+* ✔ **Avoid inline function pointers inside hot paths unless necessary**
+
+Below is a concise “what to do / what *not* to do” list.
+
+---
+
+### 15.1 Passing Parameters — Do & Don’t
+
+#### **Small struct (≤ 32 bytes)**
+
+```
+struct Vec2 { float x, y; };  // 8 bytes
+```
+
+#### ✔ DO: Pass small structs by value (cheap, simple)
+
+```c
+float Length(Vec2 v) {
+    return sqrtf(v.x*v.x + v.y*v.y);
+}
+```
+
+#### ❌ DON'T: Pass small structs by pointer “for performance”
+
+```c
+float LengthBad(Vec2* v) {  // misleading, pointer indirection slower
+    return sqrtf(v->x*v->x + v->y*v->y);
+}
+```
+
+---
+
+### 15.2 Passing Large Structs (> 32–64 bytes)
+
+```
+struct BigState {
+    float positions[256];
+    float velocities[256];
+    int count;
+};
+```
+
+#### ✔ DO: Pass large structs by pointer
+
+```c
+void UpdatePhysics(BigState* s) {
+    for (int i = 0; i < s->count; i++) {
+        s->positions[i] += s->velocities[i];
+    }
+}
+```
+
+#### ❌ DON'T: Pass huge structs by value (expensive copies)
+
+```c
+void UpdatePhysicsBad(BigState s) {  // 2KB memcpy every call
+    ...
+}
+```
+
+---
+
+### 15.3 Pass-by-pointer indicates **intent to modify**
+
+#### ✔ DO: Use pointer when you *mean* “I will modify this”
+
+```c
+void MovePlayer(Player* p, float dx, float dy) {
+    p->x += dx;
+    p->y += dy;
+}
+```
+
+#### ❌ DON'T: Hide mutation by “value returning”
+
+```c
+Player MovePlayerBad(Player p, float dx, float dy) {  // unclear intent
+    p.x += dx;
+    p.y += dy;
+    return p;   // hidden copy, unclear semantics
+}
+```
+
+---
+
+### 15.4 Function Pointers — When & Why (Casey Style)
+
+#### ✔ DO: Use function pointers **only for real indirection**
+
+Example: Audio callback, platform API hooks, hot-reloadable functions.
+
+```c
+typedef void game_update_and_render(float dt);
+
+void GameLoop(game_update_and_render* Update) {
+    while (running) {
+        Update(dt);  // legitimate indirection
+    }
+}
+```
+
+#### ❌ DON'T: Use function pointers to “pretend” you have OOP
+
+(very common junior mistake)
+
+```c
+// BAD: trying to mimic interfaces
+struct Enemy {
+    void (*Update)(struct Enemy*);  // adds branch + pointer indirection
+    float x, y;
+};
+```
+
+#### ✔ FIX: Just write a function that takes a struct
+
+```c
+struct Enemy { float x, y; };
+
+void UpdateEnemy(Enemy* e) {
+    e->x += 1.0f;
+}
+```
+
+---
+
+### 15.5 Inline Functions — When & Why
+
+#### ✔ DO: Inline when extremely small & hot
+
+```c
+inline float Square(float x) { return x * x; }
+```
+
+#### ❌ DON'T: Inline large functions
+
+This increases binary size → worse i-cache performance.
+
+```c
+inline void BadHugeInline() {
+    // 300 lines of logic...
+}
+```
+
+Inlining ≠ “faster”. Inlining = “more code”. Casey in multiple episodes warns beginners not to “spray inline everywhere.”
+
+---
+
+### 15.6 Avoid Dynamic Dispatch in Hot Paths
+
+#### ❌ DON'T: Use function-pointer calls inside per-frame loops
+
+```c
+// BAD: called 60 times/second inside hot path
+enemy->Update(enemy);
+```
+
+#### ✔ DO: Direct calls (branch is predictable, instruction cache friendly)
+
+```c
+for (int i = 0; i < enemy_count; i++) {
+    UpdateEnemy(&enemies[i]);  // fast, contiguous, predictable
+}
+```
+
+---
+
+### 15.7 Designing APIs — Smallest Surface, No Abstractions
+
+#### ❌ DON’T (Casey hates this pattern)
+
+```c
+void RenderPlayer(IRenderable* renderable);
+```
+
+#### ✔ DO
+
+```c
+void RenderPlayer(Player* p);
+```
+
+Simple. Obvious. No hidden branches. No vtables.
+
+---
+
+### 15.8 Avoid “const correctness” mania
+
+Casey rarely uses `const` unless it *really helps* readability.
+
+#### ✔ DO: Use const when it helps understanding
+
+```c
+void PrintVec(const Vec2* v);
+```
+
+#### ❌ DON'T: Treat const like a correctness religion
+
+```c
+void Foo(const Player* const p);  // nonsense, distracting
+```
+
+---
+
+### 15.9 Passing Arrays — DO & DON'T
+
+#### ✔ DO: Pass pointer + count (explicit, simple)
+
+```c
+void Process(float* values, int count) {
+    for (int i = 0; i < count; i++) {
+        values[i] += 1.0f;
+    }
+}
+```
+
+#### ❌ DON'T: Pass arrays without count
+
+```c
+void ProcessBad(float* values) {  // no idea how many elements
+    ...
+}
+```
+
+---
+
+### 15.10 Banning the Worst Anti-Patterns (Casey Style)
+
+#### ❌ DO NOT: Allocate in a hot path
+
+```c
+void Update() {
+    float* temp = malloc(4096);  // catastrophic
+    ...
+    free(temp);
+}
+```
+
+#### ✔ DO: Allocate once (or use an arena)
+
+```c
+static float temp[4096];  // zero cost per frame
+```
+
+---
+
+### 15.11 Absolute Rule (Casey Quote)
+
+```
+"You do not pass something by pointer unless you mean
+ 'I'm going to modify this exact memory.'"
+```
+
+```
+"You do not heap allocate in a hot path. Ever."
+```
+
+```
+"Indirection is expensive. Don’t use it unless there's a reason."
+```
