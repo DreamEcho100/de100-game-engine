@@ -9,21 +9,26 @@
 #define local_persist_var static
 #define global_var static
 
-global_var void *g_PixelData = NULL;
-global_var int g_BufferWidth = 0;
-global_var int g_BufferHeight = 0;
-global_var int g_BytesPerPixel = 4;
-global_var Texture2D g_BackBufferTexture = {0};
-global_var bool g_HasTexture = false;
+typedef struct {
+  void *memory;
+  int width;
+  int height;
+  int bytes_per_pixel;
+  Texture2D texture;
+  bool has_texture;
+} OffscreenBuffer;
 
-inline file_scoped_fn void RenderWeirdGradient(int blue_offset,
+global_var OffscreenBuffer g_backbuffer;
+
+inline file_scoped_fn void RenderWeirdGradient(OffscreenBuffer *buffer,
+                                               int blue_offset,
                                                int green_offset) {
-  int pitch = g_BufferWidth * g_BytesPerPixel;
-  uint8_t *row = (uint8_t *)g_PixelData;
+  int pitch = buffer->width * buffer->bytes_per_pixel;
+  uint8_t *row = (uint8_t *)buffer->memory;
 
-  for (int y = 0; y < g_BufferHeight; ++y) {
+  for (int y = 0; y < buffer->height; ++y) {
     uint32_t *pixels = (uint32_t *)row;
-    for (int x = 0; x < g_BufferWidth; ++x) {
+    for (int x = 0; x < buffer->width; ++x) {
       uint8_t blue = (x + blue_offset);
       uint8_t green = (y + green_offset);
 
@@ -40,7 +45,8 @@ inline file_scoped_fn void RenderWeirdGradient(int blue_offset,
  - Allocate new CPU pixel memory
  - Create new Raylib texture (GPU)
 *********************************************************************/
-file_scoped_fn void ResizeBackBuffer(int width, int height) {
+file_scoped_fn void ResizeBackBuffer(OffscreenBuffer *buffer, int width,
+                                     int height) {
   printf("Resizing back buffer → %dx%d\n", width, height);
 
   if (width <= 0 || height <= 0) {
@@ -48,54 +54,54 @@ file_scoped_fn void ResizeBackBuffer(int width, int height) {
     return;
   }
 
-  int old_width = g_BufferWidth;
-  int old_height = g_BufferHeight;
+  int old_width = buffer->width;
+  int old_height = buffer->height;
 
   // Update first!
-  g_BufferWidth = width;
-  g_BufferHeight = height;
+  buffer->width = width;
+  buffer->height = height;
 
   // ---- 1. FREE OLD PIXEL MEMORY
   // -------------------------------------------------
-  if (g_PixelData && old_width > 0 && old_height > 0) {
-    munmap(g_PixelData, old_width * old_height * g_BytesPerPixel);
+  if (buffer->memory && old_width > 0 && old_height > 0) {
+    munmap(buffer->memory, old_width * old_height * buffer->bytes_per_pixel);
   }
-  g_PixelData = NULL;
+  buffer->memory = NULL;
 
   // ---- 2. FREE OLD TEXTURE
   // ------------------------------------------------------
-  if (g_HasTexture) {
-    UnloadTexture(g_BackBufferTexture);
-    g_HasTexture = false;
+  if (buffer->has_texture) {
+    UnloadTexture(buffer->texture);
+    buffer->has_texture = false;
   }
   // ---- 3. ALLOCATE NEW BACKBUFFER
   // ----------------------------------------------
-  int buffer_size = width * height * g_BytesPerPixel;
-  g_PixelData = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE,
-                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  int buffer_size = width * height * buffer->bytes_per_pixel;
+  buffer->memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-  if (g_PixelData == MAP_FAILED) {
-    g_PixelData = NULL;
+  if (buffer->memory == MAP_FAILED) {
+    buffer->memory = NULL;
     fprintf(stderr, "mmap failed: could not allocate %d bytes\n", buffer_size);
     return;
   }
 
-  // memset(g_PixelData, 0, buffer_size); // Raylib does not auto-clear like
+  // memset(buffer->memory, 0, buffer_size); // Raylib does not auto-clear like
   // mmap
-  memset(g_PixelData, 0, buffer_size);
+  memset(buffer->memory, 0, buffer_size);
 
-  g_BufferWidth = width;
-  g_BufferHeight = height;
+  buffer->width = width;
+  buffer->height = height;
 
   // ---- 4. CREATE RAYLIB TEXTURE
   // -------------------------------------------------
-  Image img = {.data = g_PixelData,
-               .width = g_BufferWidth,
-               .height = g_BufferHeight,
+  Image img = {.data = buffer->memory,
+               .width = buffer->width,
+               .height = buffer->height,
                .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
                .mipmaps = 1};
-  g_BackBufferTexture = LoadTextureFromImage(img);
-  g_HasTexture = true;
+  buffer->texture = LoadTextureFromImage(img);
+  buffer->has_texture = true;
   printf("Raylib texture created successfully\n");
 }
 
@@ -103,15 +109,15 @@ file_scoped_fn void ResizeBackBuffer(int width, int height) {
  UPDATE WINDOW (BLIT)
  Equivalent to XPutImage or StretchDIBits
 *********************************************************************/
-file_scoped_fn void UpdateWindowFromBackBuffer(void) {
-  if (!g_HasTexture || !g_PixelData)
+file_scoped_fn void UpdateWindowFromBackBuffer(OffscreenBuffer *buffer) {
+  if (!buffer->has_texture || !buffer->memory)
     return;
 
   // Upload CPU → GPU
-  UpdateTexture(g_BackBufferTexture, g_PixelData);
+  UpdateTexture(buffer->texture, buffer->memory);
 
   // Draw GPU texture → screen
-  DrawTexture(g_BackBufferTexture, 0, 0, WHITE);
+  DrawTexture(buffer->texture, 0, 0, WHITE);
 }
 
 /**
@@ -169,14 +175,20 @@ int platform_main() {
    */
   SetTargetFPS(60);
 
-  g_BufferWidth = 800;
-  g_BufferHeight = 600;
+  g_backbuffer.memory = NULL;
+  g_backbuffer.width = 0;
+  g_backbuffer.height = 0;
+  g_backbuffer.bytes_per_pixel = 4;
+  memset(&g_backbuffer.texture, 0, sizeof(g_backbuffer.texture));
+  g_backbuffer.has_texture = false;
+  g_backbuffer.width = 1280;
+  g_backbuffer.height = 720;
   int test_x = 0;
   int test_y = 0;
   int blue_offset = 0;
   int green_offset = 0;
 
-  ResizeBackBuffer(800, 600);
+  ResizeBackBuffer(&g_backbuffer, g_backbuffer.width, g_backbuffer.height);
 
   /**
    * EVENT LOOP
@@ -211,11 +223,11 @@ int platform_main() {
      */
     if (IsWindowResized()) {
       printf("Window resized to: %dx%d\n", GetScreenWidth(), GetScreenHeight());
-      ResizeBackBuffer(GetScreenWidth(), GetScreenHeight());
+      ResizeBackBuffer(&g_backbuffer, GetScreenWidth(), GetScreenHeight());
     }
 
     // Render gradient into CPU pixel buffer
-    RenderWeirdGradient(blue_offset, green_offset);
+    RenderWeirdGradient(&g_backbuffer, blue_offset, green_offset);
 
     /**
      * BEGIN DRAWING (PAINT EVENT)
@@ -250,20 +262,20 @@ int platform_main() {
      */
     ClearBackground(BLACK);
 
-    UpdateWindowFromBackBuffer(); // CPU → GPU → Screen
+    UpdateWindowFromBackBuffer(&g_backbuffer); // CPU → GPU → Screen
 
-    int total_pixels = g_BufferWidth * g_BufferHeight;
-    if (test_x + 1 < g_BufferWidth - 1) {
+    int total_pixels = g_backbuffer.width * g_backbuffer.height;
+    if (test_x + 1 < g_backbuffer.width - 1) {
       test_x += 1;
     } else {
       test_x = 0;
-      if (test_y + 75 < g_BufferHeight - 1) {
+      if (test_y + 75 < g_backbuffer.height - 1) {
         test_y += 75;
       } else {
         test_y = 0;
       }
     }
-    int test_offset = test_y * g_BufferWidth + test_x;
+    int test_offset = test_y * g_backbuffer.width + test_x;
 
     if (test_offset < total_pixels) {
 
@@ -302,11 +314,11 @@ int platform_main() {
    */
   printf("Cleaning up...\n");
   // Cleanup
-  if (g_HasTexture)
-    UnloadTexture(g_BackBufferTexture);
-  if (g_PixelData)
-    // free(g_PixelData);
-    munmap(g_PixelData, g_BufferWidth * g_BufferHeight * 4);
+  if (g_backbuffer.has_texture)
+    UnloadTexture(g_backbuffer.texture);
+  if (g_backbuffer.memory)
+    // free(g_backbuffer.memory);
+    munmap(g_backbuffer.memory, g_backbuffer.width * g_backbuffer.height * 4);
   CloseWindow();
   printf("Goodbye!\n");
 
