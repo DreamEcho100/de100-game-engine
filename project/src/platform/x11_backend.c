@@ -29,7 +29,7 @@ typedef struct {
   int width;    // Current buffer dimensions
   int height;
   int pitch;
-  int bytes_per_pixal;
+  int bytes_per_pixel;
 } OffscreenBuffer;
 
 typedef struct {
@@ -134,7 +134,7 @@ inline file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
   // STEP 2: Calculate how much memory we need
   // Each pixel is 4 bytes (RGBA), so:
   // Total bytes = width × height × 4
-  buffer->pitch = width * buffer->bytes_per_pixal; // Bytes per row
+  buffer->pitch = width * buffer->bytes_per_pixel; // Bytes per row
   int buffer_size = buffer->pitch * height;        // Total bytes
 
   printf("Allocating back buffer: %dx%d (%d bytes = %.2f MB)\n", width, height,
@@ -412,8 +412,8 @@ int platform_main() {
   g_backbuffer.memory = NULL;
   g_backbuffer.width = 1280;
   g_backbuffer.height = 720;
-  g_backbuffer.bytes_per_pixal = 4;
-  g_backbuffer.pitch = g_backbuffer.width * g_backbuffer.bytes_per_pixal;
+  g_backbuffer.bytes_per_pixel = 4;
+  g_backbuffer.pitch = g_backbuffer.width * g_backbuffer.bytes_per_pixel;
 
   /**
    * STEP 3: CREATE THE WINDOW
