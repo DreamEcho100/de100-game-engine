@@ -32,11 +32,26 @@ typedef struct {
   int bytes_per_pixel;
 } OffscreenBuffer;
 
+/*
+Will be added when needed
+typedef struct {
+    int width;
+    int height;
+} X11WindowDimension;
+
+file_scoped_fn X11WindowDimension
+get_window_dimension(Display *display, Window window) {
+    XWindowAttributes attrs;
+    XGetWindowAttributes(display, window, &attrs);
+    return (X11WindowDimension){attrs.width, attrs.height};
+}
+*/
+
 global_var bool g_is_running = true;
 global_var OffscreenBuffer g_backbuffer;
 
-file_scoped_fn void RenderWeirdGradient(OffscreenBuffer *buffer,
-                                        int blue_offset, int green_offset) {
+file_scoped_fn void render_weird_gradient(OffscreenBuffer *buffer,
+                                          int blue_offset, int green_offset) {
   uint8_t *row = (uint8_t *)buffer->memory;
 
   for (int y = 0; y < buffer->height; ++y) {
@@ -192,16 +207,13 @@ inline file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
  * XPutImage is hardware-accelerated, so it's fast.
  */
 static void update_window(OffscreenBuffer *buffer, Display *display,
-                          Window window, int x, int y, int width, int height) {
-  // STEP 1: Don't blit if no buffer exists!
+                          Window window, GC gc, int x, int y, int width,
+                          int height) {
+  // Don't blit if no buffer exists!
   if (!buffer->info) {
     printf("WARNING: Tried to blit, but no buffer exists!\n");
     return;
   }
-
-  // STEP 2: Create GC (graphics context)
-  // Like ctx = canvas.getContext('2d')
-  GC gc = XCreateGC(display, window, 0, NULL);
 
   /*
    * ```
@@ -216,7 +228,7 @@ static void update_window(OffscreenBuffer *buffer, Display *display,
    *    buffer->memory                   The actual window
    * ```
    */
-  // STEP 3: Copy pixels from back buffer to window
+  // Copy pixels from back buffer to window
   // This is THE KEY FUNCTION for double buffering!
   XPutImage(display,      // X11 connection
             window,       // Destination (the actual window)
@@ -226,9 +238,6 @@ static void update_window(OffscreenBuffer *buffer, Display *display,
             x, y,         // Dest position (where on window)
             width, height // How much to copy
   );
-
-  // STEP 4: Free the GC (manual memory management!)
-  XFreeGC(display, gc);
 }
 
 /**
@@ -248,7 +257,7 @@ static void update_window(OffscreenBuffer *buffer, Display *display,
  * switch(event.type) { case 'click': ..., case 'resize': ... }
  */
 inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
-                                        Display *display, Window window,
+                                        Display *display, Window window, GC gc,
                                         XEvent *event) {
   switch (event->type) {
 
@@ -264,13 +273,30 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
     int new_width = event->xconfigure.width;
     int new_height = event->xconfigure.height;
     printf("Window resized to: %dx%d\n", new_width, new_height);
-    /**
-     * **Why do we resize the buffer here?**
-     *
-     * Because the window size changed! Our old buffer is the wrong size. We
-     * need to allocate a new buffer that matches the new window dimensions.
-     */
-    resize_back_buffer(buffer, display, new_width, new_height);
+    // /**
+    //  * **Why do we resize the buffer here?**
+    //  *
+    //  * Because the window size changed! Our old buffer is the wrong size. We
+    //  * need to allocate a new buffer that matches the new window dimensions.
+    //  */
+    // // Only resize if dimensions ACTUALLY CHANGED!
+    // if (new_width != buffer->width || new_height != buffer->height) {
+    //   printf("Window resized: %dx%d → %dx%d\n", buffer->width,
+    //   buffer->height,
+    //          new_width, new_height);
+    //   resize_back_buffer(buffer, display, new_width, new_height);
+    // } else {
+    //   printf("ConfigureNotify (same size, ignoring)\n");
+    // }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🔇 COMMENTED OUT: Day 5 uses fixed buffer, no resize
+    // ═══════════════════════════════════════════════════════════════
+    // if (new_width != buffer->width || new_height != buffer->height) {
+    //     printf("Window resized: %dx%d → %dx%d\n",
+    //            buffer->width, buffer->height, new_width, new_height);
+    //     resize_back_buffer(buffer, display, new_width, new_height);
+    // }
 
     break;
   }
@@ -316,7 +342,8 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
     if (event->xexpose.count != 0)
       break;
     printf("Repainting window");
-    update_window(buffer, display, window, 0, 0, buffer->width, buffer->height);
+    update_window(buffer, display, window, gc, 0, 0, buffer->width,
+                  buffer->height);
     break;
   }
 
@@ -404,11 +431,33 @@ int platform_main() {
   Window root = RootWindow(display, screen);
 
   g_backbuffer.info = NULL;
-  g_backbuffer.memory = NULL;
+  // g_backbuffer.memory = NULL;
   g_backbuffer.width = 1280;
   g_backbuffer.height = 720;
   g_backbuffer.bytes_per_pixel = 4;
   g_backbuffer.pitch = g_backbuffer.width * g_backbuffer.bytes_per_pixel;
+  int initial_buffer_size = g_backbuffer.pitch * g_backbuffer.height;
+  g_backbuffer.memory = mmap(NULL, initial_buffer_size, PROT_READ | PROT_WRITE,
+                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+  if (g_backbuffer.memory == MAP_FAILED) {
+    g_backbuffer.memory = NULL;
+    fprintf(stderr, "mmap failed: could not allocate %d bytes\n",
+            initial_buffer_size);
+    return 1;
+  }
+
+  g_backbuffer.info = XCreateImage(
+      display,                                        // X11 connection
+      DefaultVisual(display, DefaultScreen(display)), // Color format
+      24,                          // Depth (24-bit RGB, ignore alpha)
+      ZPixmap,                     // Format (chunky pixels, not planar)
+      0,                           // Offset in data
+      (char *)g_backbuffer.memory, // Our pixel buffer
+      g_backbuffer.width, g_backbuffer.height, // Dimensions
+      32, // Bitmap pad (align to 32-bit boundaries)
+      0   // Bytes per line (0 = auto-calculate)
+  );
 
   /**
    * STEP 3: CREATE THE WINDOW
@@ -500,6 +549,10 @@ int platform_main() {
   XMapWindow(display, window);
   printf("Window shown\n");
 
+  // Create GC (graphics context)
+  // Like ctx = canvas.getContext('2d')
+  GC gc = XCreateGC(display, window, 0, NULL);
+
   /**
    * STEP 7.5: ALLOCATE INITIAL BACK BUFFER
    *
@@ -559,7 +612,7 @@ int platform_main() {
 
     while (XPending(display) > 0) {
       XNextEvent(display, &event);
-      handle_event(&g_backbuffer, display, window, &event);
+      handle_event(&g_backbuffer, display, window, gc, &event);
     }
     // /**
     //  * HANDLE THE EVENT
@@ -583,7 +636,7 @@ int platform_main() {
     if (g_backbuffer.memory) {
       uint32_t *pixels = (uint32_t *)g_backbuffer.memory;
       int total_pixels = g_backbuffer.width * g_backbuffer.height;
-      RenderWeirdGradient(&g_backbuffer, x_offset, y_offset);
+      render_weird_gradient(&g_backbuffer, x_offset, y_offset);
 
       if (test_x + 1 < g_backbuffer.width - 1) {
         test_x += 1;
@@ -598,11 +651,10 @@ int platform_main() {
       test_offset = test_y * g_backbuffer.width + test_x;
 
       if (test_offset < total_pixels)
-        pixels[test_offset] = 0x00FF00; //
-      // pixels[test_offset] = 0x00FF00; //
+        pixels[test_offset] = 0xFF0000;
       // Display the result
-      update_window(&g_backbuffer, display, window, 0, 0, g_backbuffer.width,
-                    g_backbuffer.height);
+      update_window(&g_backbuffer, display, window, gc, 0, 0,
+                    g_backbuffer.width, g_backbuffer.height);
 
       x_offset++;
     }

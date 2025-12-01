@@ -18,11 +18,26 @@ typedef struct {
   bool has_texture;
 } OffscreenBuffer;
 
+/*
+Will be added when needed
+typedef struct {
+    int width;
+    int height;
+} X11WindowDimension;
+
+file_scoped_fn X11WindowDimension
+get_window_dimension(Display *display, Window window) {
+    XWindowAttributes attrs;
+    XGetWindowAttributes(display, window, &attrs);
+    return (X11WindowDimension){attrs.width, attrs.height};
+}
+*/
+
 global_var OffscreenBuffer g_backbuffer;
 
-inline file_scoped_fn void RenderWeirdGradient(OffscreenBuffer *buffer,
-                                               int blue_offset,
-                                               int green_offset) {
+inline file_scoped_fn void render_weird_gradient(OffscreenBuffer *buffer,
+                                                 int blue_offset,
+                                                 int green_offset) {
   int pitch = buffer->width * buffer->bytes_per_pixel;
   uint8_t *row = (uint8_t *)buffer->memory;
 
@@ -32,7 +47,11 @@ inline file_scoped_fn void RenderWeirdGradient(OffscreenBuffer *buffer,
       uint8_t blue = (x + blue_offset);
       uint8_t green = (y + green_offset);
 
-      *pixels++ = (0xFF000000 | (green << 8) | (blue << 16));
+      // *pixels++ = (0xFF000000 | (green << 8) | (blue << 16));
+      // For RGBA format:
+      uint8_t red = 0;
+      uint8_t alpha = 255;
+      *pixels++ = (alpha << 24) | (blue << 16) | (green << 8) | red;
     }
     row += pitch;
   }
@@ -45,8 +64,8 @@ inline file_scoped_fn void RenderWeirdGradient(OffscreenBuffer *buffer,
  - Allocate new CPU pixel memory
  - Create new Raylib texture (GPU)
 *********************************************************************/
-file_scoped_fn void ResizeBackBuffer(OffscreenBuffer *buffer, int width,
-                                     int height) {
+file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer, int width,
+                                       int height) {
   printf("Resizing back buffer → %dx%d\n", width, height);
 
   if (width <= 0 || height <= 0) {
@@ -86,9 +105,10 @@ file_scoped_fn void ResizeBackBuffer(OffscreenBuffer *buffer, int width,
     return;
   }
 
-  // memset(buffer->memory, 0, buffer_size); // Raylib does not auto-clear like
-  // mmap
-  memset(buffer->memory, 0, buffer_size);
+  // // memset(buffer->memory, 0, buffer_size); // Raylib does not auto-clear
+  // like
+  // // mmap
+  // memset(buffer->memory, 0, buffer_size);
 
   buffer->width = width;
   buffer->height = height;
@@ -109,7 +129,7 @@ file_scoped_fn void ResizeBackBuffer(OffscreenBuffer *buffer, int width,
  UPDATE WINDOW (BLIT)
  Equivalent to XPutImage or StretchDIBits
 *********************************************************************/
-file_scoped_fn void UpdateWindowFromBackBuffer(OffscreenBuffer *buffer) {
+file_scoped_fn void update_window_from_backbuffer(OffscreenBuffer *buffer) {
   if (!buffer->has_texture || !buffer->memory)
     return;
 
@@ -188,7 +208,7 @@ int platform_main() {
   int blue_offset = 0;
   int green_offset = 0;
 
-  ResizeBackBuffer(&g_backbuffer, g_backbuffer.width, g_backbuffer.height);
+  resize_back_buffer(&g_backbuffer, g_backbuffer.width, g_backbuffer.height);
 
   /**
    * EVENT LOOP
@@ -202,32 +222,36 @@ int platform_main() {
    * Raylib handles the event queue internally - we don't see XNextEvent()
    */
   while (!WindowShouldClose()) {
-    /**
-     * CHECK FOR WINDOW RESIZE EVENT
-     *
-     * Casey's WM_SIZE equivalent.
-     * In X11, this is ConfigureNotify event.
-     *
-     * IsWindowResized() returns true when window size changes.
-     * This is like checking event.type == ConfigureNotify in X11.
-     *
-     * When window is resized, we:
-     * 1. Toggle the color (like Casey does)
-     * 2. Log the new size (like printf in X11 version)
-     *
-     * WEB ANALOGY:
-     * window.addEventListener('resize', () => {
-     *   console.log('Window resized!');
-     *   toggleColor();
-     * });
-     */
-    if (IsWindowResized()) {
-      printf("Window resized to: %dx%d\n", GetScreenWidth(), GetScreenHeight());
-      ResizeBackBuffer(&g_backbuffer, GetScreenWidth(), GetScreenHeight());
-    }
+    // ═══════════════════════════════════════════════════════════════
+    // 🔇 COMMENTED OUT: Day 5 uses fixed buffer, no resize
+    // ═══════════════════════════════════════════════════════════════
+    // /**
+    //  * CHECK FOR WINDOW RESIZE EVENT
+    //  *
+    //  * Casey's WM_SIZE equivalent.
+    //  * In X11, this is ConfigureNotify event.
+    //  *
+    //  * IsWindowResized() returns true when window size changes.
+    //  * This is like checking event.type == ConfigureNotify in X11.
+    //  *
+    //  * When window is resized, we:
+    //  * 1. Toggle the color (like Casey does)
+    //  * 2. Log the new size (like printf in X11 version)
+    //  *
+    //  * WEB ANALOGY:
+    //  * window.addEventListener('resize', () => {
+    //  *   console.log('Window resized!');
+    //  *   toggleColor();
+    //  * });
+    //  */
+    // if (IsWindowResized()) {
+    //   printf("Window resized to: %dx%d\n", GetScreenWidth(),
+    //   GetScreenHeight()); resize_back_buffer(&g_backbuffer, GetScreenWidth(),
+    //   GetScreenHeight());
+    // }
 
     // Render gradient into CPU pixel buffer
-    RenderWeirdGradient(&g_backbuffer, blue_offset, green_offset);
+    render_weird_gradient(&g_backbuffer, blue_offset, green_offset);
 
     /**
      * BEGIN DRAWING (PAINT EVENT)
@@ -262,7 +286,7 @@ int platform_main() {
      */
     ClearBackground(BLACK);
 
-    UpdateWindowFromBackBuffer(&g_backbuffer); // CPU → GPU → Screen
+    update_window_from_backbuffer(&g_backbuffer); // CPU → GPU → Screen
 
     int total_pixels = g_backbuffer.width * g_backbuffer.height;
     if (test_x + 1 < g_backbuffer.width - 1) {
@@ -301,25 +325,16 @@ int platform_main() {
     blue_offset++;
     // green_offset++;
   }
-
   /**
-   * CLEANUP
+   * STEP 9: CLEANUP - CASEY'S "RESOURCE LIFETIMES IN WAVES" PHILOSOPHY
    *
-   * CloseWindow() does ALL of this:
-   * - XDestroyWindow()
-   * - XCloseDisplay()
-   * - Frees all internal Raylib resources
+   * Raylib handles most resources as process-lifetime (Wave 1).
+   * The OS will bulk-clean everything instantly when the process exits.
+   * We only need to manually clean up state-lifetime resources (Wave 2),
+   * like our backbuffer, if we were replacing them during runtime.
    *
-   * One line vs multiple in X11!
+   * So, following Casey's philosophy, we just exit cleanly!
    */
-  printf("Cleaning up...\n");
-  // Cleanup
-  if (g_backbuffer.has_texture)
-    UnloadTexture(g_backbuffer.texture);
-  if (g_backbuffer.memory)
-    // free(g_backbuffer.memory);
-    munmap(g_backbuffer.memory, g_backbuffer.width * g_backbuffer.height * 4);
-  CloseWindow();
   printf("Goodbye!\n");
 
   return 0;
