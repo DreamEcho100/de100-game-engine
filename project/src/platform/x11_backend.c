@@ -1,17 +1,40 @@
 #define _POSIX_C_SOURCE 199309L // Enable POSIX functions like nanosleep, sleep
 #include <X11/X.h>
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <fcntl.h>
+#include <linux/joystick.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <unistd.h> // For sleep()
+
 #define file_scoped_fn static
 #define local_persist_var static
 #define global_var static
 
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <time.h>
+// ═══════════════════════════════════════════════════════════════
+// 🎮 JOYSTICK DYNAMIC LOADING (Casey's Pattern for Linux)
+// ═══════════════════════════════════════════════════════════════
+// STEP 1: Define function signature macro
+#define LINUX_JOYSTICK_READ(name) ssize_t name(int fd, struct js_event *event)
+
+// STEP 2: Create typedef
+typedef LINUX_JOYSTICK_READ(linux_joystick_read);
+
+// STEP 3: Stub implementation (no joystick available)
+LINUX_JOYSTICK_READ(LinuxJoystickReadStub) {
+  // Return 0 = no data available (non-blocking behavior)
+  return 0;
+}
+
+// STEP 4: Global function pointer (initially stub)
+global_var linux_joystick_read *LinuxJoystickRead_ = LinuxJoystickReadStub;
+
+// STEP 5: Redefine API name
+#define LinuxJoystickRead LinuxJoystickRead_
 
 /**
  * GLOBAL STATE
@@ -32,6 +55,53 @@ typedef struct {
   int bytes_per_pixel;
 } OffscreenBuffer;
 
+typedef struct {
+  int offset_x;
+  int offset_y;
+} GradientState;
+typedef struct {
+  int offset_x;
+  int offset_y;
+} PixelState;
+// Button states (mirrors Casey's XInput button layout)
+typedef struct {
+  bool up;
+  bool down;
+  bool left;
+  bool right;
+
+  bool start;
+  bool back;
+  bool a_button;
+  bool b_button;
+  bool x_button;
+  bool y_button;
+  bool left_shoulder;
+  bool right_shoulder;
+
+  // Analog sticks (16-bit signed, like XInput)
+  int16_t left_stick_x;
+  int16_t left_stick_y;
+  int16_t right_stick_x;
+  int16_t right_stick_y;
+  int16_t left_trigger;
+  int16_t right_trigger;
+
+  GradientState gradient_state;
+
+} GameControls;
+
+typedef struct {
+  GameControls controls;
+  GradientState gradient;
+  PixelState pixel;
+  int speed;
+  bool is_running;
+  int gamepad_id;
+} GameState;
+
+global_var GameState g_game_state = {0}; // ✅ Zero-initialized struct
+
 /*
 Will be added when needed
 typedef struct {
@@ -47,18 +117,335 @@ get_window_dimension(Display *display, Window window) {
 }
 */
 
-global_var bool g_is_running = true;
 global_var OffscreenBuffer g_backbuffer;
 
+// Real implementation (only used if joystick found)
+file_scoped_fn LINUX_JOYSTICK_READ(linux_joystick_read_impl) {
+  // This is what actually reads from /dev/input/js*
+  return read(fd, event, sizeof(*event));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 🎮 Initialize joystick (Casey's Win32LoadXInput equivalent)
+// ═══════════════════════════════════════════════════════════════
+// Dynamic loader
+file_scoped_fn bool linux_init_joystick(GameState *game_state) {
+  printf("Searching for gamepad...\n");
+
+  const char *device_paths[] = {"/dev/input/js0", "/dev/input/js1",
+                                "/dev/input/js2", "/dev/input/js3"};
+
+  for (int i = 0; i < 4; i++) {
+    int fd = open(device_paths[i], O_RDONLY | O_NONBLOCK);
+
+    if (fd >= 0) {
+      char name[128] = {0};
+      if (ioctl(fd, JSIOCGNAME(sizeof(name)), name) >= 0) {
+
+        // Skip virtual devices
+        if (strstr(name, "virtual") || strstr(name, "keyd")) {
+          close(fd);
+          continue;
+        }
+
+        // Found real gamepad! Replace stub with real function
+        game_state->gamepad_id = fd;
+
+        // Create wrapper function that uses our fd
+        // (Linux doesn't have DLLs, but we can still use the pattern!)
+        LinuxJoystickRead_ = linux_joystick_read_impl; // Real implementation
+
+        printf("✅ Joystick connected: %s\n", name);
+        return true;
+      }
+      close(fd);
+    }
+  }
+
+  // No joystick found - LinuxJoystickRead_ stays pointing to stub
+  printf("❌ No gamepad found - using stub\n");
+  game_state->gamepad_id = -1;
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 🎮 Poll joystick state (Casey's XInputGetState equivalent)
+// ═══════════════════════════════════════════════════════════════
+
+file_scoped_fn void linux_poll_joystick(GameState *game_state) {
+  if (game_state->gamepad_id < 0) {
+    return;
+  }
+
+  struct js_event event;
+
+  while (LinuxJoystickRead(game_state->gamepad_id, &event) == sizeof(event)) {
+
+    if (event.type & JS_EVENT_INIT) {
+      continue;
+    }
+
+    // NOTE: Ignore the joystick for now since I don't have them
+
+    // ═══════════════════════════════════════════════════════════
+    // 🎮 BUTTON EVENTS
+    // ═══════════════════════════════════════════════════════════
+    if (event.type == JS_EVENT_BUTTON) {
+      bool is_pressed = (event.value != 0);
+
+      // ───────────────────────────────────────────────────────
+      // PS4/PS5 "Wireless Controller" Button Mapping
+      // ───────────────────────────────────────────────────────
+      // Button layout (PlayStation naming):
+      //   0 = X (cross)     - South button
+      //   1 = O (circle)    - East button
+      //   3 = □ (square)    - West button
+      //   2 = △ (triangle)  - North button
+      //   4 = L1 (left bumper)
+      //   5 = R1 (right bumper)
+      //   6 = L2 (left trigger button, not analog value!)
+      //   7 = R2 (right trigger button, not analog value!)
+      //   8 = Share (PS4) / Create (PS5)
+      //   9 = Options (PS4/PS5)
+      //  10 = L3 (left stick button)
+      //  11 = R3 (right stick button)
+      //  12 = PS button (PlayStation logo)
+      //  13 = Touchpad button (PS4/PS5)
+      // ───────────────────────────────────────────────────────
+
+      switch (event.number) {
+      // Face buttons (cross, circle, square, triangle)
+      case 0: // X (cross) - Map to A button
+        game_state->controls.a_button = is_pressed;
+        if (is_pressed)
+          printf("Button X (cross) pressed\n");
+        break;
+
+      case 1: // O (circle) - Map to B button
+        game_state->controls.b_button = is_pressed;
+        if (is_pressed)
+          printf("Button O (circle) pressed\n");
+        break;
+
+      case 3: // □ (square) - Map to X button
+        game_state->controls.x_button = is_pressed;
+        if (is_pressed)
+          printf("Button □ (square) pressed\n");
+        break;
+
+      case 2: // △ (triangle) - Map to Y button
+        game_state->controls.y_button = is_pressed;
+        if (is_pressed)
+          printf("Button △ (triangle) pressed\n");
+        break;
+
+      // Shoulder buttons
+      case 4: // L1
+        game_state->controls.left_shoulder = is_pressed;
+        if (is_pressed)
+          printf("Button L1 pressed\n");
+        break;
+
+      case 5: // R1
+        game_state->controls.right_shoulder = is_pressed;
+        if (is_pressed)
+          printf("Button R1 pressed\n");
+        break;
+
+      // Trigger buttons (L2/R2 as digital buttons)
+      // Note: Analog values are on axes 3 and 4
+      case 6: // L2 button
+        if (is_pressed)
+          printf("Button L2 pressed\n");
+        break;
+
+      case 7: // R2 button
+        if (is_pressed)
+          printf("Button R2 pressed\n");
+        break;
+
+      // Menu buttons
+      case 8: // Share/Create - Map to Back
+        game_state->controls.back = is_pressed;
+        if (is_pressed)
+          printf("Button Share/Create pressed\n");
+        break;
+
+      case 9: // Options - Map to Start
+        game_state->controls.start = is_pressed;
+        if (is_pressed)
+          printf("Button Options pressed\n");
+        break;
+
+      // Stick buttons
+      case 11: // L3 (left stick click)
+        if (is_pressed)
+          printf("Button L3 (left stick) pressed\n");
+        break;
+
+      case 12: // R3 (right stick click)
+        if (is_pressed)
+          printf("Button R3 (right stick) pressed\n");
+        break;
+
+      // Special buttons
+      case 10: // PS button
+        if (is_pressed)
+          printf("Button PS (logo) pressed\n");
+        break;
+
+      case 13: // Touchpad button
+        if (is_pressed)
+          printf("Button Touchpad pressed\n");
+        break;
+
+      default:
+        // Unknown button
+        if (is_pressed) {
+          printf("Unknown button %d pressed\n", event.number);
+        }
+        break;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 🎮 AXIS EVENTS (Analog Sticks + Triggers + D-Pad)
+    // ═══════════════════════════════════════════════════════════
+    else if (event.type == JS_EVENT_AXIS) {
+
+      // ───────────────────────────────────────────────────────
+      // PS4/PS5 "Wireless Controller" Axis Mapping
+      // ───────────────────────────────────────────────────────
+      // Axes:
+      //   0 = Left stick X    (-32767 left, +32767 right)
+      //   1 = Left stick Y    (-32767 up,   +32767 down)
+      //   2 = Right stick X   (-32767 left, +32767 right)
+      //   3 = L2 trigger      (0 released, +32767 pressed)
+      //   4 = R2 trigger      (0 released, +32767 pressed)
+      //   5 = Right stick Y   (-32767 up,   +32767 down)
+      //   6 = D-pad X         (-32767 left, +32767 right)
+      //   7 = D-pad Y         (-32767 up,   +32767 down)
+      // ───────────────────────────────────────────────────────
+
+      switch (event.number) {
+      // ───────────────────────────────────────────────────────
+      // Left Stick (axes 0-1)
+      // ───────────────────────────────────────────────────────
+      case 0:
+        game_state->controls.left_stick_x = event.value;
+        printf("Left Stick X\n");
+        break;
+      case 1:
+        game_state->controls.left_stick_y = event.value;
+        printf("Left Stick Y\n");
+        break;
+
+      // ───────────────────────────────────────────────────────
+      // Right Stick (axes 2, 5) ← NOTE: Y is axis 5, not 3!
+      // ───────────────────────────────────────────────────────
+      case 3: // L2 trigger X
+        printf("Right Stick X\n");
+        // Optional: Store trigger pressure if you need it
+        game_state->controls.right_stick_x = event.value;
+        break;
+      case 4: // R2 trigger Y
+        printf("Right Stick Y\n");
+        game_state->controls.right_stick_y = event.value;
+        break;
+
+      // ───────────────────────────────────────────────────────
+      // Triggers (analog, 0 to +32767)
+      // ───────────────────────────────────────────────────────
+      case 2:
+        game_state->controls.left_trigger = event.value;
+        printf("L2 trigger\n");
+        break;
+      case 5: // ← Right stick Y is axis 5!
+        game_state->controls.right_trigger = event.value;
+        printf("R2 trigger\n");
+        break;
+
+      // ───────────────────────────────────────────────────────
+      // D-PAD (axes 6-7) ✅ You already have this working!
+      // ───────────────────────────────────────────────────────
+      case 6: { // D-pad horizontal
+        if (event.value < -16384) {
+          game_state->controls.left = true;
+          game_state->controls.right = false;
+          printf("D-pad LEFT\n");
+        } else if (event.value > 16384) {
+          game_state->controls.right = true;
+          game_state->controls.left = false;
+          printf("D-pad RIGHT\n");
+        } else {
+          game_state->controls.left = false;
+          game_state->controls.right = false;
+        }
+        break;
+      }
+
+      case 7: { // D-pad vertical
+        if (event.value < -16384) {
+          game_state->controls.up = true;
+          game_state->controls.down = false;
+          printf("D-pad UP\n");
+        } else if (event.value > 16384) {
+          game_state->controls.down = true;
+          game_state->controls.up = false;
+          printf("D-pad DOWN\n");
+        } else {
+          game_state->controls.up = false;
+          game_state->controls.down = false;
+        }
+        break;
+      }
+      default:
+        printf("D-pad number: %d, value: %d\n", event.number, event.value);
+      }
+    }
+  }
+}
+
+file_scoped_fn void linux_handle_controls(GameState *game_state) {
+
+  if (game_state->controls.up) {
+    game_state->gradient.offset_y += game_state->speed;
+  }
+  if (game_state->controls.left) {
+    game_state->gradient.offset_x += game_state->speed;
+  }
+  if (game_state->controls.down) {
+    game_state->gradient.offset_y -= game_state->speed;
+  }
+  if (game_state->controls.right) {
+    game_state->gradient.offset_x -= game_state->speed;
+  }
+
+  if (game_state->gamepad_id >= 0) {
+    // Same math as Casey! (>> 12 = divide by 4096)
+    // This converts -32767..+32767 to about -8..+8 pixels/frame
+    game_state->gradient.offset_x -= game_state->controls.left_stick_x >> 12;
+    game_state->gradient.offset_y -= game_state->controls.left_stick_y >> 12;
+
+    // Optional: Start button resets
+    if (game_state->controls.start) {
+      game_state->gradient.offset_x = 0;
+      game_state->gradient.offset_y = 0;
+      printf("START pressed - reset offsets\n");
+    }
+  }
+}
+
 file_scoped_fn void render_weird_gradient(OffscreenBuffer *buffer,
-                                          int blue_offset, int green_offset) {
+
+                                          GradientState *gradient_state) {
   uint8_t *row = (uint8_t *)buffer->memory;
 
   for (int y = 0; y < buffer->height; ++y) {
     uint32_t *pixels = (uint32_t *)row;
     for (int x = 0; x < buffer->width; ++x) {
-      uint8_t blue = (x + blue_offset);
-      uint8_t green = (y + green_offset);
+      uint8_t blue = (x + gradient_state->offset_x);
+      uint8_t green = (y + gradient_state->offset_y);
 
       *pixels++ = ((green << 8) | blue);
     }
@@ -105,7 +492,7 @@ inline file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
                                               Display *display, int width,
                                               int height) {
 
-  // STEP 1: Free old buffer if it exists
+  // Free old buffer if it exists
   // This is WAVE 2 cleanup - we're changing state (window size)!
   //
   // Visual: What happens on resize
@@ -141,7 +528,7 @@ inline file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
     buffer->memory = NULL;
   }
 
-  // STEP 2: Calculate how much memory we need
+  // Calculate how much memory we need
   // Each pixel is 4 bytes (RGBA), so:
   // Total bytes = width × height × 4
   buffer->pitch = width * buffer->bytes_per_pixel; // Bytes per row
@@ -150,7 +537,7 @@ inline file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
   printf("Allocating back buffer: %dx%d (%d bytes = %.2f MB)\n", width, height,
          buffer_size, buffer_size / (1024.0 * 1024.0));
 
-  // STEP 3: Allocate pixel memory using mmap (Casey-style)
+  // Allocate pixel memory using mmap (Casey-style)
   buffer->memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE,
                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
@@ -173,7 +560,7 @@ inline file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
   // - Casey Day 25: Memory system architecture
   // - man mmap(2):  Linux virtual memory API
   // - man mprotect(2): Memory protection changes
-  // STEP 4: Create XImage wrapper
+  // Create XImage wrapper
   // XImage is like ImageData - it describes the pixel format
 
   buffer->info = XCreateImage(
@@ -258,7 +645,7 @@ static void update_window(OffscreenBuffer *buffer, Display *display,
  */
 inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
                                         Display *display, Window window, GC gc,
-                                        XEvent *event) {
+                                        XEvent *event, GameState *game_state) {
   switch (event->type) {
 
   /**
@@ -316,7 +703,7 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
     Atom wmDelete = XInternAtom(display, "WM_DELETE_WINDOW", False);
     if ((Atom)event->xclient.data.l[0] == wmDelete) {
       printf("Window close requested\n");
-      g_is_running = false; // Stop the main loop
+      game_state->is_running = false; // Stop the main loop
     }
     break;
   }
@@ -369,7 +756,110 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
    */
   case DestroyNotify: {
     printf("Window destroyed\n");
-    g_is_running = false;
+    game_state->is_running = false;
+    break;
+  }
+
+  /**
+   * KEY PRESS = KEYBOARD KEY PRESSED DOWN
+   *
+   * Casey's WM_KEYDOWN equivalent
+   */
+  case KeyPress: {
+    KeySym key = XLookupKeysym(&event->xkey, 0);
+    printf("pressed\n");
+
+    switch (key) {
+    case (XK_w):
+    case (XK_W):
+    case (XK_Up): {
+      printf("W pressed\n");
+      game_state->controls.up = true;
+      break;
+    }
+    case (XK_a):
+    case (XK_A):
+    case (XK_Left): {
+      printf("A pressed\n");
+      game_state->controls.left = true;
+      break;
+    }
+    case (XK_s):
+    case (XK_S):
+    case (XK_Down): {
+      printf("S pressed\n");
+      game_state->controls.down = true;
+      break;
+    }
+    case (XK_d):
+    case (XK_D):
+    case (XK_Right): {
+      printf("D pressed\n");
+      game_state->controls.right = true;
+      break;
+    }
+    case (XK_space): {
+      printf("SPACE pressed\n");
+      break;
+    }
+    case (XK_Escape): {
+      printf("ESCAPE pressed - exiting\n");
+      game_state->is_running = false;
+      break;
+    }
+    }
+
+    break;
+  }
+
+  /**
+   * KEY RELEASE = KEYBOARD KEY RELEASED
+   *
+   * Casey's WM_KEYUP equivalent
+   */
+  case KeyRelease: {
+    KeySym key = XLookupKeysym(&event->xkey, 0);
+
+    switch (key) {
+    case (XK_w):
+    case (XK_W):
+    case (XK_Up): {
+      printf("W released\n");
+      game_state->controls.up = false;
+      break;
+    }
+    case (XK_a):
+    case (XK_A):
+    case (XK_Left): {
+      printf("A released\n");
+      game_state->controls.left = false;
+      break;
+    }
+    case (XK_s):
+    case (XK_S):
+    case (XK_Down): {
+      printf("S released\n");
+      game_state->controls.down = false;
+      break;
+    }
+    case (XK_d):
+    case (XK_D):
+    case (XK_Right): {
+      printf("D released\n");
+      game_state->controls.right = false;
+      break;
+    }
+    case (XK_space): {
+      printf("SPACE released\n");
+      break;
+    }
+    case (XK_Escape): {
+      printf("ESCAPE released - exiting\n");
+      game_state->is_running = false;
+      break;
+    }
+    }
+
     break;
   }
 
@@ -401,8 +891,13 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
  * 5. Clean up (like componentWillUnmount in React)
  */
 int platform_main() {
+  // ═══════════════════════════════════════════════════════════
+  // 🎮 Initialize joystick BEFORE main loop (Casey's pattern)
+  // ═══════════════════════════════════════════════════════════
+  linux_init_joystick(&g_game_state);
+
   /**
-   * STEP 1: CONNECT TO X SERVER
+   * CONNECT TO X SERVER
    *
    * XOpenDisplay(NULL) connects to the default display.
    * Display is like a connection to the windowing system.
@@ -420,7 +915,7 @@ int platform_main() {
   printf("Connected to X server\n");
 
   /**
-   * STEP 2: GET SCREEN INFO
+   * GET SCREEN INFO
    *
    * X11 supports multiple screens (monitors).
    * We'll use the default screen.
@@ -429,6 +924,16 @@ int platform_main() {
    */
   int screen = DefaultScreen(display);
   Window root = RootWindow(display, screen);
+
+  // g_game_state.controls = {0};
+  // g_game_state.gradient = {0};
+  // g_game_state.speed = 1;
+
+  g_game_state.controls = (GameControls){0};
+  g_game_state.gradient = (GradientState){0};
+  g_game_state.pixel = (PixelState){0};
+  g_game_state.speed = 1;
+  g_game_state.is_running = true;
 
   g_backbuffer.info = NULL;
   // g_backbuffer.memory = NULL;
@@ -460,7 +965,7 @@ int platform_main() {
   );
 
   /**
-   * STEP 3: CREATE THE WINDOW
+   * CREATE THE WINDOW
    *
    * This is like:
    * const div = document.createElement('div');
@@ -491,7 +996,7 @@ int platform_main() {
   printf("Created window\n");
 
   /**
-   * STEP 4: SET WINDOW TITLE
+   * SET WINDOW TITLE
    *
    * Like document.title = "Handmade Hero"
    *
@@ -500,7 +1005,7 @@ int platform_main() {
   XStoreName(display, window, "Handmade Hero");
 
   /**
-   * STEP 5: REGISTER FOR WINDOW CLOSE EVENT
+   * REGISTER FOR WINDOW CLOSE EVENT
    *
    * By default, clicking X just closes the window without notifying us.
    * We need to tell X11 we want to handle the close event ourselves.
@@ -510,15 +1015,15 @@ int platform_main() {
    *   e.preventDefault(); // We handle it ourselves
    * });
    *
-   * WM_DELETE_WINDOW is a protocol that says "let me know when user wants to
-   * close"
+   * WM_DELETE_WINDOW is a protocol that says "let me know when user wants
+   * to close"
    */
   Atom wmDeleteMsg = XInternAtom(display, "WM_DELETE_WINDOW", false);
   XSetWMProtocols(display, window, &wmDeleteMsg, 1);
   printf("Registered close event handler\n");
 
   /**
-   * STEP 6: SELECT EVENTS WE WANT TO RECEIVE
+   * SELECT EVENTS WE WANT TO RECEIVE
    *
    * Like calling addEventListener() for specific events.
    * We tell X11 which events we care about.
@@ -533,12 +1038,14 @@ int platform_main() {
   XSelectInput(display, window,
                ExposureMask |            // Repaint events (WM_PAINT)
                    StructureNotifyMask | // Resize events (WM_SIZE)
-                   FocusChangeMask       // Focus events (WM_ACTIVATEAPP)
+                   FocusChangeMask |     // Focus events (WM_ACTIVATEAPP)
+                   KeyPressMask |        // Key press events
+                   KeyReleaseMask        // Key release events
   );
   printf("Registered event listeners\n");
 
   /**
-   * STEP 7: SHOW THE WINDOW
+   * SHOW THE WINDOW
    *
    * Like element.style.display = 'block'
    * or element.classList.remove('hidden')
@@ -554,7 +1061,7 @@ int platform_main() {
   GC gc = XCreateGC(display, window, 0, NULL);
 
   /**
-   * STEP 7.5: ALLOCATE INITIAL BACK BUFFER
+   * : ALLOCATE INITIAL BACK BUFFER
    *
    * We need to create the back buffer BEFORE entering the event loop
    * so we have something to draw to!
@@ -566,11 +1073,9 @@ int platform_main() {
                      g_backbuffer.height);
 
   int test_offset = 0;
-  int test_y = 0;
-  int test_x = 0;
 
   /**
-   * STEP 8: EVENT LOOP (THE HEART OF THE PROGRAM)
+   * EVENT LOOP (THE HEART OF THE PROGRAM)
    *
    * This is like:
    * while (true) {
@@ -595,9 +1100,8 @@ int platform_main() {
    * (when user closes the window)
    */
   printf("Entering event loop...\n");
-  int x_offset = 0;
-  int y_offset = 0;
-  while (g_is_running) {
+
+  while (g_game_state.is_running) {
     XEvent event;
 
     // /**
@@ -612,8 +1116,18 @@ int platform_main() {
 
     while (XPending(display) > 0) {
       XNextEvent(display, &event);
-      handle_event(&g_backbuffer, display, window, gc, &event);
+      handle_event(&g_backbuffer, display, window, gc, &event, &g_game_state);
     }
+    // ═══════════════════════════════════════════════════════
+    // 🎮 Poll joystick (Casey's XInputGetState pattern)
+    // ═══════════════════════════════════════════════════════
+    linux_poll_joystick(&g_game_state);
+
+    // // ═══════════════════════════════════════════════════════
+    // // 🎮 Use joystick input to control gradient
+    // // ═══════════════════════════════════════════════════════
+    linux_handle_controls(&g_game_state);
+
     // /**
     //  * HANDLE THE EVENT
     //  *
@@ -636,19 +1150,20 @@ int platform_main() {
     if (g_backbuffer.memory) {
       uint32_t *pixels = (uint32_t *)g_backbuffer.memory;
       int total_pixels = g_backbuffer.width * g_backbuffer.height;
-      render_weird_gradient(&g_backbuffer, x_offset, y_offset);
+      render_weird_gradient(&g_backbuffer, &g_game_state.gradient);
 
-      if (test_x + 1 < g_backbuffer.width - 1) {
-        test_x += 1;
+      if (g_game_state.pixel.offset_x + 1 < g_backbuffer.width - 1) {
+        g_game_state.pixel.offset_x += 1;
       } else {
-        test_x = 0;
-        if (test_y + 75 < g_backbuffer.height - 1) {
-          test_y += 75;
+        g_game_state.pixel.offset_x = 0;
+        if (g_game_state.pixel.offset_y + 75 < g_backbuffer.height - 1) {
+          g_game_state.pixel.offset_y += 75;
         } else {
-          test_y = 0;
+          g_game_state.pixel.offset_y = 0;
         }
       }
-      test_offset = test_y * g_backbuffer.width + test_x;
+      test_offset = g_game_state.pixel.offset_y * g_backbuffer.width +
+                    g_game_state.pixel.offset_x;
 
       if (test_offset < total_pixels)
         pixels[test_offset] = 0xFF0000;
@@ -656,7 +1171,7 @@ int platform_main() {
       update_window(&g_backbuffer, display, window, gc, 0, 0,
                     g_backbuffer.width, g_backbuffer.height);
 
-      x_offset++;
+      // offset_x++;
     }
   }
 
@@ -684,7 +1199,7 @@ int platform_main() {
   // a diagonal with a steeper slope (1 pixel right, 800 pixels down)
 
   /**
-   * STEP 9: CLEANUP - CASEY'S "RESOURCE LIFETIMES IN WAVES" PHILOSOPHY
+   * CLEANUP - CASEY'S "RESOURCE LIFETIMES IN WAVES" PHILOSOPHY
    *
    * ═══════════════════════════════════════════════════════════════════════
    * IMPORTANT: Read Casey's Day 3 explanation about resource management!
@@ -760,9 +1275,9 @@ int platform_main() {
    * "If we actually put in code that closes our window before we exit,
    *  we are WASTING THE USER'S TIME. When you exit, Windows will bulk
    *  clean up all of our Windows, all of our handles, all of our memory -
-   *  everything gets cleaned up by Windows. If you've ever had one of those
-   *  applications where you try to close it and it takes a while to close
-   *  down... honestly, a big cause of that is this sort of thing."
+   *  everything gets cleaned up by Windows. If you've ever had one of
+   * those applications where you try to close it and it takes a while to
+   * close down... honestly, a big cause of that is this sort of thing."
    *
    * WEB DEV ANALOGY:
    * JavaScript: const buffer = new Uint8Array(1000000);
@@ -776,7 +1291,8 @@ int platform_main() {
    * EXCEPTION - WHEN TO MANUALLY CLEAN:
    * Only clean up resources that are NOT process-lifetime:
    * - Switching levels → Free old level assets, load new ones
-   * - Resizing window → Free old buffer, allocate new one ✅ (we do this!)
+   * - Resizing window → Free old buffer, allocate new one ✅ (we do
+   * this!)
    * - Closing modal → Free modal resources, keep main window
    *
    * THE BOTTOM LINE:
