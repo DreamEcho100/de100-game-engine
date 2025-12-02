@@ -18,6 +18,10 @@
 - [How 99% of C Tutorials Get it Wrong](https://sbaziotis.com/uncat/how-c-tutorials-get-it-wrong.html)
 - [Cache-Friendly Code](https://www.baeldung.com/cs/cache-friendly-code)
 
+## YouTube Playlists
+
+- [Beginner C Videos By - Jacob Sorber _(@JacobSorber)_](https://www.youtube.com/playlist?list=PL9IEJIKnBJjG5H0ylFAzpzs9gSmW_eICB)
+
 ## Days summary
 
 ### **Day 1-2**
