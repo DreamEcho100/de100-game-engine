@@ -295,3 +295,101 @@ while (g_is_running) {
 | **Fixed buffer**          | -                     | -                  | ✅ No resize       |
 | **GC reuse**              | -                     | -                  | ✅ Wave 1 resource |
 | **Lowercase naming**      | -                     | -                  | ✅ Consistency     |
+
+---
+
+### 🎮 **Day 6 Git - Controller Input (Gamepad/Keyboard)**
+
+#### **CoreDay 6 Git - Concepts Learned**
+
+1. **Input Abstraction Layer**
+
+   - Separate input reading from game logic
+   - Store button states in structs (`GameControls`)
+   - Multiple input sources → unified control state
+
+2. **Linux Joystick API** (`/dev/input/js*`)
+
+   - File descriptors for device access
+   - `O_NONBLOCK` flag (non-blocking reads)
+   - `struct js_event` (time, value, type, number)
+   - Skip `JS_EVENT_INIT` events (synthetic startup data)
+
+3. **PS4 Controller Quirks**
+
+   - D-pad = axes 6-7, not buttons (hardware mapping difference)
+   - Right stick Y = axis 5 (not axis 3!)
+   - Threshold ±16384 for digital D-pad detection (deadzone)
+
+4. **Bit Manipulation**
+
+   - `>> 12` = divide by 4096 (fast integer math)
+   - Converts stick range (-32767 to +32767) → pixels per frame (-8 to +8)
+   - `& JS_EVENT_INIT` = bitwise AND to filter event types
+
+5. **Analog vs Digital Input**
+
+   - Digital (D-pad/keyboard): Fixed speed, boolean state
+   - Analog (sticks): Variable speed, proportional to tilt
+
+6. **Casey's Input Philosophy**
+
+   - Poll input every frame (game loop), don't wait for events
+   - Store state, don't execute actions directly in event handlers
+   - Integer math >> floating point (performance + predictability)
+
+7. **Raylib Cross-Platform Gamepad**
+
+   - `IsGamepadAvailable(0..3)` checks 4 controller slots
+   - `IsGamepadButtonDown()` semantic names (not raw numbers)
+   - `GetGamepadAxisMovement()` normalized floats (-1.0 to +1.0)
+   - Automatically handles Xbox/PS/Nintendo controller differences
+
+8. **X11 Keyboard Input**
+
+   - `KeyPressMask` + `KeyReleaseMask` in `XSelectInput()`
+   - `XLookupKeysym()` converts keycodes to symbols (`XK_w`, `XK_Escape`)
+   - Track key states manually (up/down boolean flags)
+
+9. **Event Loop Pattern**
+
+   ```
+   1. Process all pending events (X11/keyboard)
+   2. Poll joystick (non-blocking read)
+   3. Apply controls to game state
+   4. Render frame
+   ```
+
+10. **Resource Management**
+    - Initialize joystick **before** main loop (Casey's pattern)
+    - No cleanup needed for file descriptors (OS handles on exit)
+    - Global `GameState` struct avoids excessive pointer passing
+
+---
+
+### 🐛 **Day 6 Git - Common Pitfalls Fixed**
+
+- Forgot `KeyPressMask` in `XSelectInput()` (keyboard ignored)
+- PS4 D-pad uses axes, not buttons (Xbox uses buttons)
+- Right stick axes swapped (case 2/5 vs 3/4)
+- Button numbers off-by-one (L3=10, R3=11, PS=12, not 11/12/10)
+- Debug spam from axis events (print only on button presses)
+- Blocking `read()` without `O_NONBLOCK` (freezes game loop)
+
+---
+
+### 📊 **Day 6 Git - Architecture Choices**
+
+| Decision                             | Why                                              |
+| ------------------------------------ | ------------------------------------------------ |
+| Global `GameState`                   | Avoid pointer passing everywhere (Casey's Day 3) |
+| Separate `poll` + `handle` functions | Separation of concerns (input vs logic)          |
+| Store raw analog values              | Preserve full range for different sensitivities  |
+| Boolean D-pad state                  | Digital input = on/off, easy to check            |
+| `>> 12` instead of `/ 4096`          | 40× faster (1 cycle vs 20-40 cycles)             |
+
+---
+
+### 🎯 **Day 6 Git - Key Takeaway**
+
+**Day 6 = Input-driven gameplay.** Removed auto-increment, added controller + keyboard control. Game now responds to user input at 60 FPS using Casey's polling pattern, not event-driven GUI pattern.
