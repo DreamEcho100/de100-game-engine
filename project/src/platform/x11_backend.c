@@ -86,9 +86,6 @@ typedef struct {
   int16_t right_stick_y;
   int16_t left_trigger;
   int16_t right_trigger;
-
-  GradientState gradient_state;
-
 } GameControls;
 
 typedef struct {
@@ -96,8 +93,8 @@ typedef struct {
   GradientState gradient;
   PixelState pixel;
   int speed;
-  bool is_running;
   int gamepad_id;
+  bool is_running;
 } GameState;
 
 global_var GameState g_game_state = {0}; // ✅ Zero-initialized struct
