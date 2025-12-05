@@ -18,7 +18,7 @@ SRC="src/main.c src/game/game.c"
 
 if [ "$BACKEND" = "x11" ]; then
     FLAGS="$FLAGS -DUSE_X11 -lX11"
-    SRC="$SRC src/platform/x11_backend.c"
+    SRC="$SRC src/platform/x11/backend.c"
 elif [ "$BACKEND" = "raylib" ]; then
     FLAGS="$FLAGS -DUSE_RAYLIB -lraylib -lm -ldl -lpthread"
     SRC="$SRC src/platform/raylib_backend.c"
