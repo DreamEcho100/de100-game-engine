@@ -403,6 +403,169 @@ file_scoped_fn void linux_poll_joystick(GameState *game_state) {
   }
 }
 
+// NEW: Helper function to change frequency
+inline void set_tone_frequency(int hz) {
+  g_sound_output.tone_hz = (int)hz;
+  g_sound_output.wave_period =
+      g_sound_output.samples_per_second / g_sound_output.tone_hz;
+  g_sound_output.half_wave_period = g_sound_output.wave_period / 2;
+
+  // Optional: reset phase to avoid clicks
+  g_sound_output.running_sample_index = 0;
+}
+
+// Fun test
+inline file_scoped_fn void handle_update_tone_frequency(int hz_to_add) {
+  int new_hz = g_sound_output.tone_hz + hz_to_add;
+  // Clamp to safe range
+  if (new_hz < 60)
+    new_hz = 60;
+  if (new_hz > 1000)
+    new_hz = 1000;
+
+  set_tone_frequency((float)new_hz);
+
+  printf("🎵 Tone frequency: %d Hz (period: %d samples)\n", new_hz,
+         g_sound_output.wave_period);
+}
+
+inline file_scoped_fn void handle_increase_volume(int num) {
+  int new_volume = g_sound_output.tone_volume + num;
+
+  // Clamp to safe range
+  if (new_volume < 0)
+    new_volume = 0;
+  if (new_volume > 15000)
+    new_volume = 15000;
+
+  g_sound_output.tone_volume = new_volume;
+  printf("🔊 Volume: %d / %d (%.1f%%)\n", new_volume, 15000,
+         (new_volume * 100.0f) / 15000);
+}
+
+// Fun test
+inline file_scoped_fn void handleMusicalkeypress(KeySym keysym) {
+  switch (keysym) {
+  case XK_z:
+    set_tone_frequency((int)261.63f);
+    printf("🎵 Note: C4 (261.63 Hz)\n");
+    break;
+  case XK_x:
+    set_tone_frequency((int)293.66f);
+    printf("🎵 Note: D4 (293.66 Hz)\n");
+    break;
+  case XK_c:
+    set_tone_frequency((int)329.63f);
+    printf("🎵 Note: E4 (329.63 Hz)\n");
+    break;
+  case XK_v:
+    set_tone_frequency((int)349.23f);
+    printf("🎵 Note: F4 (349.23 Hz)\n");
+    break;
+  case XK_b:
+    set_tone_frequency((int)392.00f);
+    printf("🎵 Note: G4 (392.00 Hz)\n");
+    break;
+  case XK_n:
+    set_tone_frequency((int)440.00f);
+    printf("🎵 Note: A4 (440.00 Hz) - Concert Pitch\n");
+    break;
+  case XK_m:
+    set_tone_frequency((int)493.88f);
+    printf("🎵 Note: B4 (493.88 Hz)\n");
+    break;
+  case XK_comma:
+    set_tone_frequency((int)523.25f);
+    printf("🎵 Note: C5 (523.25 Hz)\n");
+    break;
+  }
+}
+
+// Fun test
+
+/**
+ * **Linear vs Equal-Power Panning:**
+ *
+ *
+ * ```
+ * Linear Panning (simple):
+ *
+ * ────────────────────────────
+ *
+ * Pan center: both channels at 50%
+ * Problem: Sounds QUIETER in center (50% + 50% ≠ 100% perceived volume)
+ *
+ * Math: L = (100-pan)/200, R = (100+pan)/200
+ *
+ *
+ * Equal-Power Panning (better):
+ *
+ * ─────────────────────────────
+ *
+ * Pan center: both channels at 70.7% (√2/2)
+ * Result: Constant perceived loudness across pan range
+ *
+ *
+ * Math: L = cos(angle), R = sin(angle)
+ *       where angle = (pan+1) * π/4
+ * ```
+ *
+ *
+ * **Why the "center dip" happens with linear:**
+ * ```
+ * Human hearing perceives power, not amplitude
+ * Power ∝ amplitude²
+ *
+ * Linear at center:
+ *     L = 0.5, R = 0.5
+ *     Total power = 0.5² + 0.5² = 0.25 + 0.25 = 0.5  ← Only 50%!
+ *
+ * Equal-power at center:
+ *     L = 0.707, R = 0.707
+ *     Total power = 0.707² + 0.707² = 0.5 + 0.5 = 1.0  ← Full 100%!
+ * ```
+ *
+ *
+ * **Visual comparison:**
+ * ```
+ * Linear Pan (has dip):
+ * Perceived  │     ╱╲
+ * Loudness   │   ╱    ╲
+ *            │ ╱        ╲
+ *            └──────────────
+ *            L    C      R
+ *
+ * Equal-Power (flat):
+ * Perceived  │ ──────────
+ * Loudness   │
+ *            │
+ *            └──────────────
+ *            L    C      R
+ * ```
+ *
+ */
+inline file_scoped_fn void handle_increase_pan(int num) {
+  int new_pan = g_sound_output.pan_position + num;
+  if (new_pan < -100)
+    new_pan = -100;
+  if (new_pan > 100)
+    new_pan = 100;
+
+  g_sound_output.pan_position = new_pan;
+
+  // Visual indicator
+  char indicator[50] = {0};
+  int pos =
+      (g_sound_output.pan_position + 100) * 20 / 200; // Map -100..100 to 0..20
+  for (int i = 0; i < 21; i++) {
+    indicator[i] = (i == pos) ? '*' : '-';
+  }
+  indicator[21] = '\0';
+
+  printf("🎧 Pan: %s %+d\n", indicator, g_sound_output.pan_position);
+  printf("    L ◀%s▶ R\n", indicator);
+}
+
 file_scoped_fn void linux_handle_controls(GameState *game_state) {
 
   if (game_state->controls.up) {
@@ -423,7 +586,12 @@ file_scoped_fn void linux_handle_controls(GameState *game_state) {
     // This converts -32767..+32767 to about -8..+8 pixels/frame
     game_state->gradient.offset_x -= game_state->controls.left_stick_x >> 12;
     game_state->gradient.offset_y -= game_state->controls.left_stick_y >> 12;
-
+    if (game_state->controls.left_stick_y >> 12 != 0) {
+      handle_update_tone_frequency(game_state->controls.left_stick_y >> 12);
+    }
+    if (game_state->controls.left_stick_x >> 12 != 0) {
+      handle_update_tone_frequency(game_state->controls.left_stick_x >> 12);
+    }
     // Optional: Start button resets
     if (game_state->controls.start) {
       game_state->gradient.offset_x = 0;
@@ -766,7 +934,41 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
     KeySym key = XLookupKeysym(&event->xkey, 0);
     printf("pressed\n");
 
+    handleMusicalkeypress(key);
+
     switch (key) {
+    case XK_braceleft: // Sometimes not detected!{ // [ key (Shift for {)
+    {
+      printf("{ or [ pressed\n");
+      handle_increase_volume(-500);
+      break;
+    }
+    case XK_bracketleft: // [ key (Shift for {)
+    {
+      if (event->xkey.state & ShiftMask) {
+        printf("{ pressed (Shift + [)\n");
+        handle_increase_volume(-500);
+      } else {
+        handle_increase_pan(-10);
+      }
+      break;
+    }
+    case XK_braceright: // Sometimes not detected!{ // ] key (Shift for })
+    {
+      printf("} or ] pressed\n");
+      handle_increase_volume(500);
+      break;
+    }
+    case XK_bracketright: // [ key (Shift for {)
+    {
+      if (event->xkey.state & ShiftMask) {
+        printf("{ pressed (Shift + ])\n");
+        handle_increase_volume(500);
+      } else {
+        handle_increase_pan(10);
+      }
+      break;
+    }
     case (XK_w):
     case (XK_W):
     case (XK_Up): {
@@ -1200,6 +1402,18 @@ int platform_main() {
 
       // offset_x++;
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // 🆕 Day 8: Fill and write audio buffer every frame
+    // ═══════════════════════════════════════════════════════════
+    //
+    // Casey calls this in the main loop after rendering.
+    // We generate samples and write them to ALSA.
+    //
+    // NOTE: ALSA handles playback automatically once we start
+    // writing. No explicit "Play()" call needed!
+    // ═══════════════════════════════════════════════════════════
+    linux_fill_sound_buffer();
   }
 
   /**

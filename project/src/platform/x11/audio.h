@@ -3,10 +3,8 @@
 #define X11_AUDIO_H
 
 #include "../base.h"
-#include <dlfcn.h> // 🆕 For dlopen, dlsym, dlclose (Casey's LoadLibrary equivalent)
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 
 // ═══════════════════════════════════════════════════════════════
 // 🔊 ALSA AUDIO DYNAMIC LOADING (Casey's DirectSound Pattern)
@@ -46,7 +44,6 @@ typedef enum {
 typedef enum {
   LINUX_SND_PCM_STREAM_PLAYBACK = 0 //
 } linux_snd_pcm_stream_t;
-
 
 // ───────────────────────────────────────────────────────────────
 // ALSA Function Signatures (Casey's macro pattern)
@@ -100,35 +97,39 @@ ALSA_SND_PCM_WRITEI(AlsaSndPcmWriteiStub);
 
 ALSA_SND_PCM_PREPARE(AlsaSndPcmPrepareStub);
 
-ALSA_SND_PCM_CLOSE(AlsaSndPcmCloseStub) ;
+ALSA_SND_PCM_CLOSE(AlsaSndPcmCloseStub);
 
 ALSA_SND_STRERROR(AlsaSndStrerrorStub);
 
 ALSA_SND_PCM_AVAIL(AlsaSndPcmAvailStub);
 
-ALSA_SND_PCM_RECOVER(AlsaSndPcmRecoverStub) ;
- 
+ALSA_SND_PCM_RECOVER(AlsaSndPcmRecoverStub);
+
 /*
- * The keyword 'extern' is used here to declare a variable or function that is defined elsewhere,
- * typically in a corresponding .c (or .cpp) file. This tells the compiler that the actual storage
- * and initialization of the variable/function is not in this header, but will be provided at link time.
+ * The keyword 'extern' is used here to declare a variable or function that is
+ * defined elsewhere, typically in a corresponding .c (or .cpp) file. This tells
+ * the compiler that the actual storage and initialization of the
+ * variable/function is not in this header, but will be provided at link time.
  *
  * Why not use 'static'?
- * - 'static' gives the variable/function internal linkage, meaning it is only visible within the file
- *   where it is defined. If you use 'static' in a header, each source file including the header gets
- *   its own private copy, which is usually not what you want for shared variables/functions.
+ * - 'static' gives the variable/function internal linkage, meaning it is only
+ * visible within the file where it is defined. If you use 'static' in a header,
+ * each source file including the header gets its own private copy, which is
+ * usually not what you want for shared variables/functions.
  *
  * How does the definition work in both .c and .h files?
- * - In the header (.h), you use 'extern' to declare the existence of the variable/function.
- * - In one source (.c) file, you provide the actual definition (without 'extern').
- *   Example:
+ * - In the header (.h), you use 'extern' to declare the existence of the
+ * variable/function.
+ * - In one source (.c) file, you provide the actual definition (without
+ * 'extern'). Example:
  *     // In audio.h
  *     extern int audioVolume;
  *
  *     // In audio.c
  *     int audioVolume = 100;
  *
- * This way, all files including audio.h know about 'audioVolume', but only audio.c allocates storage.
+ * This way, all files including audio.h know about 'audioVolume', but only
+ * audio.c allocates storage.
  *
  * 'extern' works in both C and C++ for this purpose.
  */
@@ -151,7 +152,6 @@ extern alsa_snd_pcm_recover *SndPcmRecover_;
 #define SndPcmAvail SndPcmAvail_
 #define SndPcmRecover SndPcmRecover_
 
-
 // ───────────────────────────────────────────────────────────────
 // Sound Output State
 // ───────────────────────────────────────────────────────────────
@@ -162,11 +162,32 @@ typedef struct {
   int32_t bytes_per_sample;   // 4 (16-bit stereo)
   uint32_t buffer_size;       // Secondary buffer size in bytes
   bool is_valid;              // Did initialization succeed?
+
+  // 🆕 Day 8: Audio sample buffer (Casey's secondary buffer equivalent)
+  int16_t *sample_buffer;
+  uint32_t sample_buffer_size;
+
+  // 🆕 Day 8: Sound generation state
+  uint32_t running_sample_index;
+  int tone_hz;
+  int16_t tone_volume;
+  int wave_period;
+  int half_wave_period;
+
+  //
+  int pan_position; // -100 (left) to +100 (right)
 } LinuxSoundOutput;
 
 extern LinuxSoundOutput g_sound_output;
 
+// ═══════════════════════════════════════════════════════════════
+// 🔊 Function Declarations
+// ═══════════════════════════════════════════════════════════════
+
 void linux_load_alsa(void);
 void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes);
+
+// 🆕 Day 8: Fill buffer with square wave and write to ALSA
+void linux_fill_sound_buffer(void);
 
 #endif // X11_AUDIO_H

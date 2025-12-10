@@ -1,9 +1,142 @@
+/**
+ * @fileoverview
+ *
+ * # Handmade Hero - Day 7 & 8 Audio System Explained
+ *
+ * ## 🔊 What Day 7 Is Really About
+ *
+ * Casey introduces **audio output** using DirectSound. Here's the mental model:
+ *
+ * ```
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │                    AUDIO PIPELINE (Day 7)                       │
+ * ├─────────────────────────────────────────────────────────────────┤
+ * │                                                                 │
+ * │  Your Game          DirectSound           Sound Card            │
+ * │  ┌─────────┐       ┌───────────┐         ┌──────────┐          │
+ * │  │ Generate │  →   │ Secondary │    →    │ DAC      │  → 🔊    │
+ * │  │ Samples  │      │ Buffer    │         │ (Digital │          │
+ * │  │ (48kHz)  │      │ (Ring)    │         │  to      │          │
+ * │  └─────────┘       └───────────┘         │ Analog)  │          │
+ * │                          ↑               └──────────┘          │
+ * │                          │                                      │
+ * │                    ┌───────────┐                                │
+ * │                    │ Primary   │ ← Sets format (48kHz, 16-bit) │
+ * │                    │ Buffer    │                                │
+ * │                    └───────────┘                                │
+ * │                                                                 │
+ * └─────────────────────────────────────────────────────────────────┘
+ * ```
+ *
+ * ### Key Concepts
+ *
+ * | Concept | What It Is | Web Analogy |
+ * |---------|------------|-------------|
+ * | Sample Rate | 48000 samples/second | Like FPS but for audio |
+ * | Buffer Size | Ring buffer for audio data | Like a streaming buffer |
+ * | Primary Buffer | Sets the audio format | Like `audioContext.sampleRate` |
+ * | Secondary Buffer | Where you write samples | Like `AudioBuffer` in Web
+ * Audio | | Cooperative Level | How you share the sound card | Like exclusive
+ * fullscreen mode |
+ *
+ * ### Linux Audio System (ALSA)
+ *
+ * This is the BIG addition for Day 7. On Linux, we use **ALSA** (Advanced Linux
+ * Sound Architecture) instead of DirectSound.
+ *
+ * ```
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │              WINDOWS vs LINUX AUDIO                             │
+ * ├─────────────────────────────────────────────────────────────────┤
+ * │                                                                 │
+ * │  Windows:                      Linux:                           │
+ * │  ┌──────────────┐             ┌──────────────┐                 │
+ * │  │ DirectSound  │             │ ALSA         │                 │
+ * │  │ dsound.dll   │             │ libasound    │                 │
+ * │  └──────────────┘             └──────────────┘                 │
+ * │         ↓                            ↓                          │
+ * │  LoadLibrary()               dlopen() or link directly          │
+ * │  DirectSoundCreate()         snd_pcm_open()                    │
+ * │  SetCooperativeLevel()       snd_pcm_set_params()              │
+ * │  CreateSoundBuffer()         snd_pcm_writei()                  │
+ * │                                                                 │
+ * └─────────────────────────────────────────────────────────────────┘
+ * ```
+ *
+ * ## 🔊 Day 8 - Understanding the Ring Buffer
+ *
+ * This is **THE core concept** of Day 8. Let me explain it visually:
+ *
+ * ```
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │                      DIRECTSOUND RING BUFFER                            │
+ * ├─────────────────────────────────────────────────────────────────────────┤
+ * │                                                                         │
+ * │  The buffer is circular - when you reach the end, it wraps to start!   │
+ * │                                                                         │
+ * │  ┌────────────────────────────────────────────────────────────┐        │
+ * │  │ 0                                              BufferSize  │        │
+ * │  │ ├──────────────────────────────────────────────────────────┤        │
+ * │  │ │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│        │
+ * │  │ │              ↑                    ↑                      │        │
+ * │  │ │         PlayCursor           WriteCursor                 │        │
+ * │  │ │         (hardware             (safe to                   │        │
+ * │  │ │          reading)              write here)               │        │
+ * │  │ └──────────────────────────────────────────────────────────┘        │
+ * │  │                                                                      │
+ * │  │  ▓▓▓ = Audio being played (DON'T TOUCH!)                            │
+ * │  │  ░░░ = Safe to write new audio data                                  │
+ * │                                                                         │
+ * │  WRAP-AROUND CASE:                                                      │
+ * │  ┌────────────────────────────────────────────────────────────┐        │
+ * │  │░░░░░░░░░░▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░│        │
+ * │  │         ↑                                  ↑               │        │
+ * │  │    PlayCursor                         ByteToLock           │        │
+ * │  │                                                            │        │
+ * │  │  Region2 ◄────────────────────────────────► Region1        │        │
+ * │  │  (start of buffer)                    (end of buffer)      │        │
+ * │  └────────────────────────────────────────────────────────────┘        │
+ * │                                                                         │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ * ```
+ *
+ * ### Square Wave Generation
+ *
+ * ```
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │                      SQUARE WAVE (256 Hz)                               │
+ * ├─────────────────────────────────────────────────────────────────────────┤
+ * │                                                                         │
+ * │  ToneVolume (+3000)                                                     │
+ * │      ┌────┐    ┌────┐    ┌────┐    ┌────┐                              │
+ * │      │    │    │    │    │    │    │    │                              │
+ * │  ────┘    └────┘    └────┘    └────┘    └────                          │
+ * │                                                                         │
+ * │  -ToneVolume (-3000)                                                    │
+ * │                                                                         │
+ * │  ◄──────────────────────────────────────────►                          │
+ * │           One period = 48000/256 = 187.5 samples                        │
+ * │                                                                         │
+ * │  Casey's formula:                                                       │
+ * │  SampleValue = ((RunningSampleIndex / HalfPeriod) % 2)                 │
+ * │                ? ToneVolume : -ToneVolume                               │
+ * │                                                                         │
+ * │  Sample 0-93:   +3000  (first half)                                    │
+ * │  Sample 94-187: -3000  (second half)                                   │
+ * │  Sample 188:    +3000  (next period starts)                            │
+ * │                                                                         │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ * ```
+ *
+ */
 #include "audio.h"
 #include "../base.h"
 #include <dlfcn.h> // 🆕 For dlopen, dlsym, dlclose (Casey's LoadLibrary equivalent)
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <sys/mman.h>
 
 // ═══════════════════════════════════════════════════════════════
 // 🔊 ALSA AUDIO DYNAMIC LOADING (Casey's DirectSound Pattern)
@@ -230,9 +363,9 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
   // ───────────────────────────────────────────────────────────
 
   // Latency calculation:
-  // Casey uses ~1/15th second buffer (~66ms) in Day 7
-  // We'll use 100000 microseconds (100ms) for safety
-  unsigned int latency_us = 100000; // 100ms in microseconds
+  // 🆕 Day 8: Use shorter latency for better responsiveness
+  // Casey uses ~66ms (1/15 second), we'll use 50ms
+  unsigned int latency_us = 50000; // 50ms in microseconds
 
   err = SndPcmSetParams(g_sound_output.handle,
                         LINUX_SND_PCM_FORMAT_S16_LE,         // 16-bit signed
@@ -259,10 +392,169 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
   g_sound_output.bytes_per_sample =
       sizeof(int16_t) * 2; // 16-bit stereo = 4 bytes
   g_sound_output.buffer_size = buffer_size_bytes;
+
+  // ═══════════════════════════════════════════════════════════
+  // 🆕 Day 8: Allocate sample buffer (Casey's secondary buffer)
+  // ═══════════════════════════════════════════════════════════
+  //
+  // We need a buffer to generate samples into before writing to ALSA.
+  // Size: 1/15 second of audio (like Casey's buffer)
+  //
+  // samples_per_second / 15 = frames per write
+  // × 2 channels × 2 bytes = buffer size
+  // ═══════════════════════════════════════════════════════════
+
+  g_sound_output.sample_buffer_size = samples_per_second / 15; // ~3200 frames
+  int sample_buffer_bytes =
+      g_sound_output.sample_buffer_size * g_sound_output.bytes_per_sample;
+
+  g_sound_output.sample_buffer =
+      (int16_t *)mmap(NULL, sample_buffer_bytes, PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+  if (g_sound_output.sample_buffer == MAP_FAILED) {
+    fprintf(stderr, "❌ Sound: Cannot allocate sample buffer\n");
+    SndPcmClose(g_sound_output.handle);
+    g_sound_output.is_valid = false;
+    return;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 🆕 Day 8: Initialize sound generation parameters
+  // ═══════════════════════════════════════════════════════════
+  //
+  // Casey's Day 8 values:
+  //   ToneHz = 256 (middle C-ish)
+  //   ToneVolume = 3000 (amplitude)
+  //   SquareWavePeriod = SamplesPerSecond / ToneHz
+  // ═══════════════════════════════════════════════════════════
+  g_sound_output.running_sample_index = 0;
+  g_sound_output.tone_hz = 256;
+  g_sound_output.tone_volume = 6000;
+  g_sound_output.wave_period = samples_per_second / g_sound_output.tone_hz;
+  g_sound_output.half_wave_period = g_sound_output.wave_period / 2;
+
+  g_sound_output.pan_position = 0;
+
   g_sound_output.is_valid = true;
 
   printf("✅ Sound: Initialized!\n");
+  printf("   Sample rate:    %d Hz\n", samples_per_second);
+  printf("   Buffer size:    %d frames (~%.1f ms)\n",
+         g_sound_output.sample_buffer_size,
+         (float)g_sound_output.sample_buffer_size / samples_per_second *
+             1000.0f);
+  printf("   Tone frequency: %d Hz\n", g_sound_output.tone_hz);
+  printf("   Wave period:    %d samples\n", g_sound_output.wave_period);
   printf("   Sample rate:  %d Hz\n", samples_per_second);
   printf("   Buffer size:  %d bytes\n", buffer_size_bytes);
   printf("   Latency:      %.1f ms\n", latency_us / 1000.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 🆕 Day 8: Fill Sound Buffer with Square Wave
+// ═══════════════════════════════════════════════════════════════
+//
+// This is the Linux equivalent of Casey's Lock/Write/Unlock pattern.
+//
+// DIFFERENCE FROM DIRECTSOUND:
+// - DirectSound: Lock buffer → write → unlock → hardware plays
+// - ALSA: Fill our buffer → snd_pcm_writei() copies to hardware
+//
+// ALSA is simpler because it manages the ring buffer for us!
+// ═══════════════════════════════════════════════════════════════
+void linux_fill_sound_buffer(void) {
+  if (!g_sound_output.is_valid) {
+    return;
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Step 1: Check how many frames ALSA wants
+  // ───────────────────────────────────────────────────────────
+  // snd_pcm_avail() returns how many frames we CAN write
+  // This is like GetCurrentPosition() in DirectSound
+  // ───────────────────────────────────────────────────────────
+
+  long frames_available = SndPcmAvail(g_sound_output.handle);
+
+  if (frames_available < 0) {
+    // Error occurred (probably underrun)
+    // Try to recover
+    int err = SndPcmRecover(g_sound_output.handle, (int)frames_available, 1);
+    if (err < 0) {
+      fprintf(stderr, "❌ Sound: Recovery failed: %s\n", SndStrerror(err));
+      return;
+    }
+    frames_available = SndPcmAvail(g_sound_output.handle);
+    if (frames_available < 0) {
+      return;
+    }
+  }
+
+  // Don't write more than our buffer can hold
+  if (frames_available > (long)g_sound_output.sample_buffer_size) {
+    frames_available = g_sound_output.sample_buffer_size;
+  }
+
+  if (frames_available <= 0) {
+    return; // Buffer full, nothing to write
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Step 2: Generate square wave samples
+  // ───────────────────────────────────────────────────────────
+  //
+  // Casey's formula (Day 8):
+  //   SampleValue = ((RunningSampleIndex / HalfPeriod) % 2)
+  //                 ? ToneVolume : -ToneVolume
+  //
+  // This creates a square wave:
+  //   +3000 for first half of period
+  //   -3000 for second half of period
+  // ───────────────────────────────────────────────────────────
+
+  int16_t *sample_out = g_sound_output.sample_buffer;
+
+  for (long i = 0; i < frames_available; ++i) {
+    // Calculate sample value (Casey's exact formula)
+    int16_t sample_value = ((g_sound_output.running_sample_index /
+                             g_sound_output.half_wave_period) %
+                            2)
+                               ? g_sound_output.tone_volume
+                               : -g_sound_output.tone_volume;
+
+    int left_gain = (100 - g_sound_output.pan_position);  // 0 to 200
+    int right_gain = (100 + g_sound_output.pan_position); // 0 to 200
+
+    // Write to BOTH channels (stereo)
+    *sample_out++ = (sample_value * left_gain) / 200;  // Left channel
+    *sample_out++ = (sample_value * right_gain) / 200; // Right channel
+    //  Why divide by 200?
+    // Because gains range from 0-200, and we want 100% = 200/200 = 1.0
+
+    g_sound_output.running_sample_index++;
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Step 3: Write samples to ALSA
+  // ───────────────────────────────────────────────────────────
+  //
+  // snd_pcm_writei() copies our samples to ALSA's internal buffer.
+  // ALSA then feeds them to the sound card at the right rate.
+  //
+  // This is simpler than DirectSound's Lock/Unlock pattern!
+  // ───────────────────────────────────────────────────────────
+
+  long frames_written = SndPcmWritei(
+      g_sound_output.handle, g_sound_output.sample_buffer, frames_available);
+
+  if (frames_written < 0) {
+    // Handle errors (underrun, etc.)
+    frames_written =
+        SndPcmRecover(g_sound_output.handle, (int)frames_written, 1);
+    if (frames_written < 0) {
+      fprintf(stderr, "❌ Sound: Write failed: %s\n",
+              SndStrerror((int)frames_written));
+    }
+  }
 }
