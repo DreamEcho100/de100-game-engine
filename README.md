@@ -701,19 +701,842 @@ if (lib) {
 
 ---
 
-## 🔮 Next: Day 7 (Audio)
+### 📆 Day 7-9: Audio System - From Silence to Sine Waves 🔊
 
-Casey adds **DirectSound** on Windows. Linux equivalents:
+**Focus:** Implement cross-platform audio output with ALSA (Linux) and Raylib, progressing from square waves to sine waves with real-time control.
 
-| Windows     | Linux                      |
-| ----------- | -------------------------- |
-| DirectSound | ALSA (low-level)           |
-| XAudio2     | PulseAudio (high-level)    |
-| -           | Raylib `InitAudioDevice()` |
+---
 
-Key concepts coming:
+#### 🗓️ Commits
 
-- Ring buffer for audio samples
-- Sample rate (44100 Hz typical)
-- Channels (stereo = 2)
-- Latency management
+| Date         | Commit    | What Changed                                                                                                                                                                                         |
+| ------------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dec 5, 2025  | `9aa90bf` | **Day 7: ALSA Audio Foundation**<br>• Dynamic library loading (`dlopen`)<br>• PCM device initialization<br>• Audio parameter setup (48kHz, 16-bit stereo)                                            |
+| Dec 10, 2025 | `e3e9544` | **Day 8: Square Wave & Controls**<br>• Ring buffer implementation<br>• Square wave generation<br>• Musical keyboard (Z-X-C-V-B-N-M)<br>• Volume & pan control<br>• Analog stick frequency modulation |
+| Dec 11, 2025 | `ed5f86c` | **Day 9: Sine Wave Synthesis**<br>• Phase accumulator system<br>• Replace square wave with `sinf()`<br>• Latency calculation (1/15 sec)<br>• Phase wrapping to prevent overflow                      |
+| Dec 12, 2025 | `3d4b6eb` | **Day 9: Raylib Audio Port**<br>• Mirror X11 implementation to Raylib<br>• AudioStream callback system<br>• Cross-platform feature parity                                                            |
+
+---
+
+#### 📊 Audio Pipeline Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        AUDIO SYSTEM OVERVIEW                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Casey's Windows (DirectSound)         Your Linux (ALSA)                    │
+│  ──────────────────────────────         ────────────────────                │
+│  1. LoadLibrary("dsound.dll")           dlopen("libasound.so")              │
+│  2. DirectSoundCreate()                 snd_pcm_open()                      │
+│  3. SetCooperativeLevel()               (not needed)                        │
+│  4. CreateSoundBuffer()                 snd_pcm_set_params()                │
+│     ├─ Primary Buffer (format)          ├─ Sets format directly             │
+│     └─ Secondary Buffer (data)          └─ Internal ring buffer             │
+│  5. Lock() → Write → Unlock()           snd_pcm_writei() (simpler!)        │
+│                                                                             │
+│  Your Raylib (Cross-Platform)                                               │
+│  ─────────────────────────────                                              │
+│  1. InitAudioDevice()                   ← Built-in!                         │
+│  2. LoadAudioStream(48000, 16, 2)       ← One function call                 │
+│  3. SetAudioStreamCallback()            ← Automatic filling                 │
+│  4. PlayAudioStream()                   ← Start playback                    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 🎯 Core Concepts
+
+| Concept             | Windows (Casey)                      | Linux (Your ALSA)      | Raylib (Your Port)           |
+| ------------------- | ------------------------------------ | ---------------------- | ---------------------------- |
+| **Library Loading** | `LoadLibrary()` + `GetProcAddress()` | `dlopen()` + `dlsym()` | Built-in                     |
+| **Device Init**     | `DirectSoundCreate()`                | `snd_pcm_open()`       | `InitAudioDevice()`          |
+| **Format Setup**    | `WAVEFORMATEX` struct                | `snd_pcm_set_params()` | `LoadAudioStream()` params   |
+| **Buffer Model**    | Primary + Secondary                  | Single ring buffer     | Callback-based               |
+| **Write Pattern**   | Lock → Copy → Unlock                 | `snd_pcm_writei()`     | Callback fills automatically |
+| **Error Recovery**  | Manual state tracking                | `snd_pcm_recover()`    | Automatic                    |
+| **Sample Rate**     | 48000 Hz                             | 48000 Hz               | 48000 Hz                     |
+| **Bit Depth**       | 16-bit signed                        | 16-bit signed LE       | 16-bit signed                |
+| **Channels**        | 2 (stereo)                           | 2 (interleaved L-R)    | 2 (stereo)                   |
+| **Latency**         | ~66ms (1/15 sec)                     | ~50ms (configurable)   | ~85ms (4096 frames)          |
+
+---
+
+#### 🔊 Day 7: Audio Initialization (X11/ALSA)
+
+**Challenge:** Initialize ALSA without crashing if library missing (Casey's philosophy: graceful degradation)
+
+##### Visual: Dynamic Library Loading Pattern
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    CASEY'S DYNAMIC LOADING PATTERN                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  WHY: Don't crash if audio library missing!                                 │
+│                                                                             │
+│  STEP 1: Define function signature macros                                   │
+│  ──────────────────────────────────────                                     │
+│  #define ALSA_SND_PCM_OPEN(name) \                                          │
+│      int name(snd_pcm_t **pcm, const char *device, ...)                     │
+│                                                                             │
+│  STEP 2: Create typedef                                                     │
+│  ──────────────────────                                                     │
+│  typedef ALSA_SND_PCM_OPEN(alsa_snd_pcm_open);                              │
+│                                                                             │
+│  STEP 3: Stub implementation (fallback)                                     │
+│  ───────────────────────────────────────                                    │
+│  ALSA_SND_PCM_OPEN(AlsaSndPcmOpenStub) {                                    │
+│      return -1; // Pretend device not found                                 │
+│  }                                                                          │
+│                                                                             │
+│  STEP 4: Global function pointer (starts as stub)                           │
+│  ─────────────────────────────────────────────                              │
+│  alsa_snd_pcm_open *SndPcmOpen_ = AlsaSndPcmOpenStub;                       │
+│                                                                             │
+│  STEP 5: Try to load real function                                          │
+│  ──────────────────────────────────                                         │
+│  void *lib = dlopen("libasound.so.2", RTLD_LAZY);                           │
+│  if (lib) {                                                                 │
+│      SndPcmOpen_ = (alsa_snd_pcm_open*)dlsym(lib, "snd_pcm_open");         │
+│  }                                                                          │
+│  // If dlsym fails, stub remains! No crash! ✅                              │
+│                                                                             │
+│  STEP 6: Use clean API name                                                 │
+│  ───────────────────────────                                                │
+│  #define SndPcmOpen SndPcmOpen_                                             │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### Code Snippet 1: ALSA Initialization (audio.c)
+
+```c
+// filepath: project/src/platform/x11/audio.c
+
+void linux_load_alsa(void) {
+    printf("Loading ALSA library...\n");
+
+    // ═══════════════════════════════════════════════════════════
+    // Try multiple library names (Casey's pattern)
+    // ═══════════════════════════════════════════════════════════
+    // Like Casey tries xinput1_4.dll, then xinput1_3.dll
+    void *alsa_lib = dlopen("libasound.so.2", RTLD_LAZY);
+    if (!alsa_lib) {
+        alsa_lib = dlopen("libasound.so", RTLD_LAZY);
+    }
+
+    if (!alsa_lib) {
+        fprintf(stderr, "❌ ALSA: Could not load libasound.so: %s\n", dlerror());
+        fprintf(stderr, "   Audio disabled. Install: sudo apt install libasound2\n");
+        return; // Stubs remain - audio just won't work
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Load function pointers (Casey's GetProcAddress pattern)
+    // ═══════════════════════════════════════════════════════════
+    #define LOAD_ALSA_FN(fn_ptr, fn_name, type) \
+        fn_ptr = (type*)dlsym(alsa_lib, fn_name); \
+        if (!fn_ptr) { \
+            fprintf(stderr, "❌ ALSA: Could not load %s\n", fn_name); \
+        }
+
+    LOAD_ALSA_FN(SndPcmOpen_, "snd_pcm_open", alsa_snd_pcm_open);
+    LOAD_ALSA_FN(SndPcmSetParams_, "snd_pcm_set_params", alsa_snd_pcm_set_params);
+    LOAD_ALSA_FN(SndPcmWritei_, "snd_pcm_writei", alsa_snd_pcm_writei);
+    // ... more functions ...
+
+    #undef LOAD_ALSA_FN
+}
+
+void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
+    // ═══════════════════════════════════════════════════════════
+    // STEP 1: Open PCM device (Casey's DirectSoundCreate)
+    // ═══════════════════════════════════════════════════════════
+    int err = SndPcmOpen(&g_sound_output.handle,
+                         "default",                     // System default device
+                         LINUX_SND_PCM_STREAM_PLAYBACK, // Output
+                         0);                            // Blocking mode
+
+    if (err < 0) {
+        fprintf(stderr, "❌ Sound: Cannot open audio device: %s\n", SndStrerror(err));
+        g_sound_output.is_valid = false;
+        return;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 2: Set format parameters (Casey's WAVEFORMATEX)
+    // ═══════════════════════════════════════════════════════════
+    // Casey's values:
+    //   wBitsPerSample = 16
+    //   nChannels = 2
+    //   nSamplesPerSec = 48000
+    //   nBlockAlign = 4 (2 channels × 2 bytes)
+    //
+    // ALSA does it all in one call!
+    unsigned int latency_us = 50000; // 50ms buffer (Casey uses ~66ms)
+
+    err = SndPcmSetParams(g_sound_output.handle,
+                          LINUX_SND_PCM_FORMAT_S16_LE,         // 16-bit signed little-endian
+                          LINUX_SND_PCM_ACCESS_RW_INTERLEAVED, // L-R-L-R format
+                          2,                                   // Stereo
+                          samples_per_second,                  // 48000 Hz
+                          1,                                   // Allow resampling
+                          latency_us);                         // 50ms latency
+
+    if (err < 0) {
+        fprintf(stderr, "❌ Sound: Cannot set parameters: %s\n", SndStrerror(err));
+        SndPcmClose(g_sound_output.handle);
+        g_sound_output.is_valid = false;
+        return;
+    }
+
+    g_sound_output.is_valid = true;
+    printf("✅ Sound: Initialized at %d Hz, 16-bit stereo\n", samples_per_second);
+}
+```
+
+**Why This Works:**
+
+- ✅ No compile-time dependency on `-lasound`
+- ✅ Graceful degradation if ALSA missing
+- ✅ Exact mirror of Casey's `Win32LoadXInput` pattern
+- ✅ Function pointers allow hot-swapping implementations
+
+---
+
+#### 🎵 Day 8: Square Wave Generation
+
+**Challenge:** Implement Casey's ring buffer pattern and generate square wave audio
+
+##### Visual: Square Wave Mathematics
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      SQUARE WAVE (256 Hz at 48kHz)                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Casey's Formula:                                                           │
+│  ───────────────                                                            │
+│  SampleValue = ((RunningSampleIndex / HalfSquareWavePeriod) % 2)           │
+│                ? ToneVolume : -ToneVolume                                   │
+│                                                                             │
+│  Breakdown:                                                                 │
+│  ──────────                                                                 │
+│  1. WavePeriod = 48000 / 256 = 187.5 samples per cycle                     │
+│  2. HalfPeriod = 187.5 / 2 = 93.75 samples per half-cycle                  │
+│  3. RunningSampleIndex / 93.75 gives which half we're in                   │
+│  4. % 2 toggles between 0 and 1                                             │
+│  5. Ternary picks +3000 or -3000                                            │
+│                                                                             │
+│  Visual Output:                                                             │
+│  ──────────────                                                             │
+│  +3000 ┌────────┐          ┌────────┐          ┌────────┐                  │
+│        │        │          │        │          │        │                  │
+│      0 ┤        └──────────┘        └──────────┘        └──                │
+│        │                                                                    │
+│  -3000 └────────────────────────────────────────────────────────           │
+│                                                                             │
+│        ◄────────────────────────────────────────────►                       │
+│         One period = 187.5 samples ≈ 3.9ms at 48kHz                        │
+│         Frequency = 1 / 3.9ms = 256 Hz ✅                                   │
+│                                                                             │
+│  Sample Timeline:                                                           │
+│  ────────────────                                                           │
+│  Sample 0-93:    +3000 (first half - HIGH)                                 │
+│  Sample 94-187:  -3000 (second half - LOW)                                 │
+│  Sample 188-281: +3000 (next period starts)                                │
+│  ...                                                                        │
+│                                                                             │
+│  Why 48kHz?                                                                 │
+│  ──────────                                                                 │
+│  • Higher than CD quality (44.1kHz)                                         │
+│  • Professional audio standard                                              │
+│  • Allows frequencies up to 24kHz (Nyquist theorem: max = sample_rate/2)   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### Code Snippet 2: Square Wave Generation
+
+```c
+// filepath: project/src/platform/x11/audio.c
+
+void linux_fill_sound_buffer(void) {
+    if (!g_sound_output.is_valid) return;
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 1: Check how many frames ALSA can accept
+    // ═══════════════════════════════════════════════════════════
+    // Like Casey's GetCurrentPosition() in DirectSound
+    long frames_available = SndPcmAvail(g_sound_output.handle);
+
+    if (frames_available < 0) {
+        // ALSA underrun occurred - recover!
+        int err = SndPcmRecover(g_sound_output.handle, (int)frames_available, 1);
+        if (err < 0) {
+            fprintf(stderr, "❌ Sound: Recovery failed: %s\n", SndStrerror(err));
+            return;
+        }
+        frames_available = SndPcmAvail(g_sound_output.handle);
+    }
+
+    // Don't write more than our buffer can hold
+    if (frames_available > (long)g_sound_output.sample_buffer_size) {
+        frames_available = g_sound_output.sample_buffer_size;
+    }
+
+    if (frames_available <= 0) return; // Buffer full
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 2: Generate square wave samples (Casey's Day 8 formula)
+    // ═══════════════════════════════════════════════════════════
+    int16_t *sample_out = g_sound_output.sample_buffer;
+
+    for (long i = 0; i < frames_available; ++i) {
+        // Casey's exact formula:
+        int16_t sample_value = ((g_sound_output.running_sample_index /
+                                 g_sound_output.half_wave_period) % 2)
+                               ? g_sound_output.tone_volume
+                               : -g_sound_output.tone_volume;
+
+        // Apply panning (your extension!)
+        int left_gain = (100 - g_sound_output.pan_position);   // 0 to 200
+        int right_gain = (100 + g_sound_output.pan_position);  // 0 to 200
+
+        *sample_out++ = (sample_value * left_gain) / 200;   // Left channel
+        *sample_out++ = (sample_value * right_gain) / 200;  // Right channel
+
+        // Why divide by 200?
+        // Gains range from 0-200, we want 100% = 200/200 = 1.0
+
+        g_sound_output.running_sample_index++;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 3: Write samples to ALSA (simpler than DirectSound!)
+    // ═══════════════════════════════════════════════════════════
+    long frames_written = SndPcmWritei(
+        g_sound_output.handle,
+        g_sound_output.sample_buffer,
+        frames_available
+    );
+
+    if (frames_written < 0) {
+        // Handle errors (underrun, etc.)
+        SndPcmRecover(g_sound_output.handle, (int)frames_written, 1);
+    }
+}
+```
+
+**Key Difference from DirectSound:**
+
+- ✅ **No Lock/Unlock needed** - ALSA copies data internally
+- ✅ **No Region1/Region2 wrap-around** - ALSA handles ring buffer logic
+- ✅ **Automatic error recovery** - `snd_pcm_recover()` fixes underruns
+- ✅ **Simpler API** - One function call vs Casey's multi-step Lock/Unlock
+
+##### Code Snippet 3: Musical Keyboard Control
+
+```c
+// filepath: project/src/platform/x11/backend.c
+
+// ═══════════════════════════════════════════════════════════════
+// 🎹 Musical note frequencies (Equal Temperament)
+// ═══════════════════════════════════════════════════════════════
+// Formula: f(n) = 440 * 2^((n-49)/12)
+// Where n is the key number (A4 = 440Hz is key 49)
+//
+// C4 = 261.63 Hz (middle C)
+// A4 = 440.00 Hz (concert pitch)
+// C5 = 523.25 Hz (one octave above middle C)
+// ═══════════════════════════════════════════════════════════════
+
+inline file_scoped_fn void handle_musical_keypress(KeySym keysym) {
+    switch (keysym) {
+        case XK_z: set_tone_frequency(262); printf("🎵 Note: C4 (261.63 Hz)\n"); break;
+        case XK_x: set_tone_frequency(294); printf("🎵 Note: D4 (293.66 Hz)\n"); break;
+        case XK_c: set_tone_frequency(330); printf("🎵 Note: E4 (329.63 Hz)\n"); break;
+        case XK_v: set_tone_frequency(349); printf("🎵 Note: F4 (349.23 Hz)\n"); break;
+        case XK_b: set_tone_frequency(392); printf("🎵 Note: G4 (392.00 Hz)\n"); break;
+        case XK_n: set_tone_frequency(440); printf("🎵 Note: A4 (440.00 Hz) - Concert Pitch\n"); break;
+        case XK_m: set_tone_frequency(494); printf("🎵 Note: B4 (493.88 Hz)\n"); break;
+        case XK_comma: set_tone_frequency(523); printf("🎵 Note: C5 (523.25 Hz)\n"); break;
+    }
+}
+
+inline void set_tone_frequency(int hz) {
+    g_sound_output.tone_hz = hz;
+    g_sound_output.wave_period = g_sound_output.samples_per_second / hz;
+    g_sound_output.half_wave_period = g_sound_output.wave_period / 2;
+
+    // Optional: Reset phase to avoid clicks
+    g_sound_output.running_sample_index = 0;
+}
+```
+
+**Why This Keyboard Layout?**
+
+- ✅ **Z-X-C-V-B-N-M-Comma** = Bottom row of keyboard
+- ✅ **Matches piano white keys** (C-D-E-F-G-A-B-C)
+- ✅ **No modifier keys** = instant response
+- ✅ **Easy to play melodies** (e.g., Z-X-C = C-D-E major chord)
+
+---
+
+#### 🌊 Day 9: Sine Wave Synthesis
+
+**Challenge:** Replace harsh square wave with smooth sine wave using phase accumulator
+
+##### Visual: Phase Accumulator Explained
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        PHASE ACCUMULATOR (t_sine)                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  What is it?                                                                │
+│  ───────────                                                                │
+│  A variable that tracks "where we are" in the sine wave cycle.              │
+│  Like a clock hand rotating around a circle!                                │
+│                                                                             │
+│  Sine Wave Cycle:                                                           │
+│  ────────────────                                                           │
+│                                                                             │
+│   t_sine = 0       → sin(0)      = 0.0      (start)                         │
+│   t_sine = π/2     → sin(π/2)    = +1.0     (peak)                          │
+│   t_sine = π       → sin(π)      = 0.0      (middle)                        │
+│   t_sine = 3π/2    → sin(3π/2)   = -1.0     (trough)                        │
+│   t_sine = 2π      → sin(2π)     = 0.0      (end = start of next cycle)    │
+│                                                                             │
+│  Visual Representation:                                                     │
+│  ──────────────────                                                         │
+│                                                                             │
+│            π/2 (peak)                                                       │
+│             ↑                                                               │
+│             │                                                               │
+│   π ←───────┼───────→ 0 / 2π                                               │
+│   (middle)  │         (start/end)                                           │
+│             │                                                               │
+│             ↓                                                               │
+│           3π/2 (trough)                                                     │
+│                                                                             │
+│  Casey's Increment Formula:                                                 │
+│  ───────────────────────────                                                │
+│  t_sine += 2π / WavePeriod                                                  │
+│            ─────────────────                                                │
+│            How much of a full cycle to advance per sample                   │
+│                                                                             │
+│  Example (256 Hz, 48000 Hz sample rate):                                    │
+│  ───────────────────────────────────────────                                │
+│  WavePeriod = 48000 / 256 = 187.5 samples per cycle                        │
+│  Increment  = 2π / 187.5 ≈ 0.0335 radians per sample                       │
+│                                                                             │
+│  Sample Timeline:                                                           │
+│  ────────────────                                                           │
+│  Sample 0:    t_sine = 0          → sin(0)      = 0.0                      │
+│  Sample 1:    t_sine = 0.0335     → sin(0.0335) ≈ 0.0335                   │
+│  Sample 94:   t_sine ≈ π/2        → sin(π/2)    = 1.0    ← PEAK!           │
+│  Sample 187:  t_sine ≈ 2π         → sin(2π)     = 0.0    ← Cycle done!     │
+│  Sample 188:  t_sine = 0.0335     → Next cycle starts                       │
+│                                                                             │
+│  Why wrap at 2π?                                                            │
+│  ───────────────                                                            │
+│  • Prevents float overflow (sin() is periodic: sin(x) = sin(x + 2π))       │
+│  • Keeps precision high (large floats lose accuracy)                        │
+│  • Mathematically cleaner                                                   │
+│                                                                             │
+│  BUT: Casey doesn't wrap in Day 9! Why?                                     │
+│  ───────────────────────────────────────────                                │
+│  • Float can represent numbers up to ~3.4 × 10³⁸                            │
+│  • At 48kHz, takes YEARS to overflow                                        │
+│  • Modern CPUs handle sinf(huge_number) fine                                │
+│  • Simpler code (no extra conditional per sample)                           │
+│                                                                             │
+│  Both approaches valid - choose based on philosophy:                        │
+│  • Wrap = Mathematically pure, prevents precision loss                      │
+│  • No wrap = Simpler, Casey's pragmatic approach                            │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### Code Snippet 4: Sine Wave Generation (The Bug Fix!)
+
+```c
+// filepath: project/src/platform/x11/audio.c
+
+#include <math.h>  // For sinf()
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#ifndef M_double_PI
+#define M_double_PI (2.0f * M_PI)
+#endif
+
+void linux_fill_sound_buffer(void) {
+    // ...existing frame availability check...
+
+    int16_t *sample_out = g_sound_output.sample_buffer;
+
+    for (long i = 0; i < frames_available; ++i) {
+        // ═══════════════════════════════════════════════════════════
+        // 🆕 Day 9: Generate sine wave sample
+        // ═══════════════════════════════════════════════════════════
+        // Casey's exact formula:
+        //   SineValue = sinf(tSine);
+        //   SampleValue = (int16)(SineValue * ToneVolume);
+        //   tSine += 2π / WavePeriod;
+        // ═══════════════════════════════════════════════════════════
+
+        real32 sine_value = sinf(g_sound_output.t_sine);
+        int16_t sample_value = (int16_t)(sine_value * g_sound_output.tone_volume);
+
+        // Apply panning
+        int left_gain = (100 - g_sound_output.pan_position);
+        int right_gain = (100 + g_sound_output.pan_position);
+
+        *sample_out++ = (sample_value * left_gain) / 200;   // Left
+        *sample_out++ = (sample_value * right_gain) / 200;  // Right
+
+        // ═══════════════════════════════════════════════════════════
+        // ⚠️ CRITICAL: Use += not = !!!
+        // ═══════════════════════════════════════════════════════════
+        // ❌ WRONG: g_sound_output.t_sine = (2.0f * M_PI) / ...
+        //    This REPLACES t_sine with the same value every sample!
+        //    Result: sin(0.0335) every time → nearly constant → silence!
+        //
+        // ✅ CORRECT: g_sound_output.t_sine += (2.0f * M_PI) / ...
+        //    This ADDS to t_sine, making it grow over time
+        //    Result: sin(0), sin(0.0335), sin(0.067), ... → wave! 🔊
+        // ═══════════════════════════════════════════════════════════
+        g_sound_output.t_sine += M_double_PI / (float)g_sound_output.wave_period;
+
+        // Optional: Wrap to [0, 2π) range to prevent overflow
+        if (g_sound_output.t_sine >= M_double_PI) {
+            g_sound_output.t_sine -= M_double_PI;
+        }
+
+        g_sound_output.running_sample_index++;
+    }
+
+    // ...existing write code...
+}
+```
+
+**The Most Common Bug:**
+
+```c
+// ❌ YOUR ORIGINAL BUG (the `=` vs `+=` mistake):
+g_sound_output.t_sine = (2.0f * M_PI) / (float)g_sound_output.wave_period;
+//                      ▲
+//                      Assignment! Sets to SAME value every sample!
+
+// ✅ CORRECT (accumulate over time):
+g_sound_output.t_sine += (2.0f * M_PI) / (float)g_sound_output.wave_period;
+//                      ▲▲
+//                      Addition assignment! Grows over time!
+```
+
+**Why This Bug Causes Silence:**
+
+```
+With `=`: t_sine = 0.0335 → sin(0.0335) ≈ 0.0335 → sample ≈ 201
+         t_sine = 0.0335 → sin(0.0335) ≈ 0.0335 → sample ≈ 201
+         t_sine = 0.0335 → sin(0.0335) ≈ 0.0335 → sample ≈ 201
+         ↑ Speaker moves to position 201 and STAYS THERE → no sound!
+
+With `+=`: t_sine = 0.0000 → sin(0.0000) = 0.0000 → sample = 0
+           t_sine = 0.0335 → sin(0.0335) ≈ 0.0335 → sample ≈ 201
+           t_sine = 0.0670 → sin(0.0670) ≈ 0.0670 → sample ≈ 402
+           ↑ Speaker OSCILLATES back and forth → audible tone! 🔊
+```
+
+---
+
+#### 🎮 Day 9: Raylib Audio Port
+
+**Challenge:** Mirror X11 implementation to Raylib with feature parity
+
+##### Visual: Callback System Comparison
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     X11/ALSA vs RAYLIB AUDIO MODELS                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  X11/ALSA (Manual Polling):                                                 │
+│  ──────────────────────────────                                             │
+│  while (running) {                                                          │
+│      handle_events();                                                       │
+│      render_frame();                                                        │
+│      linux_fill_sound_buffer();  ← YOU call this every frame               │
+│  }                                                                          │
+│                                                                             │
+│  Pros: ✅ Full control over timing                                          │
+│  Cons: ❌ Must call manually every frame                                    │
+│        ❌ Risk underruns if frame takes too long                            │
+│                                                                             │
+│  ─────────────────────────────────────────────────────────────             │
+│                                                                             │
+│  Raylib (Callback System):                                                  │
+│  ──────────────────────────                                                 │
+│  SetAudioStreamCallback(stream, raylib_audio_callback);                     │
+│  PlayAudioStream(stream);                                                   │
+│                                                                             │
+│  while (running) {                                                          │
+│      handle_events();                                                       │
+│      render_frame();                                                        │
+│      UpdateAudioStream(stream, NULL, 0);  ← Just keep stream alive         │
+│  }                                                                          │
+│                                                                             │
+│  // Raylib calls raylib_audio_callback() AUTOMATICALLY when buffer needs data!│
+│  void raylib_audio_callback(void *buffer, unsigned int frames) {           │
+│      // Fill buffer (same logic as linux_fill_sound_buffer)                 │
+│  }                                                                          │
+│                                                                             │
+│  Pros: ✅ Automatic buffer filling                                          │
+│        ✅ Lower latency (runs in audio thread)                              │
+│        ✅ No underruns from slow frames                                     │
+│  Cons: ❌ Less control over exact timing                                    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### Code Snippet 5: Raylib Audio Callback
+
+```c
+// filepath: project/src/platform/raylib/audio.c
+
+void raylib_audio_callback(void *buffer, unsigned int frames) {
+    if (!g_sound_output.is_initialized) return;
+
+    int16_t *sample_out = (int16_t *)buffer;
+
+    for (unsigned int i = 0; i < frames; ++i) {
+        // ═══════════════════════════════════════════════════════════
+        // SAME logic as X11 version - just in a callback!
+        // ═══════════════════════════════════════════════════════════
+        real32 sine_value = sinf(g_sound_output.t_sine);
+        int16_t sample_value = (int16_t)(sine_value * g_sound_output.tone_volume);
+
+        // Apply panning
+        int left_gain = (100 - g_sound_output.pan_position);
+        int right_gain = (100 + g_sound_output.pan_position);
+
+        *sample_out++ = (sample_value * left_gain) / 200;   // Left
+        *sample_out++ = (sample_value * right_gain) / 200;  // Right
+
+        // Increment phase accumulator
+        g_sound_output.t_sine += M_double_PI / (real32)g_sound_output.wave_period;
+
+        // Wrap to prevent overflow
+        if (g_sound_output.t_sine >= M_double_PI) {
+            g_sound_output.t_sine -= M_double_PI;
+        }
+
+        g_sound_output.running_sample_index++;
+    }
+}
+
+void raylib_init_audio(void) {
+    InitAudioDevice();
+
+    if (!IsAudioDeviceReady()) {
+        fprintf(stderr, "❌ Audio: Device initialization failed\n");
+        return;
+    }
+
+    // Setup parameters (same as X11)
+    g_sound_output.samples_per_second = 48000;
+    g_sound_output.tone_hz = 256;
+    g_sound_output.tone_volume = 6000;
+    g_sound_output.wave_period =
+        g_sound_output.samples_per_second / g_sound_output.tone_hz;
+    g_sound_output.t_sine = 0.0f;
+
+    // Create audio stream
+    g_sound_output.stream = LoadAudioStream(48000, 16, 2);
+
+    // Attach callback (magic happens here!)
+    SetAudioStreamCallback(g_sound_output.stream, raylib_audio_callback);
+
+    // Start playback
+    PlayAudioStream(g_sound_output.stream);
+
+    g_sound_output.is_initialized = true;
+}
+```
+
+**Lines of Code Comparison:**
+
+- X11/ALSA: ~450 lines (dynamic loading + manual buffer management)
+- Raylib: ~200 lines (built-in + callback system)
+- **50% reduction** while maintaining identical audio quality!
+
+---
+
+#### 🐛 Common Pitfalls
+
+| Issue                                | Cause                                    | Fix                                              | Days Affected |
+| ------------------------------------ | ---------------------------------------- | ------------------------------------------------ | ------------- |
+| **No sound output**                  | Used `=` instead of `+=` for `t_sine`    | Change to `t_sine +=` (accumulate!)              | Day 9         |
+| **Audio underruns**                  | Buffer too small, frame takes too long   | Increase `SetAudioStreamBufferSizeDefault(8192)` | Day 7-9       |
+| **Clicking when changing frequency** | Phase discontinuity                      | Reset `t_sine = 0` in `set_tone_frequency()`     | Day 8-9       |
+| **Left/Right reversed**              | Swapped channel order                    | Check `*sample_out++` order (L then R)           | Day 8         |
+| **Volume too loud (distortion)**     | `tone_volume > 10000` clips 16-bit range | Clamp to `[-10000, 10000]`                       | Day 8-9       |
+| **Panning doesn't work**             | Forgot to divide gains by 200            | `(sample * gain) / 200`                          | Day 8         |
+| **Frequency off-pitch**              | Used `int` division instead of `float`   | `(float)samples_per_second / frequency`          | Day 8-9       |
+| **Sine sounds like square**          | Forgot `#include <math.h>`               | Add include, link with `-lm`                     | Day 9         |
+
+---
+
+#### ✅ Skills Acquired
+
+**Day 7:**
+
+- ✅ Dynamic library loading (`dlopen`/`dlsym` vs `LoadLibrary`/`GetProcAddress`)
+- ✅ Function pointer patterns for graceful degradation
+- ✅ ALSA PCM device initialization
+- ✅ Audio format negotiation (sample rate, bit depth, channels)
+- ✅ Ring buffer concepts (Casey's DirectSound model)
+
+**Day 8:**
+
+- ✅ Square wave generation with integer math
+- ✅ Musical note frequency calculation (equal temperament)
+- ✅ Stereo panning (linear gain model)
+- ✅ Real-time frequency modulation (analog stick control)
+- ✅ Keyboard input for musical notes
+- ✅ Audio underrun detection and recovery
+
+**Day 9:**
+
+- ✅ Phase accumulator system for sine wave synthesis
+- ✅ Understanding `sinf()` vs lookup tables (trade-offs)
+- ✅ Float precision management (wrapping phase vs letting it grow)
+- ✅ The critical difference between `=` and `+=`
+- ✅ Latency calculation (samples ahead vs milliseconds)
+- ✅ Cross-platform audio abstraction (Raylib port)
+- ✅ Callback-based audio systems vs manual polling
+
+**Casey's Core Philosophy Applied:**
+
+- ✅ **"Make it work, then make it right, then make it fast"** - Square wave first, sine wave later
+- ✅ **Graceful degradation** - Stub functions when libraries missing
+- ✅ **Platform abstraction** - Same logic, different APIs
+- ✅ **Incremental development** - Each day builds on previous
+
+---
+
+#### 🔮 Next Steps: Day 10 Preview
+
+**Focus:** Audio Latency Management
+
+Casey will address:
+
+- **Write cursor vs Play cursor** - How far ahead to write audio
+- **Latency measurement** - Actual vs target buffer fill
+- **Debug audio** - Visualizing audio waveforms on screen
+- **Lock/Unlock optimization** - Reducing DirectSound overhead
+
+**Your X11/Raylib equivalents:**
+
+- `snd_pcm_delay()` for latency measurement (X11)
+- Visualizing `t_sine` phase on screen
+- Optimizing buffer sizes for responsiveness vs stability
+- Raylib's automatic latency handling (less work!)
+
+**Prepare by:**
+
+1. Understanding your current `latency_sample_count` (1/15 second)
+2. Measuring actual audio delay with `clock_gettime()`
+3. Thinking about: "How do I know if audio is dropping frames?"
+
+---
+
+#### 📊 Implementation Comparison Matrix
+
+| Feature           | Windows (Casey)       | X11/ALSA (Yours)       | Raylib (Yours)             | Complexity                   |
+| ----------------- | --------------------- | ---------------------- | -------------------------- | ---------------------------- |
+| Library Loading   | `LoadLibrary()`       | `dlopen()`             | Built-in                   | X11: Medium, Raylib: Easy    |
+| Function Pointers | `GetProcAddress()`    | `dlsym()`              | N/A                        | X11: Medium, Raylib: N/A     |
+| Device Init       | `DirectSoundCreate()` | `snd_pcm_open()`       | `InitAudioDevice()`        | All: Easy                    |
+| Format Setup      | `WAVEFORMATEX` struct | `snd_pcm_set_params()` | `LoadAudioStream()` params | All: Easy                    |
+| Buffer Model      | Primary + Secondary   | Single ring            | Callback-managed           | X11: Medium, Raylib: Easy    |
+| Write Pattern     | Lock → Copy → Unlock  | `snd_pcm_writei()`     | Callback auto-fills        | X11: Medium, Raylib: Easiest |
+| Error Recovery    | Manual state check    | `snd_pcm_recover()`    | Automatic                  | X11: Medium, Raylib: Auto    |
+| Lines of Code     | ~300                  | ~450                   | ~200                       | Raylib wins!                 |
+| Platform Support  | Windows only          | Linux only             | Cross-platform             | Raylib wins!                 |
+| Learning Value    | ⭐⭐⭐⭐⭐            | ⭐⭐⭐⭐⭐             | ⭐⭐⭐                     | Casey wins!                  |
+
+---
+
+#### 🎓 Deep Dive: Why Casey Uses This Audio Model
+
+**Casey's Design Decisions:**
+
+1. **Why DirectSound?** (2014)
+
+   - Low-level control (no audio engine overhead)
+   - Predictable latency
+   - Ring buffer model teaches fundamentals
+   - **Modern equivalent:** WASAPI (Windows), ALSA (Linux), Core Audio (macOS)
+
+2. **Why 48kHz instead of 44.1kHz?**
+
+   - Professional audio standard
+   - Better high-frequency response
+   - Easier math (48000 / 256 = 187.5 vs 44100 / 256 = 172.265...)
+   - **Trade-off:** Slightly more CPU (negligible on modern hardware)
+
+3. **Why square wave before sine?**
+
+   - Simpler math (integer only, no `sinf()`)
+   - Teaches wave period calculation
+   - Debugging easier (binary high/low vs continuous)
+   - **Philosophy:** Start simple, add complexity
+
+4. **Why 16-bit audio?**
+
+   - CD quality (16-bit = 96dB dynamic range)
+   - Games don't need 24-bit studio quality
+   - Half the memory bandwidth of 32-bit float
+   - **Casey's rule:** "Good enough" beats "perfect"
+
+5. **Why phase accumulator?**
+   - Smooth frequency changes (no clicks)
+   - Simple to understand (just adding!)
+   - Matches analog synthesizer design
+   - **Alternative:** Lookup tables (faster but less flexible)
+
+---
+
+#### 📖 Further Reading
+
+**Casey's Handmade Hero Days:**
+
+- Day 7: "Initializing DirectSound" (~1 hour)
+- Day 8: "Writing a Square Wave to DirectSound" (~1.5 hours)
+- Day 9: "Variable-Pitch Sine Wave Output" (~1 hour)
+
+**ALSA Documentation:**
+
+- [ALSA PCM Tutorial](https://www.alsa-project.org/alsa-doc/alsa-lib/pcm.html)
+- [Understanding ALSA Ring Buffers](<https://www.alsa-project.org/main/index.php/Asynchronous_Playback_(Howto)>)
+
+**Audio DSP Fundamentals:**
+
+- [Sample Rate & Nyquist Theorem](https://en.wikipedia.org/wiki/Nyquist%E2%80%93Shannon_sampling_theorem)
+- [Phase Accumulator Synthesis](https://ccrma.stanford.edu/~jos/pasp/)
+- [Equal Temperament Tuning](https://pages.mtu.edu/~suits/NoteFreqCalcs.html)
+
+**Raylib Audio:**
+
+- [Raylib Audio Stream Examples](https://github.com/raysan5/raylib/blob/master/examples/audio/)
+- [AudioStream API Reference](https://www.raylib.com/cheatsheet/cheatsheet.html)
+
+---

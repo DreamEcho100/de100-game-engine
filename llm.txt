@@ -1136,3 +1136,868 @@ static float temp[4096];  // zero cost per frame
 ```
 "Indirection is expensive. Don’t use it unless there's a reason."
 ```
+
+## 16. Self-Directed Learning Exercises Design 🎯
+
+### Philosophy: Teach to Fish, Not Give Fish
+
+Every exercise should follow this principle:
+> "I will NOT give you the answer. I will give you the tools and hints to FIND the answer yourself."
+
+Exercises should be:
+- **Moderately challenging** — Not trivial, not impossible
+- **Self-verifiable** — Student knows when they've succeeded without asking
+- **Curiosity-driven** — Opens doors to explore further
+- **Resource-linked** — Points to documentation, not solutions
+
+---
+
+### 16.1 Exercise Difficulty Calibration
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    EXERCISE DIFFICULTY SPECTRUM                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ❌ TOO EASY              ✅ GOLDILOCKS ZONE           ❌ TOO HARD      │
+│  ───────────              ─────────────────           ────────────      │
+│  "Print hello world"      "Implement X with          "Write a full     │
+│  "Change color to red"     constraints Y and Z"       physics engine"  │
+│  "Copy this code"          "Debug this broken         "Optimize for    │
+│                             version"                   SIMD by hand"   │
+│                            "Extend to handle                           │
+│                             edge case Q"                               │
+│                                                                         │
+│  Signs it's too easy:     Signs it's just right:     Signs too hard:  │
+│  - Done in < 2 minutes    - Takes 15-60 minutes      - > 3 hours      │
+│  - No thinking required   - Requires research        - Needs concepts │
+│  - Exact answer given     - Multiple valid solutions   not yet taught │
+│  - Copy-paste works       - Aha! moments happen      - Frustrating    │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 16.2 Exercise Types (Use All of These)
+
+#### Type A: "Break It, Then Fix It" 🔨
+
+Give working code with a subtle bug introduced. Student must:
+1. Observe the broken behavior
+2. Hypothesize the cause
+3. Find the bug using debugging tools
+4. Fix it and verify
+
+**Example Template:**
+```
+EXERCISE: Debug the Sound Buffer
+
+The following code SHOULD play a 440Hz tone but plays silence.
+I've introduced ONE bug. Find and fix it.
+
+[Code with bug]
+
+HINTS (reveal only if stuck for 20+ minutes):
+- Hint 1: Check the buffer write logic
+- Hint 2: What happens when running_sample_index overflows?
+
+VERIFICATION: You'll hear a clear A4 note (440Hz) when fixed.
+
+DO NOT ASK THE LLM FOR THE ANSWER.
+Use: printf debugging, gdb, or add visualization.
+```
+
+---
+
+#### Type B: "Extend the Feature" 🔧
+
+Give working code, ask student to add a specific capability.
+
+**Example Template:**
+```
+EXERCISE: Add Volume Control
+
+Current: Square wave plays at fixed volume (3000).
+Goal: Make volume adjustable via keyboard (Up/Down arrows).
+
+REQUIREMENTS:
+- [ ] Up arrow increases volume by 500 (max 10000)
+- [ ] Down arrow decreases volume by 500 (min 0)
+- [ ] Current volume prints to console when changed
+
+STARTING POINT: Your current audio.c
+
+RESOURCES TO CONSULT (not solutions, just docs):
+- X11 key event handling: man XKeyEvent
+- Your existing keyboard handling in backend.c
+
+VERIFICATION:
+- Volume changes when you press keys
+- Sound gets louder/quieter audibly
+- No crashes at min/max values
+
+TIME ESTIMATE: 20-40 minutes
+```
+
+---
+
+#### Type C: "Explore and Report" 📊
+
+No coding required. Student investigates and documents findings.
+
+**Example Template:**
+```
+EXERCISE: Profile Your Audio Latency
+
+TASK: Measure the actual latency of your audio system.
+
+INVESTIGATION STEPS:
+1. Add timestamps before and after SndPcmWritei()
+2. Run for 60 seconds, collect timing data
+3. Calculate: min, max, average, standard deviation
+4. Create a simple ASCII histogram of the results
+
+QUESTIONS TO ANSWER:
+- What's your average audio latency in milliseconds?
+- Are there any spikes? When do they occur?
+- How does latency change if you resize the window while running?
+
+RESOURCES:
+- clock_gettime() documentation: man clock_gettime
+- CLOCK_MONOTONIC vs CLOCK_REALTIME - research the difference
+
+DELIVERABLE:
+Write a short text file (latency_report.txt) with your findings.
+Include your raw data and conclusions.
+
+NO CODE SOLUTION EXISTS - This is YOUR measurement.
+```
+
+---
+
+#### Type D: "Implement from Spec" 📋
+
+Give a specification, not implementation hints.
+
+**Example Template:**
+```
+EXERCISE: Implement Sine Wave (Day 9 Preview)
+
+SPECIFICATION:
+Replace the square wave with a sine wave.
+
+MATH REQUIRED:
+- sin() function from <math.h>
+- Period calculation: same as square wave
+- Amplitude: same as current tone_volume
+
+CONSTRAINTS:
+- Do NOT look at Casey's Day 9 code yet
+- Do NOT search for "sine wave audio C"
+- DO use: math.h documentation, sine wave Wikipedia article
+
+EXPECTED BEHAVIOR:
+- Smooth tone instead of harsh buzzing
+- Same frequency as before (256 Hz)
+- Same volume control works
+
+VERIFICATION:
+- Square wave sounds "buzzy" like 8-bit games
+- Sine wave sounds "smooth" like a tuning fork
+- You'll hear the difference immediately
+
+TIME ESTIMATE: 30-45 minutes
+
+AFTER COMPLETION:
+Watch Casey's Day 9 and compare your approach.
+Write down: What did you do differently? Why?
+```
+
+---
+
+#### Type E: "Research Quest" 🔍
+
+Point student to explore a topic independently.
+
+**Example Template:**
+```
+EXERCISE: Understand ALSA's Ring Buffer
+
+You've been using snd_pcm_writei() but do you understand what happens inside?
+
+RESEARCH QUESTIONS:
+1. What is a ring buffer? Draw an ASCII diagram.
+2. How does ALSA handle buffer underruns?
+3. What's the difference between "period" and "buffer" in ALSA?
+4. Why does ALSA need two cursors (play and write)?
+
+RESOURCES TO START WITH:
+- ALSA documentation: https://www.alsa-project.org/alsa-doc/alsa-lib/pcm.html
+- Search term: "ALSA PCM ring buffer explained"
+- Command to explore: `aplay --dump-hw-params /dev/zero`
+
+DELIVERABLE:
+Create a file: docs/alsa_notes.md
+- Include your ASCII diagram of the ring buffer
+- Explain in YOUR words how it works
+- List 3 things that surprised you
+
+NO COPYING ALLOWED - Rewrite in your own words.
+If you can't explain it simply, you don't understand it yet.
+```
+
+---
+
+### 16.3 Hint System (Progressive Revelation)
+
+Always structure hints in levels. Student should TRY before revealing.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         HINT PROGRESSION                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  LEVEL 0: No hints                                                      │
+│  ─────────────────                                                      │
+│  "Try for 15 minutes before revealing any hints."                       │
+│                                                                         │
+│  LEVEL 1: Direction hint                                                │
+│  ─────────────────────                                                  │
+│  "The bug is in the buffer size calculation."                           │
+│  (Points WHERE to look, not WHAT is wrong)                              │
+│                                                                         │
+│  LEVEL 2: Conceptual hint                                               │
+│  ───────────────────────                                                │
+│  "Remember: stereo audio has 2 samples per frame."                      │
+│  (Explains the concept they might be missing)                           │
+│                                                                         │
+│  LEVEL 3: Specific hint                                                 │
+│  ─────────────────────                                                  │
+│  "Check if you're multiplying by bytes_per_sample correctly."           │
+│  (Narrows down to exact location)                                       │
+│                                                                         │
+│  LEVEL 4: STILL NOT THE ANSWER                                          │
+│  ──────────────────────────────                                         │
+│  "Add this printf and examine the output:                               │
+│   printf('buffer_size=%d, expected=%d\n', size, expected);"             │
+│  (Gives debugging tool, student finds answer)                           │
+│                                                                         │
+│  ❌ NEVER LEVEL 5: "The answer is..."                                   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 16.4 Resource Links (Not Answers)
+
+Always provide resources for LEARNING, never for COPYING.
+
+#### ✅ GOOD Resource Links:
+```
+RESOURCES:
+- man page: `man snd_pcm_writei`
+- ALSA concepts: https://www.alsa-project.org/wiki/Documentation
+- Audio fundamentals: Search "PCM audio basics"
+- Math reference: `man sin` (sine function)
+```
+
+#### ❌ BAD Resource Links:
+```
+RESOURCES:
+- Stack Overflow solution: [link to exact answer]
+- GitHub repo with implementation: [link]
+- Tutorial that solves this exact problem: [link]
+```
+
+---
+
+### 16.5 Verification Criteria (Student Self-Checks)
+
+Every exercise MUST have clear success criteria the student can verify themselves.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    VERIFICATION TYPES                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  SENSORY VERIFICATION:                                                  │
+│  "You'll HEAR a smooth tone instead of buzzing"                         │
+│  "You'll SEE the gradient animate smoothly"                             │
+│  "The window will NOT flicker anymore"                                  │
+│                                                                         │
+│  NUMERIC VERIFICATION:                                                  │
+│  "printf should output: buffer_size=192000"                             │
+│  "Frame time should be < 16.67ms (60 FPS)"                              │
+│  "Memory usage should stay constant (no growth)"                        │
+│                                                                         │
+│  BEHAVIORAL VERIFICATION:                                               │
+│  "Pressing Up arrow increases volume"                                   │
+│  "Resizing window doesn't crash"                                        │
+│  "Closing window exits cleanly (no error messages)"                     │
+│                                                                         │
+│  COMPARATIVE VERIFICATION:                                              │
+│  "Before: [screenshot/description]"                                     │
+│  "After:  [screenshot/description]"                                     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 16.6 Exercise Template (Copy This)
+
+```markdown
+## EXERCISE: [Title]
+
+**Difficulty:** ⭐⭐⭐☆☆ (1-5 stars)
+**Time Estimate:** XX-YY minutes
+**Prerequisites:** Day X completed
+
+### Context
+[Brief explanation of why this matters]
+
+### Task
+[Clear, specific requirements]
+- [ ] Requirement 1
+- [ ] Requirement 2
+- [ ] Requirement 3
+
+### Constraints
+- Do NOT: [what to avoid]
+- Do NOT: [what not to search for]
+- DO: [what IS allowed]
+
+### Resources (for learning, not copying)
+- Documentation: [link]
+- Man page: `man something`
+- Concept to research: "search term"
+
+### Hints (reveal progressively, try 15 min first)
+<details>
+<summary>Hint 1 (direction)</summary>
+[Where to look]
+</details>
+
+<details>
+<summary>Hint 2 (concept)</summary>
+[What concept applies]
+</details>
+
+<details>
+<summary>Hint 3 (specific)</summary>
+[Narrower guidance]
+</details>
+
+### Verification
+- [ ] Sensory: [what you'll see/hear]
+- [ ] Numeric: [what values to check]
+- [ ] Behavioral: [what actions work]
+
+### Reflection (after completing)
+Write answers to these in your notes:
+1. What was the hardest part?
+2. What did you learn that wasn't obvious?
+3. What would you do differently next time?
+
+### DO NOT ASK THE LLM FOR THE SOLUTION
+If truly stuck after 1+ hour, move on and return later.
+The struggle IS the learning.
+```
+
+---
+
+### 16.7 Day-Specific Exercises
+
+After each Handmade Hero day, provide 2-3 exercises:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    DAY 8 EXERCISES                                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  EXERCISE 8.1: Variable Frequency (⭐⭐☆☆☆)                            │
+│  ────────────────────────────────────────                               │
+│  Make the tone frequency controllable via Left/Right arrows.            │
+│  Left = lower pitch, Right = higher pitch.                              │
+│  Verification: You hear pitch change when pressing keys.                │
+│                                                                         │
+│  EXERCISE 8.2: Dual Tone (⭐⭐⭐☆☆)                                     │
+│  ─────────────────────────────────                                      │
+│  Play different frequencies in left and right channels.                 │
+│  Left ear: 256 Hz, Right ear: 384 Hz                                    │
+│  Verification: With headphones, each ear hears different pitch.         │
+│                                                                         │
+│  EXERCISE 8.3: Buffer Underrun Detection (⭐⭐⭐⭐☆)                    │
+│  ─────────────────────────────────────────────                          │
+│  Add code to detect and count audio buffer underruns.                   │
+│  Print a warning when underrun occurs.                                  │
+│  Research: What causes underruns? How to minimize them?                 │
+│  Verification: Intentionally cause underrun (sleep in loop),            │
+│                see your warning message appear.                         │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 16.8 "Struggle Productively" Guidelines
+
+Include this reminder with exercises:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    HOW TO STRUGGLE PRODUCTIVELY                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ✅ PRODUCTIVE STRUGGLE:                                                │
+│  - Reading documentation you found yourself                             │
+│  - Adding printf statements to understand flow                          │
+│  - Drawing diagrams of what you THINK is happening                      │
+│  - Trying multiple approaches that fail (learning!)                     │
+│  - Taking a break and returning with fresh eyes                         │
+│  - Rubber duck debugging (explain to an inanimate object)               │
+│                                                                         │
+│  ❌ UNPRODUCTIVE STRUGGLE:                                              │
+│  - Staring at code without trying anything                              │
+│  - Randomly changing things hoping it works                             │
+│  - Asking LLM "what's wrong with this code?"                            │
+│  - Copy-pasting from Stack Overflow without understanding               │
+│  - Getting frustrated and giving up                                     │
+│                                                                         │
+│  ⏰ TIME LIMITS:                                                         │
+│  - 15 min: Reveal Hint 1                                                │
+│  - 30 min: Reveal Hint 2                                                │
+│  - 45 min: Reveal Hint 3                                                │
+│  - 60 min: Take a break, try again tomorrow                             │
+│  - 90 min: Move on, mark for review later                               │
+│                                                                         │
+│  The goal is LEARNING, not FINISHING.                                   │
+│  A failed attempt where you learned something > quick copy-paste        │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 16.9 Reflection Prompts (After Every Exercise)
+
+Always end exercises with reflection:
+
+```markdown
+### Post-Exercise Reflection
+
+Answer in your learning journal (docs/journal.md):
+
+1. **What worked?**
+   What approach or technique helped you solve this?
+
+2. **What didn't work?**
+   What did you try that failed? Why did it fail?
+
+3. **What surprised you?**
+   What behavior or result was unexpected?
+
+4. **What would you do differently?**
+   If you started over, what would you change?
+
+5. **What questions do you still have?**
+   What remains unclear? (These become future research topics)
+
+6. **Rate your understanding (1-5):**
+   1 = I copied something that works but don't understand it
+   5 = I could explain this to someone else and answer their questions
+```
+
+---
+
+### 16.10 Anti-Patterns to Avoid (For LLM When Creating Exercises)
+
+When I (the LLM) create exercises, I must NOT:
+
+```
+❌ Give the solution in the exercise description
+❌ Link directly to code that solves the problem
+❌ Make exercises that require knowledge not yet covered
+❌ Create exercises with only one "correct" solution
+❌ Provide exercises that can be solved by copy-paste
+❌ Ask trivial questions ("what color is the pixel?")
+❌ Create exercises that take > 2 hours for the target skill level
+❌ Forget to include verification criteria
+❌ Skip the hints progression
+❌ Answer "how do I solve exercise X?" directly
+```
+
+When student asks for help on an exercise:
+
+```
+✅ "Have you tried adding printf to see what values you're getting?"
+✅ "What does the documentation say about that function?"
+✅ "Draw out what you think is happening - where does it differ from expected?"
+✅ "Which hint level are you on? Try the next hint first."
+
+❌ "The bug is on line 47, change X to Y"
+❌ "Here's the working code: ..."
+❌ "You need to multiply by 2 because stereo"
+```
+
+---
+
+### 16.11 Mandatory Socratic Hint Structure (ALWAYS USE)
+
+**CRITICAL RULE:** Every exercise MUST include progressive hints using the Socratic method, followed by a complete answer section. All hints and answers MUST use HTML `<details>` and `<summary>` tags for collapsible revelation.
+
+#### Hint Progression Philosophy
+
+Use the **Socratic method** - guide through questions rather than statements:
+- ❌ DON'T say: "The problem is in the buffer size calculation"
+- ✅ DO say: "What happens to the buffer size when you have stereo audio? How many samples per frame?"
+
+#### Mandatory Hint Levels (MINIMUM 4 LEVELS)
+
+Every exercise MUST have AT LEAST 4-6 progressive hint levels:
+
+```markdown
+### Hints
+
+**Try for 15 minutes before revealing any hints!**
+
+<details>
+<summary>💡 Hint 1: Direction (Where to look)</summary>
+
+[Socratic question that points to the general area]
+- "What values are calculated from the frequency?"
+- "Where in your code does the wave complete a cycle?"
+- "Which variables control how fast the wave repeats?"
+
+</details>
+
+<details>
+<summary>💡 Hint 2: Concept (What principle applies)</summary>
+
+[Socratic question about the underlying concept]
+- "What's the relationship between frequency and period?"
+- "If frequency doubles, what happens to the period?"
+- "How does the wave_period affect the sample generation loop?"
+
+[Can include a diagram or formula WITHOUT the solution]
+
+</details>
+
+<details>
+<summary>💡 Hint 3: Focus (Narrow it down)</summary>
+
+[More specific Socratic question]
+- "Look at where wave_period is calculated. Is it ever recalculated?"
+- "When you change tone_hz, what other variables depend on it?"
+- "Try adding: printf('wave_period=%d, tone_hz=%d\n', ...)"
+
+</details>
+
+<details>
+<summary>💡 Hint 4: Near-Solution (Almost there)</summary>
+
+[Very specific guidance, but still not the complete answer]
+- "You need a function that updates ALL frequency-dependent values together"
+- "Consider: wave_period and half_wave_period are BOTH calculated from tone_hz"
+- "What if you made a SetFrequency() helper function?"
+
+[Can show pseudocode or partial code structure]
+
+</details>
+
+<details>
+<summary>💡 Hint 5: Debug Technique (Tool to find answer)</summary>
+
+[Give them the tool to discover the answer themselves]
+
+```c
+// Add this debugging code and observe the output:
+void ChangeFrequency(int new_hz) {
+    printf("BEFORE: tone_hz=%d, wave_period=%d\n", tone_hz, wave_period);
+    tone_hz = new_hz;
+    printf("AFTER:  tone_hz=%d, wave_period=%d\n", tone_hz, wave_period);
+    // What's wrong with this picture?
+}
+```
+
+</details>
+
+<!-- OPTIONAL: Add more hints if exercise is complex -->
+
+<details>
+<summary>💡 Hint 6: Alternative Approach (Optional)</summary>
+
+[If there are multiple valid solutions, hint at another way]
+- "Instead of a helper function, could you use a macro?"
+- "Could you store frequency-dependent values in a struct?"
+
+</details>
+```
+
+#### Mandatory Answer Section
+
+**EVERY exercise MUST end with a complete answer section:**
+
+```markdown
+---
+
+### ⚠️ Complete Answer (Read ONLY After Attempting)
+
+**WARNING:** Opening this defeats the learning purpose. Only reveal after:
+- ✅ You've tried for at least 1 hour
+- ✅ You've gone through ALL hints above
+- ✅ You genuinely can't proceed
+- ✅ OR you've completed it and want to compare approaches
+
+<details>
+<summary>🔓 Click to Reveal Complete Answer</summary>
+
+#### Solution Explanation
+
+[Explain the WHY before the code]
+
+**The Problem:**
+When you change `tone_hz`, the wave_period and half_wave_period don't automatically update because they're calculated once at initialization. The audio loop uses these stale values, so the frequency doesn't actually change.
+
+**Why This Happens:**
+```c
+// Initialization (once):
+int tone_hz = 256;
+int wave_period = samples_per_second / tone_hz;  // Calculated once!
+int half_wave_period = wave_period / 2;          // Calculated once!
+
+// Later, in event handler:
+tone_hz = 440;  // Changed, but wave_period is STILL 187 (from 256 Hz)!
+```
+
+**The Solution:**
+All frequency-dependent values must be recalculated together when frequency changes.
+
+#### Complete Code
+
+```c
+// Global variables
+static int tone_hz = 256;
+static int wave_period;
+static int half_wave_period;
+static int samples_per_second = 48000;
+
+// Helper function to update frequency and dependent values
+void SetToneFrequency(int new_hz) {
+    // Validate range
+    if (new_hz < 60) new_hz = 60;      // Too low = inaudible
+    if (new_hz > 8000) new_hz = 8000;  // Too high = painful
+    
+    // Update all dependent values atomically
+    tone_hz = new_hz;
+    wave_period = samples_per_second / tone_hz;
+    half_wave_period = wave_period / 2;
+    
+    printf("🎵 Frequency: %d Hz (period: %d samples)\n", tone_hz, wave_period);
+}
+
+// In your keyboard handler:
+void HandleKeyPress(KeySym keysym) {
+    if (keysym == XK_Left) {
+        SetToneFrequency(tone_hz - 20);  // Lower pitch
+    }
+    if (keysym == XK_Right) {
+        SetToneFrequency(tone_hz + 20);  // Higher pitch
+    }
+}
+
+// In initialization:
+void Init() {
+    SetToneFrequency(256);  // Use helper for consistency
+}
+```
+
+#### Key Concepts
+
+**1. Dependent Values Must Update Together**
+```
+tone_hz → wave_period → half_wave_period
+   ↓           ↓              ↓
+ 256         187            93
+ 440         109            54  ← If wave_period doesn't update, 
+                                   sound stays at 256 Hz!
+```
+
+**2. Why a Helper Function?**
+- Ensures all dependent values update atomically
+- Prevents forgetting to update one
+- Single place to add validation/logging
+- Easier to debug
+
+**3. Alternative Approaches**
+
+You could also:
+
+<details>
+<summary>Alternative 1: Calculate period on-demand</summary>
+
+```c
+// Calculate period each sample (slower but simpler)
+int GenerateSample() {
+    int current_period = samples_per_second / tone_hz;
+    int half_period = current_period / 2;
+    return (running_sample_index / half_period) % 2 ? volume : -volume;
+}
+```
+
+**Tradeoff:** Simpler but slower (division per sample)
+
+</details>
+
+<details>
+<summary>Alternative 2: Use a struct</summary>
+
+```c
+typedef struct {
+    int frequency_hz;
+    int wave_period;
+    int half_wave_period;
+} Oscillator;
+
+void Oscillator_SetFrequency(Oscillator* osc, int hz) {
+    osc->frequency_hz = hz;
+    osc->wave_period = 48000 / hz;
+    osc->half_wave_period = osc->wave_period / 2;
+}
+```
+
+**Tradeoff:** More organized but more verbose
+
+</details>
+
+#### What You Should Have Learned
+
+- [ ] Changing one variable doesn't automatically update dependent variables
+- [ ] Helper functions ensure consistency
+- [ ] Wave period and frequency are inversely related
+- [ ] printf debugging reveals stale values
+- [ ] Atomic updates prevent partial state
+
+#### Reflection Questions
+
+1. Did you discover this through debugging or by reasoning about the code?
+2. How long did it take you to realize wave_period wasn't updating?
+3. Could this bug exist in other parts of your code?
+4. How would you prevent this category of bug in the future?
+
+</details>
+```
+
+---
+
+#### Template Summary for LLM
+
+When creating ANY exercise, ALWAYS include:
+
+1. **4-6 Progressive Hints** (wrapped in `<details>`)
+   - Each hint uses Socratic questions
+   - Each hint is more specific than the last
+   - Final hint provides debugging tool/technique
+
+2. **Complete Answer Section** (wrapped in `<details>`)
+   - Strong warning not to open prematurely
+   - Explanation of WHY before code
+   - Complete, working code solution
+   - Alternative approaches (if applicable)
+   - Key concepts learned
+   - Reflection questions
+
+3. **All collapsible content uses:**
+   ```html
+   <details>
+   <summary>Brief description</summary>
+   
+   Content here
+   
+   </details>
+   ```
+
+#### Example of Proper Structure
+
+```markdown
+## EXERCISE X.Y: [Title]
+
+[Exercise description]
+
+### Hints
+
+<details><summary>💡 Hint 1</summary>
+[Socratic question]
+</details>
+
+<details><summary>💡 Hint 2</summary>
+[Socratic question + concept]
+</details>
+
+<details><summary>💡 Hint 3</summary>
+[Socratic question + specifics]
+</details>
+
+<details><summary>💡 Hint 4</summary>
+[Near-solution guidance]
+</details>
+
+---
+
+### ⚠️ Complete Answer
+
+<details>
+<summary>🔓 Click to Reveal Complete Answer</summary>
+
+#### Solution Explanation
+[WHY explanation]
+
+#### Complete Code
+[Full solution]
+
+#### Key Concepts
+[Takeaways]
+
+#### Alternative Approaches
+<details><summary>Alternative 1</summary>
+[Different approach]
+</details>
+
+#### Reflection Questions
+[What to think about]
+
+</details>
+```
+
+---
+
+### 16.12 Socratic Questioning Techniques
+
+When writing hints, use these question patterns:
+
+**Level 1 (Direction) Questions:**
+- "What part of the code runs when [event] happens?"
+- "Which variables control [behavior]?"
+- "Where is [value] calculated?"
+
+**Level 2 (Concept) Questions:**
+- "What's the relationship between [A] and [B]?"
+- "If [X] changes, what else must change?"
+- "What happens when [condition] is true?"
+
+**Level 3 (Focus) Questions:**
+- "Look at line N. What does it assume about [variable]?"
+- "Is [variable] ever recalculated after initialization?"
+- "Add printf here: [location]. What do you observe?"
+
+**Level 4 (Near-Solution) Questions:**
+- "How would you ensure [A] and [B] always update together?"
+- "What if you wrapped [operations] in a function?"
+- "Consider this pattern: [pseudocode]. How would you adapt it?"
+
+**Level 5 (Debug Tool) Prompts:**
+- "Add this logging and analyze the output: [code]"
+- "Use gdb to break at [location] and inspect [variable]"
+- "Draw a timeline of when [value] changes"
