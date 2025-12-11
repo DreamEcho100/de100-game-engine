@@ -408,7 +408,7 @@ inline void set_tone_frequency(int hz) {
   g_sound_output.tone_hz = (int)hz;
   g_sound_output.wave_period =
       g_sound_output.samples_per_second / g_sound_output.tone_hz;
-  g_sound_output.half_wave_period = g_sound_output.wave_period / 2;
+  // g_sound_output.half_wave_period = g_sound_output.wave_period / 2;
 
   // Optional: reset phase to avoid clicks
   g_sound_output.running_sample_index = 0;

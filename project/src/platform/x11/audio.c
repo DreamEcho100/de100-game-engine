@@ -132,11 +132,19 @@
 #include "audio.h"
 #include "../base.h"
 #include <dlfcn.h> // 🆕 For dlopen, dlsym, dlclose (Casey's LoadLibrary equivalent)
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif // M_PI
+#ifndef M_double_PI
+#define M_double_PI (2.f * M_PI)
+#endif // M_double_PI
 
 // ═══════════════════════════════════════════════════════════════
 // 🔊 ALSA AUDIO DYNAMIC LOADING (Casey's DirectSound Pattern)
@@ -432,7 +440,13 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
   g_sound_output.tone_hz = 256;
   g_sound_output.tone_volume = 6000;
   g_sound_output.wave_period = samples_per_second / g_sound_output.tone_hz;
-  g_sound_output.half_wave_period = g_sound_output.wave_period / 2;
+  // g_sound_output.half_wave_period = g_sound_output.wave_period / 2;
+
+  // Latency calculation
+  g_sound_output.t_sine = 0;
+
+  // Latency (1/15 second like Casey)
+  g_sound_output.latency_sample_count = samples_per_second / 15;
 
   g_sound_output.pan_position = 0;
 
@@ -516,12 +530,23 @@ void linux_fill_sound_buffer(void) {
   int16_t *sample_out = g_sound_output.sample_buffer;
 
   for (long i = 0; i < frames_available; ++i) {
-    // Calculate sample value (Casey's exact formula)
-    int16_t sample_value = ((g_sound_output.running_sample_index /
-                             g_sound_output.half_wave_period) %
-                            2)
-                               ? g_sound_output.tone_volume
-                               : -g_sound_output.tone_volume;
+    //// Calculate sample value (Casey's exact formula)
+    // int16_t sample_value = ((g_sound_output.running_sample_index /
+    //                         g_sound_output.half_wave_period) %
+    //                        2)
+    //                           ? g_sound_output.tone_volume
+    //                           : -g_sound_output.tone_volume;
+
+    // ═══════════════════════════════════════════════════════════
+    // 🆕 Day 9: Generate sine wave sample
+    // ═══════════════════════════════════════════════════════════
+    // Casey's exact formula:
+    //   SineValue = sinf(tSine);
+    //   SampleValue = (int16)(SineValue * ToneVolume);
+    //   tSine += 2π / WavePeriod;
+    // ═══════════════════════════════════════════════════════════
+    real32 sine_value = sinf(g_sound_output.t_sine);
+    int16_t sample_value = (int16_t)(sine_value * g_sound_output.tone_volume);
 
     int left_gain = (100 - g_sound_output.pan_position);  // 0 to 200
     int right_gain = (100 + g_sound_output.pan_position); // 0 to 200
@@ -531,6 +556,15 @@ void linux_fill_sound_buffer(void) {
     *sample_out++ = (sample_value * right_gain) / 200; // Right channel
     //  Why divide by 200?
     // Because gains range from 0-200, and we want 100% = 200/200 = 1.0
+
+    // Increment phase accumulator
+    g_sound_output.t_sine +=
+        (M_double_PI * 1.0f) / (float)g_sound_output.wave_period;
+
+    // Wrap to [0, 2π) range
+    if (g_sound_output.t_sine >= M_double_PI) {
+      g_sound_output.t_sine -= M_double_PI;
+    }
 
     g_sound_output.running_sample_index++;
   }

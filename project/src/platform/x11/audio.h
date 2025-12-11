@@ -172,7 +172,11 @@ typedef struct {
   int tone_hz;
   int16_t tone_volume;
   int wave_period;
-  int half_wave_period;
+  // int half_wave_period;
+
+  // Day 9
+  real32 t_sine;            // Phase accumulator (0 to 2π)
+  int latency_sample_count; // How many samples to buffer ahead
 
   //
   int pan_position; // -100 (left) to +100 (right)
