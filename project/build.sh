@@ -24,7 +24,7 @@ if [ "$BACKEND" = "x11" ]; then
     SRC="$SRC src/platform/x11/backend.c  src/platform/x11/audio.c"
 elif [ "$BACKEND" = "raylib" ]; then
     FLAGS="$FLAGS -DUSE_RAYLIB -lraylib -lm -ldl -lpthread"
-    SRC="$SRC src/platform/raylib_backend.c"
+    SRC="$SRC src/platform/raylib/backend.c src/platform/raylib/audio.c"
 else
     echo "Unknown backend: $BACKEND"
     echo "Available backends: x11, raylib"

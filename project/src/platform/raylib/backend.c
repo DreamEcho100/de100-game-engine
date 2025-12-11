@@ -1,4 +1,6 @@
-#include "base.h"
+#include "backend.h"
+#include "../base.h"
+#include "audio.h"
 #include <raylib.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -227,6 +229,17 @@ file_scoped_fn void handle_controls(GameState *game_state) {
     game_state->gradient.offset_x -= stick_x >> 12;
     game_state->gradient.offset_y -= stick_y >> 12;
 
+    // ═══════════════════════════════════════════════════════════
+    // 🆕 Day 8: Use analog stick for frequency control
+    // ═══════════════════════════════════════════════════════════
+    // Matches your X11 backend exactly!
+    if (stick_y >> 12 != 0) {
+      handle_update_tone_frequency(stick_y >> 12);
+    }
+    if (stick_x >> 12 != 0) {
+      handle_update_tone_frequency(stick_x >> 12);
+    }
+
     // Start button resets
     if (game_state->controls.start) {
       game_state->gradient.offset_x = 0;
@@ -413,7 +426,6 @@ file_scoped_fn void ResizeBackBuffer(OffscreenBuffer *buffer, int width,
  * Same purpose as X11 version, but MUCH simpler!
  */
 int platform_main() {
-
   /**
    * InitWindow() does ALL of this:
    * - XOpenDisplay() - Connect to display server
@@ -475,6 +487,11 @@ int platform_main() {
   // ═══════════════════════════════════════════════════════════
   raylib_init_gamepad(&g_game_state);
 
+  // ═══════════════════════════════════════════════════════════
+  // 🔊 Initialize audio (Day 7-9)
+  // ═══════════════════════════════════════════════════════════
+  raylib_init_audio();
+
   // Initialize backbuffer
   g_backbuffer.memory = NULL;
   g_backbuffer.width = 1280;
@@ -527,10 +544,59 @@ int platform_main() {
     // ═══════════════════════════════════════════════════════
     // ⌨️ KEYBOARD INPUT (cross-platform!)
     // ═══════════════════════════════════════════════════════
+
     g_game_state.controls.up = IsKeyDown(KEY_W) || IsKeyDown(KEY_UP);
     g_game_state.controls.left = IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT);
     g_game_state.controls.down = IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN);
-    g_game_state.controls.right = IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
+    g_game_state.controls.right =
+        IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
+
+    if (g_game_state.controls.up) {
+      g_game_state.gradient.offset_y += g_game_state.speed;
+    }
+    if (g_game_state.controls.left) {
+      g_game_state.gradient.offset_x += g_game_state.speed;
+    }
+    if (g_game_state.controls.down) {
+      g_game_state.gradient.offset_y -= g_game_state.speed;
+    }
+    if (g_game_state.controls.right) {
+      g_game_state.gradient.offset_x -= g_game_state.speed;
+    }
+
+    // 🆕 Musical keyboard (Z-X-C-V-B-N-M-Comma)
+    if (IsKeyPressed(KEY_Z))
+      handle_musical_keypress(KEY_Z);
+    if (IsKeyPressed(KEY_X))
+      handle_musical_keypress(KEY_X);
+    if (IsKeyPressed(KEY_C))
+      handle_musical_keypress(KEY_C);
+    if (IsKeyPressed(KEY_V))
+      handle_musical_keypress(KEY_V);
+    if (IsKeyPressed(KEY_B))
+      handle_musical_keypress(KEY_B);
+    if (IsKeyPressed(KEY_N))
+      handle_musical_keypress(KEY_N);
+    if (IsKeyPressed(KEY_M))
+      handle_musical_keypress(KEY_M);
+    if (IsKeyPressed(KEY_COMMA))
+      handle_musical_keypress(KEY_COMMA);
+
+    // 🆕 Volume control ([ and ])
+    if (IsKeyPressed(KEY_LEFT_BRACKET)) {
+      if (IsKeyPressed(KEY_LEFT_SHIFT)) {
+        handle_increase_volume(-500); // Shift+[ = volume down
+      } else {
+        handle_increase_pan(-10); // [ = pan left
+      }
+    }
+    if (IsKeyPressed(KEY_RIGHT_BRACKET)) {
+      if (IsKeyPressed(KEY_LEFT_SHIFT)) {
+        handle_increase_volume(500); // Shift+] = volume up
+      } else {
+        handle_increase_pan(10); // ] = pan right
+      }
+    }
 
     if (IsKeyPressed(KEY_ESCAPE)) {
       printf("ESCAPE pressed - exiting\n");

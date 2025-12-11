@@ -142,6 +142,7 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif // M_PI
+
 #ifndef M_double_PI
 #define M_double_PI (2.f * M_PI)
 #endif // M_double_PI
@@ -557,7 +558,8 @@ void linux_fill_sound_buffer(void) {
     //  Why divide by 200?
     // Because gains range from 0-200, and we want 100% = 200/200 = 1.0
 
-    // Increment phase accumulator
+    // NOTE: maybe try `fixed-point phase` _(Instead of float, use a 32-bit
+    // unsigned accumulator)_ Increment phase accumulator
     g_sound_output.t_sine +=
         (M_double_PI * 1.0f) / (float)g_sound_output.wave_period;
 
