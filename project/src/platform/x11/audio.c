@@ -131,7 +131,7 @@
  */
 #include "audio.h"
 #include "../base.h"
-#include <dlfcn.h> // 🆕 For dlopen, dlsym, dlclose (Casey's LoadLibrary equivalent)
+#include <dlfcn.h> // For dlopen, dlsym, dlclose (Casey's LoadLibrary equivalent)
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -372,7 +372,7 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
   // ───────────────────────────────────────────────────────────
 
   // Latency calculation:
-  // 🆕 Day 8: Use shorter latency for better responsiveness
+  // Day 8: Use shorter latency for better responsiveness
   // Casey uses ~66ms (1/15 second), we'll use 50ms
   unsigned int latency_us = 50000; // 50ms in microseconds
 
@@ -403,7 +403,7 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
   g_sound_output.buffer_size = buffer_size_bytes;
 
   // ═══════════════════════════════════════════════════════════
-  // 🆕 Day 8: Allocate sample buffer (Casey's secondary buffer)
+  // Day 8: Allocate sample buffer (Casey's secondary buffer)
   // ═══════════════════════════════════════════════════════════
   //
   // We need a buffer to generate samples into before writing to ALSA.
@@ -429,7 +429,7 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 🆕 Day 8: Initialize sound generation parameters
+  // Day 8: Initialize sound generation parameters
   // ═══════════════════════════════════════════════════════════
   //
   // Casey's Day 8 values:
@@ -467,7 +467,7 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 🆕 Day 8: Fill Sound Buffer with Square Wave
+// Day 8: Fill Sound Buffer with Square Wave
 // ═══════════════════════════════════════════════════════════════
 //
 // This is the Linux equivalent of Casey's Lock/Write/Unlock pattern.
@@ -539,7 +539,7 @@ void linux_fill_sound_buffer(void) {
     //                           : -g_sound_output.tone_volume;
 
     // ═══════════════════════════════════════════════════════════
-    // 🆕 Day 9: Generate sine wave sample
+    // Day 9: Generate sine wave sample
     // ═══════════════════════════════════════════════════════════
     // Casey's exact formula:
     //   SineValue = sinf(tSine);

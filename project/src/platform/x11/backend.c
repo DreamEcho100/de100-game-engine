@@ -96,8 +96,7 @@ typedef struct {
   bool is_running;
 } GameState;
 
-file_scoped_global_var GameState g_game_state = {
-    0}; // ✅ Zero-initialized struct
+file_scoped_global_var GameState g_game_state = {0}; // Zero-initialized struct
 
 /*
 Will be added when needed
@@ -363,7 +362,7 @@ file_scoped_fn void linux_poll_joystick(GameState *game_state) {
         break;
 
       // ───────────────────────────────────────────────────────
-      // D-PAD (axes 6-7) ✅ You already have this working!
+      // D-PAD (axes 6-7)
       // ───────────────────────────────────────────────────────
       case 6: { // D-pad horizontal
         if (event.value < -16384) {
@@ -584,13 +583,21 @@ file_scoped_fn void linux_handle_controls(GameState *game_state) {
   if (game_state->gamepad_id >= 0) {
     // Same math as Casey! (>> 12 = divide by 4096)
     // This converts -32767..+32767 to about -8..+8 pixels/frame
-    game_state->gradient.offset_x -= game_state->controls.left_stick_x >> 12;
-    game_state->gradient.offset_y -= game_state->controls.left_stick_y >> 12;
-    if (game_state->controls.left_stick_y >> 12 != 0) {
-      handle_update_tone_frequency(game_state->controls.left_stick_y >> 12);
+    int normalized_left_stick_x = game_state->controls.left_stick_x / 4096;
+    int normalized_left_stick_y = game_state->controls.left_stick_y / 4096;
+
+    game_state->gradient.offset_x -= normalized_left_stick_x;
+    game_state->gradient.offset_y -= normalized_left_stick_y;
+
+    // set_tone_frequency(
+    //     512 +
+    //     (int)(256.0f * ((real32)game_state->controls.left_stick_y /
+    //     30000.0f)));
+    if (normalized_left_stick_y != 0) {
+      handle_update_tone_frequency(normalized_left_stick_y);
     }
-    if (game_state->controls.left_stick_x >> 12 != 0) {
-      handle_update_tone_frequency(game_state->controls.left_stick_x >> 12);
+    if (normalized_left_stick_x != 0) {
+      handle_update_tone_frequency(normalized_left_stick_x);
     }
     // Optional: Start button resets
     if (game_state->controls.start) {
@@ -638,9 +645,9 @@ file_scoped_fn void render_weird_gradient(OffscreenBuffer *buffer,
  * It lives ONLY as long as the current window size stays the same.
  *
  * Why we clean up here (unlike process-lifetime resources):
- * ✅ We're REPLACING the buffer with a new one (different size)
- * ✅ This happens DURING program execution (not at exit)
- * ✅ If we don't free, we leak 1-3MB on EVERY resize!
+ * - We're REPLACING the buffer with a new one (different size)
+ * - This happens DURING program execution (not at exit)
+ * - If we don't free, we leak 1-3MB on EVERY resize!
  *
  * Example: User resizes window 10 times:
  * ❌ Without cleanup: 10 buffers × 2MB = 20MB leaked! 💥
@@ -1404,7 +1411,7 @@ int platform_main() {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // 🆕 Day 8: Fill and write audio buffer every frame
+    // Day 8: Fill and write audio buffer every frame
     // ═══════════════════════════════════════════════════════════
     //
     // Casey calls this in the main loop after rendering.

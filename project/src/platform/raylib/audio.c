@@ -1,6 +1,6 @@
 #include "audio.h"
 
-#include <math.h> // 🆕 For sinf()
+#include <math.h>
 #include <stdio.h>
 
 #ifndef M_PI
@@ -40,7 +40,7 @@ void raylib_audio_callback(void *buffer, unsigned int frames) {
 
   for (unsigned int i = 0; i < frames; ++i) {
     // ═══════════════════════════════════════════════════════════
-    // 🆕 Day 9: Generate sine wave sample
+    // Day 9: Generate sine wave sample
     // ═══════════════════════════════════════════════════════════
     // Casey's exact formula:
     //   SineValue = sinf(tSine);

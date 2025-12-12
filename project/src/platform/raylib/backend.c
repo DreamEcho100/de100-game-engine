@@ -64,8 +64,7 @@ typedef struct {
 } GameState;
 
 file_scoped_global_var OffscreenBuffer g_backbuffer;
-file_scoped_global_var GameState g_game_state = {
-    0}; // ✅ Zero-initialized struct
+file_scoped_global_var GameState g_game_state = {0}; // Zero-initialized struct
 
 // file_scoped_global_var int g_joystick_fd = -1;
 
@@ -230,7 +229,7 @@ file_scoped_fn void handle_controls(GameState *game_state) {
     game_state->gradient.offset_y -= stick_y >> 12;
 
     // ═══════════════════════════════════════════════════════════
-    // 🆕 Day 8: Use analog stick for frequency control
+    // Day 8: Use analog stick for frequency control
     // ═══════════════════════════════════════════════════════════
     // Matches your X11 backend exactly!
     if (stick_y >> 12 != 0) {
@@ -548,8 +547,7 @@ int platform_main() {
     g_game_state.controls.up = IsKeyDown(KEY_W) || IsKeyDown(KEY_UP);
     g_game_state.controls.left = IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT);
     g_game_state.controls.down = IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN);
-    g_game_state.controls.right =
-        IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
+    g_game_state.controls.right = IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
 
     if (g_game_state.controls.up) {
       g_game_state.gradient.offset_y += g_game_state.speed;
@@ -564,7 +562,7 @@ int platform_main() {
       g_game_state.gradient.offset_x -= g_game_state.speed;
     }
 
-    // 🆕 Musical keyboard (Z-X-C-V-B-N-M-Comma)
+    // Musical keyboard (Z-X-C-V-B-N-M-Comma)
     if (IsKeyPressed(KEY_Z))
       handle_musical_keypress(KEY_Z);
     if (IsKeyPressed(KEY_X))
@@ -582,7 +580,7 @@ int platform_main() {
     if (IsKeyPressed(KEY_COMMA))
       handle_musical_keypress(KEY_COMMA);
 
-    // 🆕 Volume control ([ and ])
+    // Volume control ([ and ])
     if (IsKeyPressed(KEY_LEFT_BRACKET)) {
       if (IsKeyPressed(KEY_LEFT_SHIFT)) {
         handle_increase_volume(-500); // Shift+[ = volume down

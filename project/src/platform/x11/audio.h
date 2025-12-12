@@ -163,11 +163,11 @@ typedef struct {
   uint32_t buffer_size;       // Secondary buffer size in bytes
   bool is_valid;              // Did initialization succeed?
 
-  // 🆕 Day 8: Audio sample buffer (Casey's secondary buffer equivalent)
+  // Day 8: Audio sample buffer (Casey's secondary buffer equivalent)
   int16_t *sample_buffer;
   uint32_t sample_buffer_size;
 
-  // 🆕 Day 8: Sound generation state
+  // Day 8: Sound generation state
   uint32_t running_sample_index;
   int tone_hz;
   int16_t tone_volume;
@@ -191,7 +191,7 @@ extern LinuxSoundOutput g_sound_output;
 void linux_load_alsa(void);
 void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes);
 
-// 🆕 Day 8: Fill buffer with square wave and write to ALSA
+// Day 8: Fill buffer with square wave and write to ALSA
 void linux_fill_sound_buffer(void);
 
 #endif // X11_AUDIO_H
