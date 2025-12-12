@@ -23,6 +23,9 @@
 ## YouTube Playlists
 
 - [Beginner C Videos By - Jacob Sorber _(@JacobSorber)_](https://www.youtube.com/playlist?list=PL9IEJIKnBJjG5H0ylFAzpzs9gSmW_eICB)
+- [Pitfalls of Object Oriented Programming, Revisited - Tony Albrecht (TGC 2017)](https://youtu.be/VAT9E-M-PoE?si=XPRMfNUkrZFs90C9)
+- [Practical Optimizations](https://youtu.be/NAVbI1HIzCE?si=iuNdnk68oGFqV6IW)
+- [Building a Data-Oriented Future - Mike Acton](https://youtu.be/u8B3j8rqYMw?si=oyLQUlNRpBr6yd61)
 
 ---
 
