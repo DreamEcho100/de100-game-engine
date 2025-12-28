@@ -4,13 +4,6 @@
 #include "../../game.h"
 #include "audio.h"
 
-PlatformPixelFormatShift g_platform_pixel_format_shift = {
-    .ALPHA_SHIFT = 24,
-    .RED_SHIFT = 0,
-    .GREEN_SHIFT = 8,
-    .BLUE_SHIFT = 16,
-};
-
 #include <raylib.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -24,45 +17,7 @@ typedef struct {
   bool has_texture;
 } OffscreenBufferMeta;
 
-// Button states (mirrors Casey's XInput button layout)
-typedef struct {
-  bool up;
-  bool down;
-  bool left;
-  bool right;
-
-  bool start;
-  bool back;
-  bool a_button;
-  bool b_button;
-  bool x_button;
-  bool y_button;
-  bool left_shoulder;
-  bool right_shoulder;
-
-  // Analog sticks (normalized -1.0 to +1.0, Raylib style)
-  float left_stick_x;
-  float left_stick_y;
-  float right_stick_x;
-  float right_stick_y;
-  float left_trigger;
-  float right_trigger;
-
-  GradientState gradient_state;
-} GameControls;
-
-typedef struct {
-  GameControls controls;
-  GradientState gradient;
-  PixelState pixel;
-  int speed;
-  bool is_running;
-  int gamepad_id; // Which gamepad to use (0-3)
-} GameState;
-
-file_scoped_global_var OffscreenBuffer g_backbuffer;
 file_scoped_global_var OffscreenBufferMeta g_backbuffer_meta = {0};
-file_scoped_global_var GameState g_game_state = {0}; // Zero-initialized struct
 file_scoped_global_var struct timespec g_frame_start;
 file_scoped_global_var struct timespec g_frame_end;
 
@@ -82,8 +37,6 @@ get_window_dimension(Display *display, Window window) {
     return (X11WindowDimension){attrs.width, attrs.height};
 }
 */
-
-file_scoped_global_var OffscreenBuffer g_backbuffer;
 
 // ═══════════════════════════════════════════════════════════════
 // 🎮 Initialize gamepad (Raylib cross-platform!)
@@ -110,6 +63,70 @@ file_scoped_fn bool raylib_init_gamepad(GameState *game_state) {
 
   game_state->gamepad_id = -1; // No gamepad
   return false;
+}
+
+inline file_scoped_fn void handle_keyboard_inputs() {
+
+  g_game_state.controls.up = IsKeyDown(KEY_W) || IsKeyDown(KEY_UP);
+  g_game_state.controls.left = IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT);
+  g_game_state.controls.down = IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN);
+  g_game_state.controls.right = IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
+
+  // Musical note frequencies (same as X11 version)
+  if (IsKeyPressed(KEY_Z)) {
+    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_C4;
+  }
+  if (IsKeyPressed(KEY_X)) {
+    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_D4;
+  }
+  if (IsKeyPressed(KEY_C)) {
+    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_E4;
+  }
+  if (IsKeyPressed(KEY_V)) {
+    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_F4;
+  }
+  if (IsKeyPressed(KEY_B)) {
+    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_G4;
+  }
+  if (IsKeyPressed(KEY_N)) {
+    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_A4;
+  }
+  if (IsKeyPressed(KEY_M)) {
+    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_B4;
+  }
+  if (IsKeyPressed(KEY_COMMA)) {
+    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_C5;
+  }
+
+  // Volume control ([ and ])
+  if (IsKeyPressed(KEY_LEFT_BRACKET)) {
+    if (IsKeyDown(KEY_LEFT_SHIFT)) {
+      g_game_state.controls.decrease_sound_volume = true;
+      g_game_state.controls.increase_sound_volume = false;
+    } else {
+      g_game_state.controls.move_sound_pan_left = true;
+      g_game_state.controls.move_sound_pan_right = false;
+    }
+  }
+  if (IsKeyPressed(KEY_RIGHT_BRACKET)) {
+    if (IsKeyDown(KEY_LEFT_SHIFT)) {
+      g_game_state.controls.increase_sound_volume = true;
+      g_game_state.controls.decrease_sound_volume = false;
+    } else {
+      g_game_state.controls.move_sound_pan_right = true;
+      g_game_state.controls.move_sound_pan_left = false;
+    }
+  }
+
+  if (IsKeyPressed(KEY_ESCAPE)) {
+    printf("ESCAPE pressed - exiting\n");
+    g_game_state.is_running = false;
+  }
+
+  if (IsKeyPressed(KEY_F1)) {
+    printf("F1 pressed - showing audio debug\n");
+    raylib_debug_audio();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -170,19 +187,25 @@ file_scoped_fn void raylib_poll_gamepad(GameState *game_state) {
   // Raylib automatically handles deadzones and normalization!
 
   game_state->controls.left_stick_x =
-      GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_X);
+      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_X) *
+                32767.0f);
   game_state->controls.left_stick_y =
-      GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_Y);
+      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_Y) *
+                32767.0f);
   game_state->controls.right_stick_x =
-      GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_X);
+      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_X) *
+                32767.0f);
   game_state->controls.right_stick_y =
-      GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_Y);
+      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_Y) *
+                32767.0f);
 
   // Triggers (also normalized 0.0 to +1.0)
   game_state->controls.left_trigger =
-      GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_TRIGGER);
+      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_TRIGGER) *
+                32767.0f);
   game_state->controls.right_trigger =
-      GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_TRIGGER);
+      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_TRIGGER) *
+                32767.0f);
 
   // Debug output for button presses (only print on state change)
   if (IsGamepadButtonPressed(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) {
@@ -193,59 +216,10 @@ file_scoped_fn void raylib_poll_gamepad(GameState *game_state) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 🎮 Handle controls (update game state based on input)
-// ═══════════════════════════════════════════════════════════════
-file_scoped_fn void handle_controls(GameState *game_state) {
-
-  // D-pad / Keyboard controls
-  if (game_state->controls.up) {
-    game_state->gradient.offset_y += game_state->speed;
-  }
-  if (game_state->controls.left) {
-    game_state->gradient.offset_x += game_state->speed;
-  }
-  if (game_state->controls.down) {
-    game_state->gradient.offset_y -= game_state->speed;
-  }
-  if (game_state->controls.right) {
-    game_state->gradient.offset_x -= game_state->speed;
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // 🎮 Analog stick controls (Casey's Day 6 pattern!)
-  // ═══════════════════════════════════════════════════════════
-  // Raylib gives us -1.0 to +1.0, Casey expects -32767 to +32767
-  // So we convert: float * 32767 = int16 range
-  // Then apply Casey's >> 12 bit shift
-
-  if (game_state->gamepad_id >= 0) {
-    // Convert Raylib's normalized floats to Casey's int16 range
-    int16_t stick_x = (int16_t)(game_state->controls.left_stick_x * 32767.0f);
-    int16_t stick_y = (int16_t)(game_state->controls.left_stick_y * 32767.0f);
-
-    // Apply Casey's >> 12 math (divide by 4096)
-    game_state->gradient.offset_x -= stick_x >> 12;
-    game_state->gradient.offset_y -= stick_y >> 12;
-
-    // ═══════════════════════════════════════════════════════════
-    // Day 8: Use analog stick for frequency control
-    // ═══════════════════════════════════════════════════════════
-    // Matches your X11 backend exactly!
-    if (stick_y >> 12 != 0) {
-      handle_update_tone_frequency(stick_y >> 12);
-    }
-    if (stick_x >> 12 != 0) {
-      handle_update_tone_frequency(stick_x >> 12);
-    }
-
-    // Start button resets
-    if (game_state->controls.start) {
-      game_state->gradient.offset_x = 0;
-      game_state->gradient.offset_y = 0;
-      printf("START pressed - reset offsets\n");
-    }
-  }
+// Raylib pixel composer (R8G8B8A8 format)
+file_scoped_fn uint32_t compose_pixel_rgba(uint8_t r, uint8_t g, uint8_t b,
+                                           uint8_t a) {
+  return (a << 24) | (b << 16) | (g << 8) | r;
 }
 
 /********************************************************************
@@ -255,30 +229,31 @@ file_scoped_fn void handle_controls(GameState *game_state) {
  - Allocate new CPU pixel memory
  - Create new Raylib texture (GPU)
 *********************************************************************/
-file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
+file_scoped_fn void resize_back_buffer(OffscreenBuffer *backbuffer,
                                        OffscreenBufferMeta *backbuffer_meta,
                                        int width, int height) {
-  printf("Resizing back buffer → %dx%d\n", width, height);
+  printf("Resizing back backbuffer → %dx%d\n", width, height);
 
   if (width <= 0 || height <= 0) {
     printf("Rejected resize: invalid size\n");
     return;
   }
 
-  int old_width = buffer->width;
-  int old_height = buffer->height;
+  int old_width = backbuffer->width;
+  int old_height = backbuffer->height;
 
   // Update first!
-  buffer->width = width;
-  buffer->height = height;
-  buffer->pitch = g_backbuffer.width * g_backbuffer.bytes_per_pixel;
+  backbuffer->width = width;
+  backbuffer->height = height;
+  backbuffer->pitch = backbuffer->width * backbuffer->bytes_per_pixel;
 
   // ---- 1. FREE OLD PIXEL MEMORY
   // -------------------------------------------------
-  if (buffer->memory && old_width > 0 && old_height > 0) {
-    munmap(buffer->memory, old_width * old_height * buffer->bytes_per_pixel);
+  if (backbuffer->memory && old_width > 0 && old_height > 0) {
+    munmap(backbuffer->memory,
+           old_width * old_height * backbuffer->bytes_per_pixel);
   }
-  buffer->memory = NULL;
+  backbuffer->memory = NULL;
 
   // ---- 2. FREE OLD TEXTURE
   // ------------------------------------------------------
@@ -288,30 +263,30 @@ file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
   }
   // ---- 3. ALLOCATE NEW BACKBUFFER
   // ----------------------------------------------
-  int buffer_size = width * height * buffer->bytes_per_pixel;
-  buffer->memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE,
-                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  int buffer_size = width * height * backbuffer->bytes_per_pixel;
+  backbuffer->memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-  if (buffer->memory == MAP_FAILED) {
-    buffer->memory = NULL;
+  if (backbuffer->memory == MAP_FAILED) {
+    backbuffer->memory = NULL;
     fprintf(stderr, "mmap failed: could not allocate %d bytes\n", buffer_size);
     return;
   }
 
-  // // memset(buffer->memory, 0, buffer_size); // Raylib does not auto-clear
-  // like
+  // // memset(backbuffer->memory, 0, buffer_size); // Raylib does not
+  // auto-clear like
   // // mmap
-  // memset(buffer->memory, 0, buffer_size);
+  // memset(backbuffer->memory, 0, buffer_size);
 
-  buffer->width = width;
-  buffer->height = height;
-  buffer->pitch = g_backbuffer.width * g_backbuffer.bytes_per_pixel;
+  backbuffer->width = width;
+  backbuffer->height = height;
+  backbuffer->pitch = backbuffer->width * backbuffer->bytes_per_pixel;
 
   // ---- 4. CREATE RAYLIB TEXTURE
   // -------------------------------------------------
-  Image img = {.data = buffer->memory,
-               .width = buffer->width,
-               .height = buffer->height,
+  Image img = {.data = backbuffer->memory,
+               .width = backbuffer->width,
+               .height = backbuffer->height,
                .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
                // format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
                .mipmaps = 1};
@@ -325,13 +300,13 @@ file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
  Equivalent to XPutImage or StretchDIBits
 *********************************************************************/
 file_scoped_fn void
-update_window_from_backbuffer(OffscreenBuffer *buffer,
+update_window_from_backbuffer(OffscreenBuffer *backbuffer,
                               OffscreenBufferMeta *backbuffer_meta) {
-  if (!backbuffer_meta->has_texture || !buffer->memory)
+  if (!backbuffer_meta->has_texture || !backbuffer->memory)
     return;
 
   // Upload CPU → GPU
-  UpdateTexture(backbuffer_meta->texture, buffer->memory);
+  UpdateTexture(backbuffer_meta->texture, backbuffer->memory);
 
   // Draw GPU texture → screen
   DrawTexture(backbuffer_meta->texture, 0, 0, WHITE);
@@ -344,29 +319,30 @@ update_window_from_backbuffer(OffscreenBuffer *buffer,
  - Allocate new CPU pixel memory
  - Create new Raylib texture (GPU)
 *********************************************************************/
-file_scoped_fn void ResizeBackBuffer(OffscreenBuffer *buffer,
+file_scoped_fn void ResizeBackBuffer(OffscreenBuffer *backbuffer,
                                      OffscreenBufferMeta *backbuffer_meta,
                                      int width, int height) {
-  printf("Resizing back buffer → %dx%d\n", width, height);
+  printf("Resizing back backbuffer → %dx%d\n", width, height);
 
   if (width <= 0 || height <= 0) {
     printf("Rejected resize: invalid size\n");
     return;
   }
 
-  int old_width = buffer->width;
-  int old_height = buffer->height;
+  int old_width = backbuffer->width;
+  int old_height = backbuffer->height;
 
   // Update first!
-  buffer->width = width;
-  buffer->height = height;
+  backbuffer->width = width;
+  backbuffer->height = height;
 
   // ---- 1. FREE OLD PIXEL MEMORY
   // -------------------------------------------------
-  if (buffer->memory && old_width > 0 && old_height > 0) {
-    munmap(buffer->memory, old_width * old_height * buffer->bytes_per_pixel);
+  if (backbuffer->memory && old_width > 0 && old_height > 0) {
+    munmap(backbuffer->memory,
+           old_width * old_height * backbuffer->bytes_per_pixel);
   }
-  buffer->memory = NULL;
+  backbuffer->memory = NULL;
 
   // ---- 2. FREE OLD TEXTURE
   // ------------------------------------------------------
@@ -376,28 +352,28 @@ file_scoped_fn void ResizeBackBuffer(OffscreenBuffer *buffer,
   }
   // ---- 3. ALLOCATE NEW BACKBUFFER
   // ----------------------------------------------
-  int buffer_size = width * height * buffer->bytes_per_pixel;
-  buffer->memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE,
-                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  int buffer_size = width * height * backbuffer->bytes_per_pixel;
+  backbuffer->memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-  if (buffer->memory == MAP_FAILED) {
-    buffer->memory = NULL;
+  if (backbuffer->memory == MAP_FAILED) {
+    backbuffer->memory = NULL;
     fprintf(stderr, "mmap failed: could not allocate %d bytes\n", buffer_size);
     return;
   }
 
-  // memset(buffer->memory, 0, buffer_size); // Raylib does not auto-clear like
-  // mmap
-  memset(buffer->memory, 0, buffer_size);
+  // memset(backbuffer->memory, 0, buffer_size); // Raylib does not auto-clear
+  // like mmap
+  memset(backbuffer->memory, 0, buffer_size);
 
-  buffer->width = width;
-  buffer->height = height;
+  backbuffer->width = width;
+  backbuffer->height = height;
 
   // ---- 4. CREATE RAYLIB TEXTURE
   // -------------------------------------------------
-  Image img = {.data = buffer->memory,
-               .width = buffer->width,
-               .height = buffer->height,
+  Image img = {.data = backbuffer->memory,
+               .width = backbuffer->width,
+               .height = backbuffer->height,
                .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
                .mipmaps = 1};
   backbuffer_meta->texture = LoadTextureFromImage(img);
@@ -460,12 +436,7 @@ int platform_main() {
   SetTargetFPS(60);
 
   // Initialize game state
-  g_game_state.controls = (GameControls){0};
-  g_game_state.gradient = (GradientState){0};
-  g_game_state.pixel = (PixelState){0};
-  g_game_state.speed = 5;
-  g_game_state.is_running = true;
-  g_game_state.gamepad_id = -1; // No gamepad yet
+  init_game_state();
 
   // ═══════════════════════════════════════════════════════════
   // 🎮 Initialize gamepad (cross-platform!)
@@ -477,14 +448,14 @@ int platform_main() {
   // ═══════════════════════════════════════════════════════════
   raylib_init_audio();
 
-  // Initialize backbuffer
-  g_backbuffer.memory = NULL;
-  g_backbuffer.width = 1280;
-  g_backbuffer.height = 720;
-  g_backbuffer.bytes_per_pixel = 4;
-  g_backbuffer.pitch = g_backbuffer.width * g_backbuffer.bytes_per_pixel;
-  memset(&g_backbuffer_meta.texture, 0, sizeof(g_backbuffer_meta.texture));
-  g_backbuffer_meta.has_texture = false;
+  int init_backbuffer_status =
+      init_backbuffer(1280, 720, 4, compose_pixel_rgba);
+  if (init_backbuffer_status != 0) {
+    fprintf(stderr, "Failed to initialize backbuffer\n");
+    return init_backbuffer_status;
+  }
+
+  init_game_state();
 
   resize_back_buffer(&g_backbuffer, &g_backbuffer_meta, g_backbuffer.width,
                      g_backbuffer.height);
@@ -554,68 +525,7 @@ int platform_main() {
     // ═══════════════════════════════════════════════════════
     // ⌨️ KEYBOARD INPUT (cross-platform!)
     // ═══════════════════════════════════════════════════════
-
-    g_game_state.controls.up = IsKeyDown(KEY_W) || IsKeyDown(KEY_UP);
-    g_game_state.controls.left = IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT);
-    g_game_state.controls.down = IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN);
-    g_game_state.controls.right = IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
-
-    if (g_game_state.controls.up) {
-      g_game_state.gradient.offset_y += g_game_state.speed;
-    }
-    if (g_game_state.controls.left) {
-      g_game_state.gradient.offset_x += g_game_state.speed;
-    }
-    if (g_game_state.controls.down) {
-      g_game_state.gradient.offset_y -= g_game_state.speed;
-    }
-    if (g_game_state.controls.right) {
-      g_game_state.gradient.offset_x -= g_game_state.speed;
-    }
-
-    // Musical keyboard (Z-X-C-V-B-N-M-Comma)
-    if (IsKeyPressed(KEY_Z))
-      handle_musical_keypress(KEY_Z);
-    if (IsKeyPressed(KEY_X))
-      handle_musical_keypress(KEY_X);
-    if (IsKeyPressed(KEY_C))
-      handle_musical_keypress(KEY_C);
-    if (IsKeyPressed(KEY_V))
-      handle_musical_keypress(KEY_V);
-    if (IsKeyPressed(KEY_B))
-      handle_musical_keypress(KEY_B);
-    if (IsKeyPressed(KEY_N))
-      handle_musical_keypress(KEY_N);
-    if (IsKeyPressed(KEY_M))
-      handle_musical_keypress(KEY_M);
-    if (IsKeyPressed(KEY_COMMA))
-      handle_musical_keypress(KEY_COMMA);
-
-    // Volume control ([ and ])
-    if (IsKeyPressed(KEY_LEFT_BRACKET)) {
-      if (IsKeyPressed(KEY_LEFT_SHIFT)) {
-        handle_increase_volume(-500); // Shift+[ = volume down
-      } else {
-        handle_increase_pan(-10); // [ = pan left
-      }
-    }
-    if (IsKeyPressed(KEY_RIGHT_BRACKET)) {
-      if (IsKeyPressed(KEY_LEFT_SHIFT)) {
-        handle_increase_volume(500); // Shift+] = volume up
-      } else {
-        handle_increase_pan(10); // ] = pan right
-      }
-    }
-
-    if (IsKeyPressed(KEY_ESCAPE)) {
-      printf("ESCAPE pressed - exiting\n");
-      g_game_state.is_running = false;
-    }
-
-    if (IsKeyPressed(KEY_F1)) {
-      printf("F1 pressed - showing audio debug\n");
-      raylib_debug_audio();
-    }
+    handle_keyboard_inputs();
 
     // ═══════════════════════════════════════════════════════
     // 🎮 GAMEPAD INPUT (cross-platform!)
@@ -625,17 +535,18 @@ int platform_main() {
     // ═══════════════════════════════════════════════════════
     // 🎮 Process all input
     // ═══════════════════════════════════════════════════════
-    handle_controls(&g_game_state);
+    handle_controls();
 
     // ═══════════════════════════════════════════════════════
     // 🎨 RENDER
     // ═══════════════════════════════════════════════════════
     if (g_backbuffer.memory) {
       // Render gradient
-      render_weird_gradient(&g_backbuffer, &g_game_state.gradient,
-                            &g_platform_pixel_format_shift);
-      testPixelAnimation(&g_backbuffer, &g_game_state.pixel,
-                         0xFF0000FF); // opaque red in R8G8B8A8
+
+      render_weird_gradient();
+      testPixelAnimation(0xFF0000FF); // opaque red in R8G8B8A8
+
+      game_update_and_render(0xFF0000FF);
       // Example: Convert Raylib Color struct to int (RGBA)
       // You can now use color_int as a packed 32-bit RGBA value
       BeginDrawing();
@@ -651,7 +562,7 @@ int platform_main() {
         (g_frame_end.tv_nsec - g_frame_start.tv_nsec) * 1000000.0;
     real64 fps = 1000.0 / ms_per_frame;
 
-    printf("%.2fms/f, %.2ff/s\n", ms_per_frame, fps);
+    // printf("%.2fms/f, %.2ff/s\n", ms_per_frame, fps);
 
     g_frame_start = g_frame_end;
   }

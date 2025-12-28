@@ -39,59 +39,6 @@ file_scoped_global_var linux_joystick_read *LinuxJoystickRead_ =
 // STEP 5: Redefine API name
 #define LinuxJoystickRead LinuxJoystickRead_
 
-/**
- * GLOBAL STATE
- *
- * In C, we often use global variables for things that need to persist
- * across function calls. Think of these like module-level variables in JS.
- *
- * Casey uses globals to avoid passing everything as parameters.
- * This is a design choice - simpler but less "pure".
- */
-
-// Button states (mirrors Casey's XInput button layout)
-typedef struct {
-  bool up;
-  bool down;
-  bool left;
-  bool right;
-
-  bool start;
-  bool back;
-  bool a_button;
-  bool b_button;
-  bool x_button;
-  bool y_button;
-  bool left_shoulder;
-  bool right_shoulder;
-
-  // Analog sticks (16-bit signed, like XInput)
-  int16_t left_stick_x;
-  int16_t left_stick_y;
-  int16_t right_stick_x;
-  int16_t right_stick_y;
-  int16_t left_trigger;
-  int16_t right_trigger;
-} GameControls;
-
-typedef struct {
-  GameControls controls;
-  GradientState gradient;
-  PixelState pixel;
-  int speed;
-  int gamepad_id;
-  bool is_running;
-} GameState;
-
-file_scoped_global_var PlatformPixelFormatShift
-    g_platform_pixel_format_shift = {
-        .ALPHA_SHIFT = 24,
-        .RED_SHIFT = 16,
-        .GREEN_SHIFT = 8,
-        .BLUE_SHIFT = 0,
-};
-file_scoped_global_var GameState g_game_state = {0}; // Zero-initialized struct
-
 /*
 Will be added when needed
 typedef struct {
@@ -107,8 +54,8 @@ get_window_dimension(Display *display, Window window) {
 }
 */
 
-file_scoped_global_var OffscreenBuffer g_backbuffer;
-file_scoped_global_var XImage *g_backbuffer_info = NULL;
+// file_scoped_global_var OffscreenBuffer g_backbuffer;
+file_scoped_global_var XImage *g_buffer_info = NULL;
 
 // Real implementation (only used if joystick found)
 file_scoped_fn LINUX_JOYSTICK_READ(linux_joystick_read_impl) {
@@ -163,14 +110,14 @@ file_scoped_fn bool linux_init_joystick(GameState *game_state) {
 // 🎮 Poll joystick state (Casey's XInputGetState equivalent)
 // ═══════════════════════════════════════════════════════════════
 
-file_scoped_fn void linux_poll_joystick(GameState *game_state) {
-  if (game_state->gamepad_id < 0) {
+file_scoped_fn void linux_poll_joystick() {
+  if (g_game_state.gamepad_id < 0) {
     return;
   }
 
   struct js_event event;
 
-  while (LinuxJoystickRead(game_state->gamepad_id, &event) == sizeof(event)) {
+  while (LinuxJoystickRead(g_game_state.gamepad_id, &event) == sizeof(event)) {
 
     if (event.type & JS_EVENT_INIT) {
       continue;
@@ -207,38 +154,38 @@ file_scoped_fn void linux_poll_joystick(GameState *game_state) {
       switch (event.number) {
       // Face buttons (cross, circle, square, triangle)
       case 0: // X (cross) - Map to A button
-        game_state->controls.a_button = is_pressed;
+        g_game_state.controls.a_button = is_pressed;
         if (is_pressed)
           printf("Button X (cross) pressed\n");
         break;
 
       case 1: // O (circle) - Map to B button
-        game_state->controls.b_button = is_pressed;
+        g_game_state.controls.b_button = is_pressed;
         if (is_pressed)
           printf("Button O (circle) pressed\n");
         break;
 
       case 3: // □ (square) - Map to X button
-        game_state->controls.x_button = is_pressed;
+        g_game_state.controls.x_button = is_pressed;
         if (is_pressed)
           printf("Button □ (square) pressed\n");
         break;
 
       case 2: // △ (triangle) - Map to Y button
-        game_state->controls.y_button = is_pressed;
+        g_game_state.controls.y_button = is_pressed;
         if (is_pressed)
           printf("Button △ (triangle) pressed\n");
         break;
 
       // Shoulder buttons
       case 4: // L1
-        game_state->controls.left_shoulder = is_pressed;
+        g_game_state.controls.left_shoulder = is_pressed;
         if (is_pressed)
           printf("Button L1 pressed\n");
         break;
 
       case 5: // R1
-        game_state->controls.right_shoulder = is_pressed;
+        g_game_state.controls.right_shoulder = is_pressed;
         if (is_pressed)
           printf("Button R1 pressed\n");
         break;
@@ -257,13 +204,13 @@ file_scoped_fn void linux_poll_joystick(GameState *game_state) {
 
       // Menu buttons
       case 8: // Share/Create - Map to Back
-        game_state->controls.back = is_pressed;
+        g_game_state.controls.back = is_pressed;
         if (is_pressed)
           printf("Button Share/Create pressed\n");
         break;
 
       case 9: // Options - Map to Start
-        game_state->controls.start = is_pressed;
+        g_game_state.controls.start = is_pressed;
         if (is_pressed)
           printf("Button Options pressed\n");
         break;
@@ -323,11 +270,11 @@ file_scoped_fn void linux_poll_joystick(GameState *game_state) {
       // Left Stick (axes 0-1)
       // ───────────────────────────────────────────────────────
       case 0:
-        game_state->controls.left_stick_x = event.value;
+        g_game_state.controls.left_stick_x = event.value;
         printf("Left Stick X\n");
         break;
       case 1:
-        game_state->controls.left_stick_y = event.value;
+        g_game_state.controls.left_stick_y = event.value;
         printf("Left Stick Y\n");
         break;
 
@@ -337,22 +284,22 @@ file_scoped_fn void linux_poll_joystick(GameState *game_state) {
       case 3: // L2 trigger X
         printf("Right Stick X\n");
         // Optional: Store trigger pressure if you need it
-        game_state->controls.right_stick_x = event.value;
+        g_game_state.controls.right_stick_x = event.value;
         break;
       case 4: // R2 trigger Y
         printf("Right Stick Y\n");
-        game_state->controls.right_stick_y = event.value;
+        g_game_state.controls.right_stick_y = event.value;
         break;
 
       // ───────────────────────────────────────────────────────
       // Triggers (analog, 0 to +32767)
       // ───────────────────────────────────────────────────────
       case 2:
-        game_state->controls.left_trigger = event.value;
+        g_game_state.controls.left_trigger = event.value;
         printf("L2 trigger\n");
         break;
       case 5: // ← Right stick Y is axis 5!
-        game_state->controls.right_trigger = event.value;
+        g_game_state.controls.right_trigger = event.value;
         printf("R2 trigger\n");
         break;
 
@@ -361,32 +308,32 @@ file_scoped_fn void linux_poll_joystick(GameState *game_state) {
       // ───────────────────────────────────────────────────────
       case 6: { // D-pad horizontal
         if (event.value < -16384) {
-          game_state->controls.left = true;
-          game_state->controls.right = false;
+          g_game_state.controls.left = true;
+          g_game_state.controls.right = false;
           printf("D-pad LEFT\n");
         } else if (event.value > 16384) {
-          game_state->controls.right = true;
-          game_state->controls.left = false;
+          g_game_state.controls.right = true;
+          g_game_state.controls.left = false;
           printf("D-pad RIGHT\n");
         } else {
-          game_state->controls.left = false;
-          game_state->controls.right = false;
+          g_game_state.controls.left = false;
+          g_game_state.controls.right = false;
         }
         break;
       }
 
       case 7: { // D-pad vertical
         if (event.value < -16384) {
-          game_state->controls.up = true;
-          game_state->controls.down = false;
+          g_game_state.controls.up = true;
+          g_game_state.controls.down = false;
           printf("D-pad UP\n");
         } else if (event.value > 16384) {
-          game_state->controls.down = true;
-          game_state->controls.up = false;
+          g_game_state.controls.down = true;
+          g_game_state.controls.up = false;
           printf("D-pad DOWN\n");
         } else {
-          game_state->controls.up = false;
-          game_state->controls.down = false;
+          g_game_state.controls.up = false;
+          g_game_state.controls.down = false;
         }
         break;
       }
@@ -397,226 +344,15 @@ file_scoped_fn void linux_poll_joystick(GameState *game_state) {
   }
 }
 
-// NEW: Helper function to change frequency
-inline void set_tone_frequency(int hz) {
-  g_sound_output.tone_hz = (int)hz;
-  g_sound_output.wave_period =
-      g_sound_output.samples_per_second / g_sound_output.tone_hz;
-  // g_sound_output.half_wave_period = g_sound_output.wave_period / 2;
-
-  // Optional: reset phase to avoid clicks
-  g_sound_output.running_sample_index = 0;
-}
-
-// Fun test
-inline file_scoped_fn void handle_update_tone_frequency(int hz_to_add) {
-  int new_hz = g_sound_output.tone_hz + hz_to_add;
-  // Clamp to safe range
-  if (new_hz < 60)
-    new_hz = 60;
-  if (new_hz > 1000)
-    new_hz = 1000;
-
-  set_tone_frequency((float)new_hz);
-
-  printf("🎵 Tone frequency: %d Hz (period: %d samples)\n", new_hz,
-         g_sound_output.wave_period);
-}
-
-inline file_scoped_fn void handle_increase_volume(int num) {
-  int new_volume = g_sound_output.tone_volume + num;
-
-  // Clamp to safe range
-  if (new_volume < 0)
-    new_volume = 0;
-  if (new_volume > 15000)
-    new_volume = 15000;
-
-  g_sound_output.tone_volume = new_volume;
-  printf("🔊 Volume: %d / %d (%.1f%%)\n", new_volume, 15000,
-         (new_volume * 100.0f) / 15000);
-}
-
-// Fun test
-inline file_scoped_fn void handleMusicalkeypress(KeySym keysym) {
-  switch (keysym) {
-  case XK_F1: {
-    printf("F1 pressed - showing audio debug\n");
-    linux_debug_audio_latency();
-    break;
-  }
-  case XK_z:
-    set_tone_frequency((int)261.63f);
-    printf("🎵 Note: C4 (261.63 Hz)\n");
-    break;
-  case XK_x:
-    set_tone_frequency((int)293.66f);
-    printf("🎵 Note: D4 (293.66 Hz)\n");
-    break;
-  case XK_c:
-    set_tone_frequency((int)329.63f);
-    printf("🎵 Note: E4 (329.63 Hz)\n");
-    break;
-  case XK_v:
-    set_tone_frequency((int)349.23f);
-    printf("🎵 Note: F4 (349.23 Hz)\n");
-    break;
-  case XK_b:
-    set_tone_frequency((int)392.00f);
-    printf("🎵 Note: G4 (392.00 Hz)\n");
-    break;
-  case XK_n:
-    set_tone_frequency((int)440.00f);
-    printf("🎵 Note: A4 (440.00 Hz) - Concert Pitch\n");
-    break;
-  case XK_m:
-    set_tone_frequency((int)493.88f);
-    printf("🎵 Note: B4 (493.88 Hz)\n");
-    break;
-  case XK_comma:
-    set_tone_frequency((int)523.25f);
-    printf("🎵 Note: C5 (523.25 Hz)\n");
-    break;
-  }
-}
-
-// Fun test
-
-/**
- * **Linear vs Equal-Power Panning:**
- *
- *
- * ```
- * Linear Panning (simple):
- *
- * ────────────────────────────
- *
- * Pan center: both channels at 50%
- * Problem: Sounds QUIETER in center (50% + 50% ≠ 100% perceived volume)
- *
- * Math: L = (100-pan)/200, R = (100+pan)/200
- *
- *
- * Equal-Power Panning (better):
- *
- * ─────────────────────────────
- *
- * Pan center: both channels at 70.7% (√2/2)
- * Result: Constant perceived loudness across pan range
- *
- *
- * Math: L = cos(angle), R = sin(angle)
- *       where angle = (pan+1) * π/4
- * ```
- *
- *
- * **Why the "center dip" happens with linear:**
- * ```
- * Human hearing perceives power, not amplitude
- * Power ∝ amplitude²
- *
- * Linear at center:
- *     L = 0.5, R = 0.5
- *     Total power = 0.5² + 0.5² = 0.25 + 0.25 = 0.5  ← Only 50%!
- *
- * Equal-power at center:
- *     L = 0.707, R = 0.707
- *     Total power = 0.707² + 0.707² = 0.5 + 0.5 = 1.0  ← Full 100%!
- * ```
- *
- *
- * **Visual comparison:**
- * ```
- * Linear Pan (has dip):
- * Perceived  │     ╱╲
- * Loudness   │   ╱    ╲
- *            │ ╱        ╲
- *            └──────────────
- *            L    C      R
- *
- * Equal-Power (flat):
- * Perceived  │ ──────────
- * Loudness   │
- *            │
- *            └──────────────
- *            L    C      R
- * ```
- *
- */
-inline file_scoped_fn void handle_increase_pan(int num) {
-  int new_pan = g_sound_output.pan_position + num;
-  if (new_pan < -100)
-    new_pan = -100;
-  if (new_pan > 100)
-    new_pan = 100;
-
-  g_sound_output.pan_position = new_pan;
-
-  // Visual indicator
-  char indicator[50] = {0};
-  int pos =
-      (g_sound_output.pan_position + 100) * 20 / 200; // Map -100..100 to 0..20
-  for (int i = 0; i < 21; i++) {
-    indicator[i] = (i == pos) ? '*' : '-';
-  }
-  indicator[21] = '\0';
-
-  printf("🎧 Pan: %s %+d\n", indicator, g_sound_output.pan_position);
-  printf("    L ◀%s▶ R\n", indicator);
-}
-
-file_scoped_fn void linux_handle_controls(GameState *game_state) {
-
-  if (game_state->controls.up) {
-    game_state->gradient.offset_y += game_state->speed;
-  }
-  if (game_state->controls.left) {
-    game_state->gradient.offset_x += game_state->speed;
-  }
-  if (game_state->controls.down) {
-    game_state->gradient.offset_y -= game_state->speed;
-  }
-  if (game_state->controls.right) {
-    game_state->gradient.offset_x -= game_state->speed;
-  }
-
-  if (game_state->gamepad_id >= 0) {
-    // Same math as Casey! (>> 12 = divide by 4096)
-    // This converts -32767..+32767 to about -8..+8 pixels/frame
-    int normalized_left_stick_x = game_state->controls.left_stick_x / 4096;
-    int normalized_left_stick_y = game_state->controls.left_stick_y / 4096;
-
-    game_state->gradient.offset_x -= normalized_left_stick_x;
-    game_state->gradient.offset_y -= normalized_left_stick_y;
-
-    // set_tone_frequency(
-    //     512 +
-    //     (int)(256.0f * ((real32)game_state->controls.left_stick_y /
-    //     30000.0f)));
-    if (normalized_left_stick_y != 0) {
-      handle_update_tone_frequency(normalized_left_stick_y);
-    }
-    if (normalized_left_stick_x != 0) {
-      handle_update_tone_frequency(normalized_left_stick_x);
-    }
-    // Optional: Start button resets
-    if (game_state->controls.start) {
-      game_state->gradient.offset_x = 0;
-      game_state->gradient.offset_y = 0;
-      printf("START pressed - reset offsets\n");
-    }
-  }
-}
-
 /**
  * RESIZE BACK BUFFER
  *
- * Allocates (or reallocates) the pixel buffer when window size changes.
+ * Allocates (or reallocates) the pixel backbuffer when window size changes.
  *
  * Casey's equivalent: Win32ResizeDIBSection()
  *
  * FLOW:
- * 1. Free old buffer if it exists
+ * 1. Free old backbuffer if it exists
  * 2. Allocate new pixel memory
  * 3. Create XImage wrapper
  *
@@ -624,32 +360,32 @@ file_scoped_fn void linux_handle_controls(GameState *game_state) {
  * 🌊 CASEY'S "WAVE 2" RESOURCE - STATE LIFETIME
  * ═══════════════════════════════════════════════════════════════════════
  *
- * This buffer is a WAVE 2 resource (state-lifetime, not process-lifetime).
+ * This backbuffer is a WAVE 2 resource (state-lifetime, not process-lifetime).
  * It lives ONLY as long as the current window size stays the same.
  *
  * Why we clean up here (unlike process-lifetime resources):
- * - We're REPLACING the buffer with a new one (different size)
+ * - We're REPLACING the backbuffer with a new one (different size)
  * - This happens DURING program execution (not at exit)
  * - If we don't free, we leak 1-3MB on EVERY resize!
  *
  * Example: User resizes window 10 times:
  * ❌ Without cleanup: 10 buffers × 2MB = 20MB leaked! 💥
- * ✅ With cleanup: Always just 1 buffer = 2MB total ⚡
+ * ✅ With cleanup: Always just 1 backbuffer = 2MB total ⚡
  *
  * Casey's Rule: "Think about creation and destruction in WAVES.
- *                This buffer changes with window size (state change),
+ *                This backbuffer changes with window size (state change),
  *                so we manage it when state changes."
  *
  * 🟡 COLD PATH: Only runs on window resize (maybe once per second)
  *    So malloc/free here is totally fine!
  */
-inline file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
+inline file_scoped_fn void resize_back_buffer(OffscreenBuffer *backbuffer,
                                               XImage **backbuffer_info,
                                               Display *display, Visual *visual,
                                               int window_depth, int width,
                                               int height) {
 
-  // Free old buffer if it exists
+  // Free old backbuffer if it exists
   // This is WAVE 2 cleanup - we're changing state (window size)!
   //
   // Visual: What happens on resize
@@ -659,47 +395,47 @@ inline file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
   // │                                         │
   // │ User resizes to 1920×1080               │
   // │ ↓                                       │
-  // │ We MUST free the 1.8 MB buffer!         │
+  // │ We MUST free the 1.8 MB backbuffer!         │
   // │ Otherwise it leaks forever! 💥          │
   // │                                         │
   // │ After cleanup:                          │
   // │ backbuffer_info → NULL                     │
-  // │ buffer->memory → NULL                      │
+  // │ backbuffer->memory → NULL                      │
   // │                                         │
-  // │ Now allocate new 8.3 MB buffer          │
+  // │ Now allocate new 8.3 MB backbuffer          │
   // │ backbuffer_info → [8.3 MB of pixels] ✅    │
   // └─────────────────────────────────────────┘
 
   if ((*backbuffer_info)) {
     // Call XDestroyImage() to free it
-    // This ALSO frees buffer->memory automatically!
+    // This ALSO frees backbuffer->memory automatically!
     // (X11 owns the memory once XCreateImage is called)
-    if (buffer->memory) {
+    if (backbuffer->memory) {
       (*backbuffer_info)->data = NULL; // XDestroyImage should not free
-      munmap(buffer->memory, buffer->width * buffer->height * 4);
-      buffer->memory = NULL;
+      munmap(backbuffer->memory, backbuffer->width * backbuffer->height * 4);
+      backbuffer->memory = NULL;
     }
     XDestroyImage((*backbuffer_info));
 
     (*backbuffer_info) = NULL;
-    buffer->memory = NULL;
+    backbuffer->memory = NULL;
   }
 
   // Calculate how much memory we need
   // Each pixel is 4 bytes (RGBA), so:
   // Total bytes = width × height × 4
-  buffer->pitch = width * buffer->bytes_per_pixel; // Bytes per row
-  int buffer_size = buffer->pitch * height;        // Total bytes
+  backbuffer->pitch = width * backbuffer->bytes_per_pixel; // Bytes per row
+  int buffer_size = backbuffer->pitch * height;            // Total bytes
 
-  printf("Allocating back buffer: %dx%d (%d bytes = %.2f MB)\n", width, height,
-         buffer_size, buffer_size / (1024.0 * 1024.0));
+  printf("Allocating back backbuffer: %dx%d (%d bytes = %.2f MB)\n", width,
+         height, buffer_size, buffer_size / (1024.0 * 1024.0));
 
   // Allocate pixel memory using mmap (Casey-style)
-  buffer->memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE,
-                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  backbuffer->memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-  if (buffer->memory == MAP_FAILED) {
-    buffer->memory = NULL;
+  if (backbuffer->memory == MAP_FAILED) {
+    backbuffer->memory = NULL;
     fprintf(stderr, "mmap failed: could not allocate %d bytes\n", buffer_size);
     return;
   }
@@ -726,33 +462,33 @@ inline file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
       // 24,                     // Depth (24-bit RGB, ignore alpha)
       // ZPixmap,                // Format (chunky pixels, not planar)
       // 0,                      // Offset in data
-      // (char *)buffer->memory, // Our pixel buffer
+      // (char *)backbuffer->memory, // Our pixel backbuffer
       // width, height,          // Dimensions
       // 32,                     // Bitmap pad (align to 32-bit boundaries)
       // 0                       // Bytes per line (0 = auto-calculate)
-      display,                //
-      visual,                 //
-      window_depth,           //
-      ZPixmap,                //
-      0,                      //
-      (char *)buffer->memory, //
-      width,                  //
-      height,                 //
-      32,                     //
-      0                       //
+      display,                    //
+      visual,                     //
+      window_depth,               //
+      ZPixmap,                    //
+      0,                          //
+      (char *)backbuffer->memory, //
+      width,                      //
+      height,                     //
+      32,                         //
+      0                           //
   );
 
   // Save the dimensions
-  buffer->width = width;
-  buffer->height = height;
+  backbuffer->width = width;
+  backbuffer->height = height;
 
-  printf("Back buffer created successfully\n");
+  printf("Back backbuffer created successfully\n");
 }
 
 /**
  * UPDATE WINDOW (BLIT)
  *
- * Copies pixels from back buffer to screen.
+ * Copies pixels from back backbuffer to screen.
  * "Blit" = BLock Image Transfer = fast pixel copy
  *
  * Casey's equivalent: Win32UpdateWindow() using StretchDIBits()
@@ -760,12 +496,12 @@ inline file_scoped_fn void resize_back_buffer(OffscreenBuffer *buffer,
  * 🔴 HOT PATH: Could be called 60 times/second!
  * XPutImage is hardware-accelerated, so it's fast.
  */
-static void update_window(OffscreenBuffer *buffer, XImage **backbuffer_info,
+static void update_window(OffscreenBuffer *backbuffer, XImage **backbuffer_info,
                           Display *display, Window window, GC gc, int x, int y,
                           int width, int height) {
-  // Don't blit if no buffer exists!
+  // Don't blit if no backbuffer exists!
   if (!(*backbuffer_info)) {
-    printf("WARNING: Tried to blit, but no buffer exists!\n");
+    printf("WARNING: Tried to blit, but no backbuffer exists!\n");
     return;
   }
 
@@ -779,16 +515,16 @@ static void update_window(OffscreenBuffer *buffer, XImage **backbuffer_info,
    * │                     │ XPut │                     │
    * │                     │Image │                     │
    * └─────────────────────┘      └─────────────────────┘
-   *    buffer->memory                   The actual window
+   *    backbuffer->memory                   The actual window
    * ```
    */
-  // Copy pixels from back buffer to window
+  // Copy pixels from back backbuffer to window
   // This is THE KEY FUNCTION for double buffering!
   XPutImage(display,            // X11 connection
             window,             // Destination (the actual window)
             gc,                 // Graphics context
-            (*backbuffer_info), // Source (our pixel buffer)
-            x, y,               // Source position (which part of buffer)
+            (*backbuffer_info), // Source (our pixel backbuffer)
+            x, y,               // Source position (which part of backbuffer)
             x, y,               // Dest position (where on window)
             width, height       // How much to copy
   );
@@ -810,10 +546,11 @@ static void update_window(OffscreenBuffer *buffer, XImage **backbuffer_info,
  * We check the event.type and handle each case, just like:
  * switch(event.type) { case 'click': ..., case 'resize': ... }
  */
-inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
+inline file_scoped_fn void handle_event(OffscreenBuffer *backbuffer,
                                         XImage **backbuffer_info,
                                         Display *display, Window window, GC gc,
-                                        XEvent *event, GameState *game_state) {
+                                        XEvent *event, GameState *game_state,
+                                        SoundOutput *sound_output) {
   switch (event->type) {
 
   /**
@@ -829,29 +566,31 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
     int new_height = event->xconfigure.height;
     printf("Window resized to: %dx%d\n", new_width, new_height);
     // /**
-    //  * **Why do we resize the buffer here?**
+    //  * **Why do we resize the backbuffer here?**
     //  *
-    //  * Because the window size changed! Our old buffer is the wrong size. We
-    //  * need to allocate a new buffer that matches the new window dimensions.
+    //  * Because the window size changed! Our old backbuffer is the wrong size.
+    //  We
+    //  * need to allocate a new backbuffer that matches the new window
+    //  dimensions.
     //  */
     // // Only resize if dimensions ACTUALLY CHANGED!
-    // if (new_width != buffer->width || new_height != buffer->height) {
-    //   printf("Window resized: %dx%d → %dx%d\n", buffer->width,
-    //   buffer->height,
+    // if (new_width != backbuffer->width || new_height != backbuffer->height) {
+    //   printf("Window resized: %dx%d → %dx%d\n", backbuffer->width,
+    //   backbuffer->height,
     //          new_width, new_height);
-    //   resize_back_buffer(buffer, backbuffer_info, display, new_width,
+    //   resize_back_buffer(backbuffer, backbuffer_info, display, new_width,
     //   new_height);
     // } else {
     //   printf("ConfigureNotify (same size, ignoring)\n");
     // }
 
     // ═══════════════════════════════════════════════════════════════
-    // 🔇 COMMENTED OUT: Day 5 uses fixed buffer, no resize
+    // 🔇 COMMENTED OUT: Day 5 uses fixed backbuffer, no resize
     // ═══════════════════════════════════════════════════════════════
-    // if (new_width != buffer->width || new_height != buffer->height) {
+    // if (new_width != backbuffer->width || new_height != backbuffer->height) {
     //     printf("Window resized: %dx%d → %dx%d\n",
-    //            buffer->width, buffer->height, new_width, new_height);
-    //     resize_back_buffer(buffer, backbuffer_info, display, new_width,
+    //            backbuffer->width, backbuffer->height, new_width, new_height);
+    //     resize_back_buffer(backbuffer, backbuffer_info, display, new_width,
     //     new_height);
     // }
 
@@ -899,8 +638,8 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
     if (event->xexpose.count != 0)
       break;
     printf("Repainting window");
-    update_window(buffer, backbuffer_info, display, window, gc, 0, 0,
-                  buffer->width, buffer->height);
+    update_window(backbuffer, backbuffer_info, display, window, gc, 0, 0,
+                  backbuffer->width, backbuffer->height);
     break;
   }
 
@@ -939,38 +678,71 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
     KeySym key = XLookupKeysym(&event->xkey, 0);
     printf("pressed\n");
 
-    handleMusicalkeypress(key);
-
     switch (key) {
+    case XK_F1: {
+      printf("F1 pressed - showing audio debug\n");
+      linux_debug_audio_latency(sound_output);
+      break;
+    }
+    case XK_z:
+      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_C4;
+      break;
+    case XK_x:
+      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_D4;
+      break;
+    case XK_c:
+      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_E4;
+      break;
+    case XK_v:
+      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_F4;
+      break;
+    case XK_b:
+      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_G4;
+      break;
+    case XK_n:
+      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_A4;
+      break;
+    case XK_m:
+      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_B4;
+      break;
+    case XK_comma:
+      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_C5;
+      break;
     case XK_braceleft: // Sometimes not detected!{ // [ key (Shift for {)
     {
       printf("{ or [ pressed\n");
-      handle_increase_volume(-500);
+      g_game_state.controls.decrease_sound_volume = true;
+      g_game_state.controls.increase_sound_volume = false;
       break;
     }
     case XK_bracketleft: // [ key (Shift for {)
     {
       if (event->xkey.state & ShiftMask) {
         printf("{ pressed (Shift + [)\n");
-        handle_increase_volume(-500);
+        g_game_state.controls.decrease_sound_volume = true;
+        g_game_state.controls.increase_sound_volume = false;
       } else {
-        handle_increase_pan(-10);
+        g_game_state.controls.move_sound_pan_left = true;
+        g_game_state.controls.move_sound_pan_right = false;
       }
       break;
     }
     case XK_braceright: // Sometimes not detected!{ // ] key (Shift for })
     {
       printf("} or ] pressed\n");
-      handle_increase_volume(500);
+      g_game_state.controls.increase_sound_volume = true;
+      g_game_state.controls.decrease_sound_volume = false;
       break;
     }
     case XK_bracketright: // [ key (Shift for {)
     {
       if (event->xkey.state & ShiftMask) {
         printf("{ pressed (Shift + ])\n");
-        handle_increase_volume(500);
+        g_game_state.controls.increase_sound_volume = true;
+        g_game_state.controls.decrease_sound_volume = false;
       } else {
-        handle_increase_pan(10);
+        g_game_state.controls.move_sound_pan_right = true;
+        g_game_state.controls.move_sound_pan_left = false;
       }
       break;
     }
@@ -978,28 +750,28 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
     case (XK_W):
     case (XK_Up): {
       printf("W pressed\n");
-      game_state->controls.up = true;
+      g_game_state.controls.up = true;
       break;
     }
     case (XK_a):
     case (XK_A):
     case (XK_Left): {
       printf("A pressed\n");
-      game_state->controls.left = true;
+      g_game_state.controls.left = true;
       break;
     }
     case (XK_s):
     case (XK_S):
     case (XK_Down): {
       printf("S pressed\n");
-      game_state->controls.down = true;
+      g_game_state.controls.down = true;
       break;
     }
     case (XK_d):
     case (XK_D):
     case (XK_Right): {
       printf("D pressed\n");
-      game_state->controls.right = true;
+      g_game_state.controls.right = true;
       break;
     }
     case (XK_space): {
@@ -1008,7 +780,7 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
     }
     case (XK_Escape): {
       printf("ESCAPE pressed - exiting\n");
-      game_state->is_running = false;
+      g_game_state.is_running = false;
       break;
     }
     }
@@ -1025,32 +797,64 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
     KeySym key = XLookupKeysym(&event->xkey, 0);
 
     switch (key) {
+    case XK_braceleft: // Sometimes not detected!{ // [ key (Shift for {)
+    {
+      printf("{ or [ pressed\n");
+      g_game_state.controls.increase_sound_volume = false;
+      break;
+    }
+    case XK_bracketleft: // [ key (Shift for {)
+    {
+      if (event->xkey.state & ShiftMask) {
+        printf("{ pressed (Shift + [)\n");
+        g_game_state.controls.decrease_sound_volume = false;
+      } else {
+        g_game_state.controls.move_sound_pan_left = false;
+      }
+      break;
+    }
+    case XK_braceright: // Sometimes not detected!{ // ] key (Shift for })
+    {
+      printf("} or ] pressed\n");
+      g_game_state.controls.decrease_sound_volume = false;
+      break;
+    }
+    case XK_bracketright: // [ key (Shift for {)
+    {
+      if (event->xkey.state & ShiftMask) {
+        printf("{ pressed (Shift + ])\n");
+        g_game_state.controls.increase_sound_volume = false;
+      } else {
+        g_game_state.controls.move_sound_pan_right = false;
+      }
+      break;
+    }
     case (XK_w):
     case (XK_W):
     case (XK_Up): {
       printf("W released\n");
-      game_state->controls.up = false;
+      g_game_state.controls.up = false;
       break;
     }
     case (XK_a):
     case (XK_A):
     case (XK_Left): {
       printf("A released\n");
-      game_state->controls.left = false;
+      g_game_state.controls.left = false;
       break;
     }
     case (XK_s):
     case (XK_S):
     case (XK_Down): {
       printf("S released\n");
-      game_state->controls.down = false;
+      g_game_state.controls.down = false;
       break;
     }
     case (XK_d):
     case (XK_D):
     case (XK_Right): {
       printf("D released\n");
-      game_state->controls.right = false;
+      g_game_state.controls.right = false;
       break;
     }
     case (XK_space): {
@@ -1059,7 +863,7 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
     }
     case (XK_Escape): {
       printf("ESCAPE released - exiting\n");
-      game_state->is_running = false;
+      g_game_state.is_running = false;
       break;
     }
     }
@@ -1082,18 +886,12 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *buffer,
   }
 }
 
-/**
- * MAIN FUNCTION
- *
- * Casey's WinMain equivalent. This is the entry point of our program.
- *
- * FLOW:
- * 1. Connect to X server (like connecting to a WebSocket server)
- * 2. Create a window (like document.createElement())
- * 3. Set up event handling (like addEventListener())
- * 4. Run event loop (like while(true) in a game loop)
- * 5. Clean up (like componentWillUnmount in React)
- */
+// X11 pixel composer (0xAARRGGBB format)
+file_scoped_fn uint32_t compose_pixel_xrgb(uint8_t r, uint8_t g, uint8_t b,
+                                           uint8_t a) {
+  return ((a << 24) | (r << 16) | (g << 8) | (b));
+}
+
 int platform_main() {
   // ═══════════════════════════════════════════════════════════
   // 🎮 Initialize joystick BEFORE main loop (Casey's pattern)
@@ -1118,13 +916,13 @@ int platform_main() {
   //   48000 * sizeof(int16_t) * 2 = 1 second of stereo 16-bit audio
   //                                = 48000 * 2 * 2 = 192,000 bytes
   //
-  // NOTE: This is a SECONDARY buffer size (where we write audio).
-  //       The PRIMARY buffer just sets the format.
+  // NOTE: This is a SECONDARY backbuffer size (where we write audio).
+  //       The PRIMARY backbuffer just sets the format.
   // ═══════════════════════════════════════════════════════════
   int samples_per_second = 48000;
   int bytes_per_sample = sizeof(int16_t) * 2; // 16-bit stereo
   int secondary_buffer_size = samples_per_second * bytes_per_sample;
-  linux_init_sound(samples_per_second, secondary_buffer_size);
+  linux_init_sound(&g_sound_output, samples_per_second, secondary_buffer_size);
 
   /**
    * CONNECT TO X SERVER
@@ -1168,35 +966,29 @@ int platform_main() {
   Colormap colormap = XCreateColormap(display, root, vinfo.visual, AllocNone);
 
   g_game_state.controls = (GameControls){0};
-  g_game_state.gradient = (GradientState){0};
-  g_game_state.pixel = (PixelState){0};
+  // g_game_state.gradient = (GradientState){0};
+  // g_game_state.pixel = (PixelState){0};
   g_game_state.speed = 1;
   g_game_state.is_running = true;
 
-  g_backbuffer_info = NULL;
-  // g_backbuffer.memory = NULL;
-  g_backbuffer.width = 1280;
-  g_backbuffer.height = 720;
-  g_backbuffer.bytes_per_pixel = 4;
-  g_backbuffer.pitch = g_backbuffer.width * g_backbuffer.bytes_per_pixel;
-  int initial_buffer_size = g_backbuffer.pitch * g_backbuffer.height;
-  g_backbuffer.memory = mmap(NULL, initial_buffer_size, PROT_READ | PROT_WRITE,
-                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  g_buffer_info = NULL;
 
-  if (g_backbuffer.memory == MAP_FAILED) {
-    g_backbuffer.memory = NULL;
-    fprintf(stderr, "mmap failed: could not allocate %d bytes\n",
-            initial_buffer_size);
-    return 1;
+  int init_backbuffer_status =
+      init_backbuffer(1280, 720, 4, compose_pixel_xrgb);
+  if (init_backbuffer_status != 0) {
+    fprintf(stderr, "Failed to initialize backbuffer\n");
+    return init_backbuffer_status;
   }
 
-  g_backbuffer_info = XCreateImage(
+  init_game_state();
+
+  g_buffer_info = XCreateImage(
       // display,                                        // X11 connection
       // DefaultVisual(display, DefaultScreen(display)), // Color format
       // 24,                          // Depth (24-bit RGB, ignore alpha)
       // ZPixmap,                     // Format (chunky pixels, not planar)
       // 0,                           // Offset in data
-      // (char *)g_backbuffer.memory, // Our pixel buffer
+      // (char *)g_backbuffer.memory, // Our pixel backbuffer
       // g_backbuffer.width, g_backbuffer.height, // Dimensions
       // 32, // Bitmap pad (align to 32-bit boundaries)
       // 0   // Bytes per line (0 = auto-calculate)
@@ -1329,13 +1121,13 @@ int platform_main() {
   /**
    * : ALLOCATE INITIAL BACK BUFFER
    *
-   * We need to create the back buffer BEFORE entering the event loop
+   * We need to create the back backbuffer BEFORE entering the event loop
    * so we have something to draw to!
    *
    * Note: ConfigureNotify will fire after XMapWindow, but we also
    * want to draw immediately, so we allocate here.
    */
-  resize_back_buffer(&g_backbuffer, &g_backbuffer_info, display, vinfo.visual,
+  resize_back_buffer(&g_backbuffer, &g_buffer_info, display, vinfo.visual,
                      vinfo.depth, g_backbuffer.width, g_backbuffer.height);
 
   // int test_offset = 0;
@@ -1388,18 +1180,18 @@ int platform_main() {
 
     while (XPending(display) > 0) {
       XNextEvent(display, &event);
-      handle_event(&g_backbuffer, &g_backbuffer_info, display, window, gc,
-                   &event, &g_game_state);
+      handle_event(&g_backbuffer, &g_buffer_info, display, window, gc, &event,
+                   &g_game_state, &g_sound_output);
     }
     // ═══════════════════════════════════════════════════════
     // 🎮 Poll joystick (Casey's XInputGetState pattern)
     // ═══════════════════════════════════════════════════════
-    linux_poll_joystick(&g_game_state);
+    linux_poll_joystick();
 
     // // ═══════════════════════════════════════════════════════
     // // 🎮 Use joystick input to control gradient
     // // ═══════════════════════════════════════════════════════
-    linux_handle_controls(&g_game_state);
+    handle_controls();
 
     // /**
     //  * HANDLE THE EVENT
@@ -1421,36 +1213,12 @@ int platform_main() {
     // For now, this demonstrates how to write pixels to memory.
     //
     if (g_backbuffer.memory) {
-      render_weird_gradient(&g_backbuffer, &g_game_state.gradient,
-                            &g_platform_pixel_format_shift);
-
-      // // Test pixel animation
-      // uint32_t *pixels = (uint32_t *)g_backbuffer.memory;
-      // int total_pixels = g_backbuffer.width * g_backbuffer.height;
-
-      // test_offset = g_game_state.pixel.offset_y * g_backbuffer.width +
-      //               g_game_state.pixel.offset_x;
-
-      // if (test_offset < total_pixels)
-      //   pixels[test_offset] = 0xFF0000;
-
-      // // Move the red dot every frame
-      // if (g_game_state.pixel.offset_x + 1 < g_backbuffer.width - 1) {
-      //   g_game_state.pixel.offset_x += 1;
-      // } else {
-      //   g_game_state.pixel.offset_x = 0;
-      //   if (g_game_state.pixel.offset_y + 75 < g_backbuffer.height - 1) {
-      //     g_game_state.pixel.offset_y += 75;
-      //   } else {
-      //     g_game_state.pixel.offset_y = 0;
-      //   }
-      // }
-
-      testPixelAnimation(&g_backbuffer, &g_game_state.pixel, 0xFFFF0000);
 
       // Display the result
-      update_window(&g_backbuffer, &g_backbuffer_info, display, window, gc, 0,
-                    0, g_backbuffer.width, g_backbuffer.height);
+      update_window(&g_backbuffer, &g_buffer_info, display, window, gc, 0, 0,
+                    g_backbuffer.width, g_backbuffer.height);
+
+      game_update_and_render(0xFFFF0000);
 
       // offset_x++;
 
@@ -1462,14 +1230,14 @@ int platform_main() {
       double fps = 1000.0 / ms_per_frame;
       double mcpf = (end_cycles - start_cycles) / 1000000.0;
 
-      printf("%.2fms/f, %.2ff/s, %.2fmc/f\n", ms_per_frame, fps, mcpf);
+      // printf("%.2fms/f, %.2ff/s, %.2fmc/f\n", ms_per_frame, fps, mcpf);
 
       start = end;
       start_cycles = end_cycles;
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Day 8: Fill and write audio buffer every frame
+    // Day 8: Fill and write audio backbuffer every frame
     // ═══════════════════════════════════════════════════════════
     //
     // Casey calls this in the main loop after rendering.
@@ -1478,7 +1246,7 @@ int platform_main() {
     // NOTE: ALSA handles playback automatically once we start
     // writing. No explicit "Play()" call needed!
     // ═══════════════════════════════════════════════════════════
-    linux_fill_sound_buffer();
+    linux_fill_sound_buffer(&g_sound_output);
   }
 
   /**
@@ -1514,11 +1282,11 @@ int platform_main() {
    * ┌────────────────────────────────────────────────────────────────┐
    * │ WAVE 2: State Lifetime (Changes during program)               │
    * │ ────────────────────────────────────────────                  │
-   * │ - g_BackBuffer (per window size)                              │
+   * │ - g_Buffer (per window size)                              │
    * │                                                                │
    * │ ✅ Casey says: Clean up WHEN STATE CHANGES (in batches)        │
    * │    We DO clean this in resize_back_buffer() because:          │
-   * │    1. We're REPLACING it with a new buffer                     │
+   * │    1. We're REPLACING it with a new backbuffer                     │
    * │    2. This happens DURING program execution                    │
    * │    3. If we don't free, we leak memory on every resize!        │
    * │                                                                │
@@ -1563,18 +1331,18 @@ int platform_main() {
    * close down... honestly, a big cause of that is this sort of thing."
    *
    * WEB DEV ANALOGY:
-   * JavaScript: const buffer = new Uint8Array(1000000);
+   * JavaScript: const backbuffer = new Uint8Array(1000000);
    *             // When function ends, GC cleans up automatically
    *             // You don't manually delete it!
    *
-   * C (Casey's way): void* buffer = malloc(1000000);
+   * C (Casey's way): void* backbuffer = malloc(1000000);
    *                  // When PROCESS ends, OS cleans up automatically
    *                  // You don't manually free it at exit!
    *
    * EXCEPTION - WHEN TO MANUALLY CLEAN:
    * Only clean up resources that are NOT process-lifetime:
    * - Switching levels → Free old level assets, load new ones
-   * - Resizing window → Free old buffer, allocate new one ✅ (we do
+   * - Resizing window → Free old backbuffer, allocate new one ✅ (we do
    * this!)
    * - Closing modal → Free modal resources, keep main window
    *
@@ -1593,7 +1361,7 @@ int platform_main() {
   // ✅ NO MANUAL CLEANUP - OS handles it faster and better!
   // The OS will:
   // - Free g_PixelData (and all malloc'd memory)
-  // - Destroy g_BackBuffer (XImage)
+  // - Destroy g_Buffer (XImage)
   // - Close window
   // - Close display connection
   // All in <1ms, automatically! ⚡

@@ -33,8 +33,8 @@
  * | Concept | What It Is | Web Analogy |
  * |---------|------------|-------------|
  * | Sample Rate | 48000 samples/second | Like FPS but for audio |
- * | Buffer Size | Ring buffer for audio data | Like a streaming buffer |
- * | Primary Buffer | Sets the audio format | Like `audioContext.sampleRate` |
+ * | Buffer Size | Ring backbuffer for audio data | Like a streaming backbuffer
+ * | | Primary Buffer | Sets the audio format | Like `audioContext.sampleRate` |
  * | Secondary Buffer | Where you write samples | Like `AudioBuffer` in Web
  * Audio | | Cooperative Level | How you share the sound card | Like exclusive
  * fullscreen mode |
@@ -72,7 +72,7 @@
  * │                      DIRECTSOUND RING BUFFER                            │
  * ├─────────────────────────────────────────────────────────────────────────┤
  * │                                                                         │
- * │  The buffer is circular - when you reach the end, it wraps to start!   │
+ * │  The backbuffer is circular - when you reach the end, it wraps to start! │
  * │                                                                         │
  * │  ┌────────────────────────────────────────────────────────────┐        │
  * │  │ 0                                              BufferSize  │        │
@@ -94,7 +94,7 @@
  * │  │    PlayCursor                         ByteToLock           │        │
  * │  │                                                            │        │
  * │  │  Region2 ◄────────────────────────────────► Region1        │        │
- * │  │  (start of buffer)                    (end of buffer)      │        │
+ * │  │  (start of backbuffer)                    (end of backbuffer)      │ │
  * │  └────────────────────────────────────────────────────────────┘        │
  * │                                                                         │
  * └─────────────────────────────────────────────────────────────────────────┘
@@ -131,6 +131,7 @@
  */
 #include "audio.h"
 #include "../../base.h"
+#include "../../game.h"
 #include <dlfcn.h> // For dlopen, dlsym, dlclose (Casey's LoadLibrary equivalent)
 #include <errno.h>
 #include <math.h>
@@ -194,7 +195,7 @@ ALSA_SND_PCM_SET_PARAMS(AlsaSndPcmSetParamsStub) {
 
 ALSA_SND_PCM_WRITEI(AlsaSndPcmWriteiStub) {
   (void)pcm;
-  (void)buffer;
+  (void)backbuffer;
   (void)frames;
   return 0; // Pretend we wrote 0 frames
 }
@@ -249,7 +250,7 @@ alsa_snd_pcm_delay *SndPcmDelay_ = AlsaSndPcmDelayStub;
 // ───────────────────────────────────────────────────────────────
 // Sound Output State
 // ───────────────────────────────────────────────────────────────
-LinuxSoundOutput g_sound_output = {0};
+LinuxSoundOutput g_linux_sound_output = {0};
 
 // ═══════════════════════════════════════════════════════════════
 // 🔊 Load ALSA Library (Casey's Win32LoadXInput equivalent)
@@ -288,7 +289,7 @@ void linux_load_alsa(void) {
   }
 
   printf("✅ ALSA: Loaded libasound.so\n");
-  g_sound_output.alsa_library = alsa_lib;
+  g_linux_sound_output.alsa_library = alsa_lib;
 
   // ───────────────────────────────────────────────────────────
   // Get function pointers (Casey's GetProcAddress equivalent)
@@ -327,7 +328,7 @@ void linux_load_alsa(void) {
     SndPcmSetParams_ = AlsaSndPcmSetParamsStub;
     SndPcmWritei_ = AlsaSndPcmWriteiStub;
     dlclose(alsa_lib);
-    g_sound_output.alsa_library = NULL;
+    g_linux_sound_output.alsa_library = NULL;
   }
 
   // DAY 10: Check if latency measurement is available
@@ -349,13 +350,14 @@ void linux_load_alsa(void) {
 // Casey's DirectSound setup:
 // 1. DirectSoundCreate()         → SndPcmOpen()
 // 2. SetCooperativeLevel()       → (not needed in ALSA)
-// 3. Create primary buffer       → (format set via snd_pcm_set_params)
+// 3. Create primary backbuffer       → (format set via snd_pcm_set_params)
 // 4. Set primary format          → snd_pcm_set_params()
-// 5. Create secondary buffer     → (ALSA manages internally)
+// 5. Create secondary backbuffer     → (ALSA manages internally)
 //
 // ═══════════════════════════════════════════════════════════════
 
-void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
+void linux_init_sound(SoundOutput *sound_output, int32_t samples_per_second,
+                      int32_t buffer_size_bytes) {
   printf("Initializing sound output...\n");
 
   // ───────────────────────────────────────────────────────────
@@ -368,7 +370,7 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
   //             (PulseAudio will intercept this on most systems)
   // ───────────────────────────────────────────────────────────
 
-  int err = SndPcmOpen(&g_sound_output.handle,
+  int err = SndPcmOpen(&g_linux_sound_output.handle,
                        "default",                     // Device
                        LINUX_SND_PCM_STREAM_PLAYBACK, // Output
                        0);                            // Blocking mode
@@ -376,7 +378,7 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
   if (err < 0) {
     fprintf(stderr, "❌ Sound: Cannot open audio device: %s\n",
             SndStrerror(err));
-    g_sound_output.is_valid = false;
+    sound_output->is_initialized = false;
     return;
   }
 
@@ -399,18 +401,18 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
   // Casey uses ~66ms (1/15 second), we'll use 50ms
   unsigned int latency_us = 50000; // 50ms in microseconds
 
-  err = SndPcmSetParams(g_sound_output.handle,
+  err = SndPcmSetParams(g_linux_sound_output.handle,
                         LINUX_SND_PCM_FORMAT_S16_LE,         // 16-bit signed
                         LINUX_SND_PCM_ACCESS_RW_INTERLEAVED, // L-R-L-R
                         2,                                   // Stereo
                         samples_per_second,                  // 48000 Hz
                         1,                                   // Allow resample
-                        latency_us);                         // 100ms buffer
+                        latency_us);                         // 100ms backbuffer
 
   if (err < 0) {
     fprintf(stderr, "❌ Sound: Cannot set parameters: %s\n", SndStrerror(err));
-    SndPcmClose(g_sound_output.handle);
-    g_sound_output.is_valid = false;
+    SndPcmClose(g_linux_sound_output.handle);
+    sound_output->is_initialized = false;
     return;
   }
 
@@ -420,34 +422,35 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
   // STEP 3: Store parameters for later use
   // ───────────────────────────────────────────────────────────
 
-  g_sound_output.samples_per_second = samples_per_second;
-  g_sound_output.bytes_per_sample =
+  sound_output->samples_per_second = samples_per_second;
+  sound_output->bytes_per_sample =
       sizeof(int16_t) * 2; // 16-bit stereo = 4 bytes
-  g_sound_output.buffer_size = buffer_size_bytes;
+  g_linux_sound_output.buffer_size = buffer_size_bytes;
 
   // ═══════════════════════════════════════════════════════════
-  // Day 8: Allocate sample buffer (Casey's secondary buffer)
+  // Day 8: Allocate sample backbuffer (Casey's secondary backbuffer)
   // ═══════════════════════════════════════════════════════════
   //
-  // We need a buffer to generate samples into before writing to ALSA.
-  // Size: 1/15 second of audio (like Casey's buffer)
+  // We need a backbuffer to generate samples into before writing to ALSA.
+  // Size: 1/15 second of audio (like Casey's backbuffer)
   //
   // samples_per_second / 15 = frames per write
-  // × 2 channels × 2 bytes = buffer size
+  // × 2 channels × 2 bytes = backbuffer size
   // ═══════════════════════════════════════════════════════════
 
-  g_sound_output.sample_buffer_size = samples_per_second / 15; // ~3200 frames
+  g_linux_sound_output.sample_buffer_size =
+      samples_per_second / 15; // ~3200 frames
   int sample_buffer_bytes =
-      g_sound_output.sample_buffer_size * g_sound_output.bytes_per_sample;
+      g_linux_sound_output.sample_buffer_size * sound_output->bytes_per_sample;
 
-  g_sound_output.sample_buffer =
+  g_linux_sound_output.sample_buffer =
       (int16_t *)mmap(NULL, sample_buffer_bytes, PROT_READ | PROT_WRITE,
                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-  if (g_sound_output.sample_buffer == MAP_FAILED) {
-    fprintf(stderr, "❌ Sound: Cannot allocate sample buffer\n");
-    SndPcmClose(g_sound_output.handle);
-    g_sound_output.is_valid = false;
+  if (g_linux_sound_output.sample_buffer == MAP_FAILED) {
+    fprintf(stderr, "❌ Sound: Cannot allocate sample backbuffer\n");
+    SndPcmClose(g_linux_sound_output.handle);
+    sound_output->is_initialized = false;
     return;
   }
 
@@ -460,30 +463,30 @@ void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes) {
   //   ToneVolume = 3000 (amplitude)
   //   SquareWavePeriod = SamplesPerSecond / ToneHz
   // ═══════════════════════════════════════════════════════════
-  g_sound_output.running_sample_index = 0;
-  g_sound_output.tone_hz = 256;
-  g_sound_output.tone_volume = 6000;
-  g_sound_output.wave_period = samples_per_second / g_sound_output.tone_hz;
+  sound_output->running_sample_index = 0;
+  sound_output->tone_hz = 256;
+  sound_output->tone_volume = 6000;
+  sound_output->wave_period = samples_per_second / sound_output->tone_hz;
   // g_sound_output.half_wave_period = g_sound_output.wave_period / 2;
 
   // Latency calculation
-  g_sound_output.t_sine = 0;
+  sound_output->t_sine = 0;
 
   // Latency (1/15 second like Casey)
-  g_sound_output.latency_sample_count = samples_per_second / 15;
+  sound_output->latency_sample_count = samples_per_second / 15;
 
-  g_sound_output.pan_position = 0;
+  sound_output->pan_position = 0;
 
-  g_sound_output.is_valid = true;
+  sound_output->is_initialized = true;
 
   printf("✅ Sound: Initialized!\n");
   printf("   Sample rate:    %d Hz\n", samples_per_second);
   printf("   Buffer size:    %d frames (~%.1f ms)\n",
-         g_sound_output.sample_buffer_size,
-         (float)g_sound_output.sample_buffer_size / samples_per_second *
+         g_linux_sound_output.sample_buffer_size,
+         (float)g_linux_sound_output.sample_buffer_size / samples_per_second *
              1000.0f);
-  printf("   Tone frequency: %d Hz\n", g_sound_output.tone_hz);
-  printf("   Wave period:    %d samples\n", g_sound_output.wave_period);
+  printf("   Tone frequency: %d Hz\n", sound_output->tone_hz);
+  printf("   Wave period:    %d samples\n", sound_output->wave_period);
   printf("   Sample rate:  %d Hz\n", samples_per_second);
   printf("   Buffer size:  %d bytes\n", buffer_size_bytes);
   printf("   Latency:      %.1f ms\n", latency_us / 1000.0f);
@@ -500,10 +503,10 @@ file_scoped_fn inline bool linux_audio_has_latency_measurement(void) {
 // This is the Linux equivalent of Casey's Lock/Write/Unlock pattern.
 //
 // DIFFERENCE FROM DIRECTSOUND:
-// - DirectSound: Lock buffer → write → unlock → hardware plays
-// - ALSA: Fill our buffer → snd_pcm_writei() copies to hardware
+// - DirectSound: Lock backbuffer → write → unlock → hardware plays
+// - ALSA: Fill our backbuffer → snd_pcm_writei() copies to hardware
 //
-// ALSA is simpler because it manages the ring buffer for us!
+// ALSA is simpler because it manages the ring backbuffer for us!
 // ═══════════════════════════════════════════════════════════════
 //
 // ═══════════════════════════════════════════════════════════════
@@ -521,11 +524,11 @@ file_scoped_fn inline bool linux_audio_has_latency_measurement(void) {
 // MODE 2 (Day 9 - Availability-Based):
 //   - IF snd_pcm_delay is NOT available
 //   - Fill based on snd_pcm_avail() only
-//   - Write as much as ALSA allows (up to our buffer size)
+//   - Write as much as ALSA allows (up to our backbuffer size)
 //
 // This graceful degradation is Casey's pattern!
-void linux_fill_sound_buffer(void) {
-  if (!g_sound_output.is_valid) {
+void linux_fill_sound_buffer(SoundOutput *sound_output) {
+  if (!sound_output->is_initialized) {
     return;
   }
 
@@ -533,16 +536,17 @@ void linux_fill_sound_buffer(void) {
   // STEP 1: Query available frames (BOTH modes need this)
   // ───────────────────────────────────────────────────────────
 
-  long frames_available = SndPcmAvail(g_sound_output.handle);
+  long frames_available = SndPcmAvail(g_linux_sound_output.handle);
 
   if (frames_available < 0) {
     // Error (probably underrun)
-    int err = SndPcmRecover(g_sound_output.handle, (int)frames_available, 1);
+    int err =
+        SndPcmRecover(g_linux_sound_output.handle, (int)frames_available, 1);
     if (err < 0) {
       fprintf(stderr, "❌ Sound: Recovery failed: %s\n", SndStrerror(err));
       return;
     }
-    frames_available = SndPcmAvail(g_sound_output.handle);
+    frames_available = SndPcmAvail(g_linux_sound_output.handle);
     if (frames_available < 0) {
       return;
     }
@@ -562,13 +566,13 @@ void linux_fill_sound_buffer(void) {
     // ═══════════════════════════════════════════════════════
 
     snd_pcm_sframes_t delay_frames = 0;
-    int delay_err = SndPcmDelay(g_sound_output.handle, &delay_frames);
+    int delay_err = SndPcmDelay(g_linux_sound_output.handle, &delay_frames);
 
     if (delay_err < 0) {
       // Delay query failed - device might be in bad state
       if (delay_err == -EPIPE) {
-        // Underrun - recover and assume empty buffer
-        SndPcmRecover(g_sound_output.handle, delay_err, 1);
+        // Underrun - recover and assume empty backbuffer
+        SndPcmRecover(g_linux_sound_output.handle, delay_err, 1);
         delay_frames = 0;
       } else {
         // Other error - skip this frame
@@ -577,7 +581,7 @@ void linux_fill_sound_buffer(void) {
     }
 
     // Calculate how much we need to reach target latency
-    long target_queued = g_sound_output.latency_sample_count;
+    long target_queued = sound_output->latency_sample_count;
     long current_queued = delay_frames;
     long frames_needed = target_queued - current_queued;
 
@@ -595,15 +599,15 @@ void linux_fill_sound_buffer(void) {
         }
 #endif
 
-    // Clamp to available space and buffer size
+    // Clamp to available space and backbuffer size
     if (frames_needed < 0) {
       frames_needed = 0; // Already at or above target
     }
     if (frames_needed > frames_available) {
       frames_needed = frames_available;
     }
-    if (frames_needed > (long)g_sound_output.sample_buffer_size) {
-      frames_needed = g_sound_output.sample_buffer_size;
+    if (frames_needed > (long)g_linux_sound_output.sample_buffer_size) {
+      frames_needed = g_linux_sound_output.sample_buffer_size;
     }
 
     frames_to_write = frames_needed;
@@ -619,11 +623,11 @@ void linux_fill_sound_buffer(void) {
       warned_once = true;
     }
 
-    // Fill as much as available (up to our buffer size)
+    // Fill as much as available (up to our backbuffer size)
     frames_to_write = frames_available;
 
-    if (frames_to_write > (long)g_sound_output.sample_buffer_size) {
-      frames_to_write = g_sound_output.sample_buffer_size;
+    if (frames_to_write > (long)g_linux_sound_output.sample_buffer_size) {
+      frames_to_write = g_linux_sound_output.sample_buffer_size;
     }
   }
 
@@ -639,40 +643,41 @@ void linux_fill_sound_buffer(void) {
   // STEP 4: Generate samples (SAME for both modes)
   // ───────────────────────────────────────────────────────────
 
-  int16_t *sample_out = g_sound_output.sample_buffer;
+  int16_t *sample_out = g_linux_sound_output.sample_buffer;
 
   for (long i = 0; i < frames_to_write; ++i) {
     // Sine wave generation
-    real32 sine_value = sinf(g_sound_output.t_sine);
-    int16_t sample_value = (int16_t)(sine_value * g_sound_output.tone_volume);
+    real32 sine_value = sinf(sound_output->t_sine);
+    int16_t sample_value = (int16_t)(sine_value * sound_output->tone_volume);
 
     // Panning
-    int left_gain = (100 - g_sound_output.pan_position);
-    int right_gain = (100 + g_sound_output.pan_position);
+    int left_gain = (100 - sound_output->pan_position);
+    int right_gain = (100 + sound_output->pan_position);
 
     *sample_out++ = (sample_value * left_gain) / 200;  // Left
     *sample_out++ = (sample_value * right_gain) / 200; // Right
 
     // Phase increment
-    g_sound_output.t_sine += M_double_PI / (float)g_sound_output.wave_period;
+    sound_output->t_sine += M_double_PI / (float)sound_output->wave_period;
 
-    if (g_sound_output.t_sine >= M_double_PI) {
-      g_sound_output.t_sine -= M_double_PI;
+    if (sound_output->t_sine >= M_double_PI) {
+      sound_output->t_sine -= M_double_PI;
     }
 
-    g_sound_output.running_sample_index++;
+    sound_output->running_sample_index++;
   }
 
   // ───────────────────────────────────────────────────────────
   // STEP 5: Write to ALSA (SAME for both modes)
   // ───────────────────────────────────────────────────────────
 
-  long frames_written = SndPcmWritei(
-      g_sound_output.handle, g_sound_output.sample_buffer, frames_to_write);
+  long frames_written =
+      SndPcmWritei(g_linux_sound_output.handle,
+                   g_linux_sound_output.sample_buffer, frames_to_write);
 
   if (frames_written < 0) {
     frames_written =
-        SndPcmRecover(g_sound_output.handle, (int)frames_written, 1);
+        SndPcmRecover(g_linux_sound_output.handle, (int)frames_written, 1);
     if (frames_written < 0) {
       fprintf(stderr, "❌ Sound: Write failed: %s\n",
               SndStrerror((int)frames_written));
@@ -691,8 +696,8 @@ void linux_fill_sound_buffer(void) {
 // ═══════════════════════════════════════════════════════════════
 // 🔊 DAY 10: Audio Latency Debug Helper
 // ═══════════════════════════════════════════════════════════════
-void linux_debug_audio_latency(void) {
-  if (!g_sound_output.is_valid) {
+void linux_debug_audio_latency(SoundOutput *sound_output) {
+  if (!sound_output->is_initialized) {
     printf("❌ Audio: Not initialized\n");
     return;
   }
@@ -709,19 +714,19 @@ void linux_debug_audio_latency(void) {
     printf("│ Latency measurement disabled                            │\n");
     printf("│                                                         │\n");
 
-    long frames_available = SndPcmAvail(g_sound_output.handle);
+    long frames_available = SndPcmAvail(g_linux_sound_output.handle);
 
     printf("│ Frames available: %ld                                   │\n",
            frames_available);
     printf("│ Sample rate:     %d Hz                                 │\n",
-           g_sound_output.samples_per_second);
+           sound_output->samples_per_second);
     printf("│ Frequency:       %d Hz                                 │\n",
-           g_sound_output.tone_hz);
+           sound_output->tone_hz);
     printf("│ Volume:          %d / 15000                            │\n",
-           g_sound_output.tone_volume);
+           sound_output->tone_volume);
     printf("│ Pan:             %+d (L=%d, R=%d)                      │\n",
-           g_sound_output.pan_position, 100 - g_sound_output.pan_position,
-           100 + g_sound_output.pan_position);
+           sound_output->pan_position, 100 - sound_output->pan_position,
+           100 + sound_output->pan_position);
     printf("└─────────────────────────────────────────────────────────┘\n");
     return;
   }
@@ -731,7 +736,7 @@ void linux_debug_audio_latency(void) {
   printf("│                                                         │\n");
 
   snd_pcm_sframes_t delay_frames = 0;
-  int err = SndPcmDelay(g_sound_output.handle, &delay_frames);
+  int err = SndPcmDelay(g_linux_sound_output.handle, &delay_frames);
 
   if (err < 0) {
     printf("│ ❌ Can't measure delay: %s                              │\n",
@@ -740,15 +745,15 @@ void linux_debug_audio_latency(void) {
     return;
   }
 
-  long frames_available = SndPcmAvail(g_sound_output.handle);
+  long frames_available = SndPcmAvail(g_linux_sound_output.handle);
 
   float actual_latency_ms =
-      (float)delay_frames / g_sound_output.samples_per_second * 1000.0f;
-  float target_latency_ms = (float)g_sound_output.latency_sample_count /
-                            g_sound_output.samples_per_second * 1000.0f;
+      (float)delay_frames / sound_output->samples_per_second * 1000.0f;
+  float target_latency_ms = (float)sound_output->latency_sample_count /
+                            sound_output->samples_per_second * 1000.0f;
 
   printf("│ Target latency:  %.1f ms (%d frames)                 │\n",
-         target_latency_ms, g_sound_output.latency_sample_count);
+         target_latency_ms, sound_output->latency_sample_count);
   printf("│ Actual latency:  %.1f ms (%ld frames)                │\n",
          actual_latency_ms, (long)delay_frames);
 
@@ -769,13 +774,13 @@ void linux_debug_audio_latency(void) {
   printf("│ Frames available: %ld                                   │\n",
          frames_available);
   printf("│ Sample rate:     %d Hz                                 │\n",
-         g_sound_output.samples_per_second);
+         sound_output->samples_per_second);
   printf("│ Frequency:       %d Hz                                 │\n",
-         g_sound_output.tone_hz);
+         sound_output->tone_hz);
   printf("│ Volume:          %d / 15000                            │\n",
-         g_sound_output.tone_volume);
+         sound_output->tone_volume);
   printf("│ Pan:             %+d (L=%d, R=%d)                      │\n",
-         g_sound_output.pan_position, 100 - g_sound_output.pan_position,
-         100 + g_sound_output.pan_position);
+         sound_output->pan_position, 100 - sound_output->pan_position,
+         100 + sound_output->pan_position);
   printf("└─────────────────────────────────────────────────────────┘\n");
 }

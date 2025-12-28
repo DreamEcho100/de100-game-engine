@@ -3,6 +3,7 @@
 #define X11_AUDIO_H
 
 #include "../../base.h"
+#include "../../game.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -64,7 +65,7 @@ typedef ALSA_SND_PCM_SET_PARAMS(alsa_snd_pcm_set_params);
 
 // snd_pcm_writei - Write interleaved samples
 #define ALSA_SND_PCM_WRITEI(name)                                              \
-  long name(snd_pcm_t *pcm, const void *buffer, unsigned long frames)
+  long name(snd_pcm_t *pcm, const void *backbuffer, unsigned long frames)
 typedef ALSA_SND_PCM_WRITEI(alsa_snd_pcm_writei);
 
 // snd_pcm_prepare - Prepare PCM for use
@@ -79,7 +80,7 @@ typedef ALSA_SND_PCM_CLOSE(alsa_snd_pcm_close);
 #define ALSA_SND_STRERROR(name) const char *name(int errnum)
 typedef ALSA_SND_STRERROR(alsa_snd_strerror);
 
-// snd_pcm_avail - Get available frames in buffer
+// snd_pcm_avail - Get available frames in backbuffer
 #define ALSA_SND_PCM_AVAIL(name) long name(snd_pcm_t *pcm)
 typedef ALSA_SND_PCM_AVAIL(alsa_snd_pcm_avail);
 
@@ -171,42 +172,28 @@ extern alsa_snd_pcm_delay *SndPcmDelay_;
 typedef struct {
   snd_pcm_t *handle;          // ALSA PCM handle
   void *alsa_library;         // dlopen handle (for cleanup if needed)
-  int32_t samples_per_second; // 48000 Hz
-  int32_t bytes_per_sample;   // 4 (16-bit stereo)
-  uint32_t buffer_size;       // Secondary buffer size in bytes
-  bool is_valid;              // Did initialization succeed?
 
-  // Day 8: Audio sample buffer (Casey's secondary buffer equivalent)
+  uint32_t buffer_size;       // Secondary backbuffer size in bytes
+
+  // Day 8: Audio sample backbuffer (Casey's secondary backbuffer equivalent)
   int16_t *sample_buffer;
   uint32_t sample_buffer_size;
-
-  // Day 8: Sound generation state
-  uint32_t running_sample_index;
-  int tone_hz;
-  int16_t tone_volume;
-  int wave_period;
   // int half_wave_period;
 
-  // Day 9
-  real32 t_sine;            // Phase accumulator (0 to 2π)
-  int latency_sample_count; // How many samples to buffer ahead
-
-  //
-  int pan_position; // -100 (left) to +100 (right)
 } LinuxSoundOutput;
 
-extern LinuxSoundOutput g_sound_output;
+extern LinuxSoundOutput g_linux_sound_output;
 
 // ═══════════════════════════════════════════════════════════════
 // 🔊 Function Declarations
 // ═══════════════════════════════════════════════════════════════
 
 void linux_load_alsa(void);
-void linux_init_sound(int32_t samples_per_second, int32_t buffer_size_bytes);
+void linux_init_sound(SoundOutput *sound_output, int32_t samples_per_second, int32_t buffer_size_bytes);
 
-// Day 8: Fill buffer with square wave and write to ALSA
-void linux_fill_sound_buffer(void);
+// Day 8: Fill backbuffer with square wave and write to ALSA
+void linux_fill_sound_buffer(SoundOutput *sound_output);
 
-void linux_debug_audio_latency(void);
+void linux_debug_audio_latency(SoundOutput *sound_output);
 
 #endif // X11_AUDIO_H
