@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 199309L // Enable POSIX functions like nanosleep, sleep;
+
 #include "backend.h"
 #include "../../base.h"
 #include "../../game.h"
@@ -8,6 +9,7 @@
 #include <X11/Xutil.h>
 #include <fcntl.h>
 #include <linux/joystick.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -17,42 +19,34 @@
 #include <unistd.h>    // For sleep()
 #include <x86intrin.h> // for __rdtsc() (CPU cycle counter)
 
+typedef struct {
+  int fd;                // File descriptor for /dev/input/jsX
+  char device_name[128]; // For debugging
+} LinuxJoystickState;
+
+file_scoped_global_var LinuxJoystickState g_joysticks[MAX_JOYSTICK_COUNT] = {0};
+
 // ═══════════════════════════════════════════════════════════════
 // 🎮 JOYSTICK DYNAMIC LOADING (Casey's Pattern for Linux)
 // ═══════════════════════════════════════════════════════════════
-// STEP 1: Define function signature macro
+// Define function signature macro
 #define LINUX_JOYSTICK_READ(name) ssize_t name(int fd, struct js_event *event)
 
-// STEP 2: Create typedef
+// Create typedef
 typedef LINUX_JOYSTICK_READ(linux_joystick_read);
 
-// STEP 3: Stub implementation (no joystick available)
+// Stub implementation (no joystick available)
 LINUX_JOYSTICK_READ(LinuxJoystickReadStub) {
   // Return -1 = error/no device (like ERROR_DEVICE_NOT_CONNECTED)
   return -1;
 }
 
-// STEP 4: Global function pointer (initially stub)
+// Global function pointer (initially stub)
 file_scoped_global_var linux_joystick_read *LinuxJoystickRead_ =
     LinuxJoystickReadStub;
 
-// STEP 5: Redefine API name
+// Redefine API name
 #define LinuxJoystickRead LinuxJoystickRead_
-
-/*
-Will be added when needed
-typedef struct {
-    int width;
-    int height;
-} X11WindowDimension;
-
-file_scoped_fn X11WindowDimension
-get_window_dimension(Display *display, Window window) {
-    XWindowAttributes attrs;
-    XGetWindowAttributes(display, window, &attrs);
-    return (X11WindowDimension){attrs.width, attrs.height};
-}
-*/
 
 // file_scoped_global_var OffscreenBuffer g_backbuffer;
 file_scoped_global_var XImage *g_buffer_info = NULL;
@@ -67,278 +61,457 @@ file_scoped_fn LINUX_JOYSTICK_READ(linux_joystick_read_impl) {
 // 🎮 Initialize joystick (Casey's Win32LoadXInput equivalent)
 // ═══════════════════════════════════════════════════════════════
 // Dynamic loader
-file_scoped_fn bool linux_init_joystick(GameState *game_state) {
+file_scoped_fn void
+linux_init_joystick(GameControllerInput *controller_old_input,
+                    GameControllerInput *controller_new_input) {
   printf("Searching for gamepad...\n");
 
   const char *device_paths[] = {"/dev/input/js0", "/dev/input/js1",
                                 "/dev/input/js2", "/dev/input/js3"};
 
-  for (int i = 0; i < 4; i++) {
-    int fd = open(device_paths[i], O_RDONLY | O_NONBLOCK);
+  // Initialize ALL controllers FIRST
+  for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
+    if (i == KEYBOARD_CONTROLLER_INDEX)
+      continue;
+
+    controller_old_input[i].controller_index = i;
+    controller_old_input[i].is_connected = false;
+
+    controller_new_input[i].controller_index = i;
+    controller_new_input[i].is_connected = false;
+
+    int g_joysticks_index = i - 1; // Adjust for keyboard at index 0
+    if (g_joysticks_index >= 0 && g_joysticks_index < MAX_JOYSTICK_COUNT) {
+      g_joysticks[g_joysticks_index].fd = -1;
+      memset(g_joysticks[g_joysticks_index].device_name, 0,
+             sizeof(g_joysticks[g_joysticks_index].device_name));
+    }
+  }
+
+  // Mark keyboard (slot 0) as connected AFTER the loop
+  controller_old_input[KEYBOARD_CONTROLLER_INDEX].is_connected = true;
+  controller_old_input[KEYBOARD_CONTROLLER_INDEX].is_analog = false;
+
+  controller_new_input[KEYBOARD_CONTROLLER_INDEX].is_connected = true;
+  controller_new_input[KEYBOARD_CONTROLLER_INDEX].is_analog = false;
+
+  for (int i = MAX_KEYBOARD_COUNT; i < MAX_JOYSTICK_COUNT; i++) {
+    int fd = open(device_paths[i - MAX_KEYBOARD_COUNT], O_RDONLY | O_NONBLOCK);
 
     if (fd >= 0) {
       char name[128] = {0};
       if (ioctl(fd, JSIOCGNAME(sizeof(name)), name) >= 0) {
 
+        printf("i: %d\n", i);
         // Skip virtual devices
         if (strstr(name, "virtual") || strstr(name, "keyd")) {
           close(fd);
           continue;
         }
 
-        // Found real gamepad! Replace stub with real function
-        game_state->gamepad_id = fd;
+        // Store controller index AND file descriptor separately
+        controller_old_input[i].controller_index = i;
+        controller_old_input[i].is_connected = true;
+        controller_old_input[i].is_analog = true; // Joysticks are analog
+
+        controller_new_input[i].controller_index = i;
+        controller_new_input[i].is_connected = true;
+        controller_new_input[i].is_analog = true; // Joysticks are analog
+
+        int g_joysticks_index =
+            i - MAX_KEYBOARD_COUNT; // Adjust for keyboard at index 0
+        if (g_joysticks_index >= 0 && g_joysticks_index < MAX_JOYSTICK_COUNT) {
+          g_joysticks[g_joysticks_index].fd = fd;
+          strncpy(g_joysticks[g_joysticks_index].device_name, name,
+                  sizeof(g_joysticks[g_joysticks_index].device_name) - 1);
+        }
 
         // Create wrapper function that uses our fd
         // (Linux doesn't have DLLs, but we can still use the pattern!)
         LinuxJoystickRead_ = linux_joystick_read_impl; // Real implementation
 
         printf("✅ Joystick connected: %s\n", name);
-        return true;
+        // return true;
+        continue; //
+      } else {
+        close(fd);
       }
-      close(fd);
     }
   }
+}
 
-  // No joystick found - LinuxJoystickRead_ stays pointing to stub
-  printf("❌ No gamepad found - using stub\n");
-  game_state->gamepad_id = -1;
-  return false;
+file_scoped_fn void process_key(bool is_down, GameButtonState *old_state,
+                                GameButtonState *new_state) {
+  new_state->ended_down = is_down;
+  new_state->half_transition_count =
+      old_state->ended_down != new_state->ended_down ? 1 : 0;
 }
 
 // ═══════════════════════════════════════════════════════════════
 // 🎮 Poll joystick state (Casey's XInputGetState equivalent)
 // ═══════════════════════════════════════════════════════════════
 
-file_scoped_fn void linux_poll_joystick() {
-  if (g_game_state.gamepad_id < 0) {
-    return;
-  }
+file_scoped_fn void linux_poll_joystick(GameInput *old_input,
+                                        GameInput *new_input) {
 
-  struct js_event event;
+  for (int controller_index = 0; controller_index < MAX_CONTROLLER_COUNT;
+       controller_index++) {
 
-  while (LinuxJoystickRead(g_game_state.gamepad_id, &event) == sizeof(event)) {
+    // Get controller state
+    GameControllerInput *old_controller =
+        &old_input->controllers[controller_index];
+    GameControllerInput *new_controller =
+        &new_input->controllers[controller_index];
 
-    if (event.type & JS_EVENT_INIT) {
+    int g_joysticks_index = controller_index - 1;
+    if (g_joysticks_index < 0 || g_joysticks_index >= MAX_JOYSTICK_COUNT) {
+      // Skip keyboard (index 0)
       continue;
     }
+    LinuxJoystickState *joystick_state = &g_joysticks[g_joysticks_index];
 
-    // NOTE: Ignore the joystick for now since I don't have them
-
-    // ═══════════════════════════════════════════════════════════
-    // 🎮 BUTTON EVENTS
-    // ═══════════════════════════════════════════════════════════
-    if (event.type == JS_EVENT_BUTTON) {
-      bool is_pressed = (event.value != 0);
-
-      // ───────────────────────────────────────────────────────
-      // PS4/PS5 "Wireless Controller" Button Mapping
-      // ───────────────────────────────────────────────────────
-      // Button layout (PlayStation naming):
-      //   0 = X (cross)     - South button
-      //   1 = O (circle)    - East button
-      //   3 = □ (square)    - West button
-      //   2 = △ (triangle)  - North button
-      //   4 = L1 (left bumper)
-      //   5 = R1 (right bumper)
-      //   6 = L2 (left trigger button, not analog value!)
-      //   7 = R2 (right trigger button, not analog value!)
-      //   8 = Share (PS4) / Create (PS5)
-      //   9 = Options (PS4/PS5)
-      //  10 = L3 (left stick button)
-      //  11 = R3 (right stick button)
-      //  12 = PS button (PlayStation logo)
-      //  13 = Touchpad button (PS4/PS5)
-      // ───────────────────────────────────────────────────────
-
-      switch (event.number) {
-      // Face buttons (cross, circle, square, triangle)
-      case 0: // X (cross) - Map to A button
-        g_game_state.controls.a_button = is_pressed;
-        if (is_pressed)
-          printf("Button X (cross) pressed\n");
-        break;
-
-      case 1: // O (circle) - Map to B button
-        g_game_state.controls.b_button = is_pressed;
-        if (is_pressed)
-          printf("Button O (circle) pressed\n");
-        break;
-
-      case 3: // □ (square) - Map to X button
-        g_game_state.controls.x_button = is_pressed;
-        if (is_pressed)
-          printf("Button □ (square) pressed\n");
-        break;
-
-      case 2: // △ (triangle) - Map to Y button
-        g_game_state.controls.y_button = is_pressed;
-        if (is_pressed)
-          printf("Button △ (triangle) pressed\n");
-        break;
-
-      // Shoulder buttons
-      case 4: // L1
-        g_game_state.controls.left_shoulder = is_pressed;
-        if (is_pressed)
-          printf("Button L1 pressed\n");
-        break;
-
-      case 5: // R1
-        g_game_state.controls.right_shoulder = is_pressed;
-        if (is_pressed)
-          printf("Button R1 pressed\n");
-        break;
-
-      // Trigger buttons (L2/R2 as digital buttons)
-      // Note: Analog values are on axes 3 and 4
-      case 6: // L2 button
-        if (is_pressed)
-          printf("Button L2 pressed\n");
-        break;
-
-      case 7: // R2 button
-        if (is_pressed)
-          printf("Button R2 pressed\n");
-        break;
-
-      // Menu buttons
-      case 8: // Share/Create - Map to Back
-        g_game_state.controls.back = is_pressed;
-        if (is_pressed)
-          printf("Button Share/Create pressed\n");
-        break;
-
-      case 9: // Options - Map to Start
-        g_game_state.controls.start = is_pressed;
-        if (is_pressed)
-          printf("Button Options pressed\n");
-        break;
-
-      // Stick buttons
-      case 11: // L3 (left stick click)
-        if (is_pressed)
-          printf("Button L3 (left stick) pressed\n");
-        break;
-
-      case 12: // R3 (right stick click)
-        if (is_pressed)
-          printf("Button R3 (right stick) pressed\n");
-        break;
-
-      // Special buttons
-      case 10: // PS button
-        if (is_pressed)
-          printf("Button PS (logo) pressed\n");
-        break;
-
-      case 13: // Touchpad button
-        if (is_pressed)
-          printf("Button Touchpad pressed\n");
-        break;
-
-      default:
-        // Unknown button
-        if (is_pressed) {
-          printf("Unknown button %d pressed\n", event.number);
-        }
-        break;
-      }
+    // printf("controller_index: %d, new_controller->is_connected: %d\n",
+    //        controller_index, new_controller->is_connected);
+    // Use continue instead of return
+    if (!new_controller->is_connected || joystick_state->fd < 0) {
+      continue; // Skip this controller, check the next one
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // 🎮 AXIS EVENTS (Analog Sticks + Triggers + D-Pad)
-    // ═══════════════════════════════════════════════════════════
-    else if (event.type == JS_EVENT_AXIS) {
+    struct js_event event;
 
-      // ───────────────────────────────────────────────────────
-      // PS4/PS5 "Wireless Controller" Axis Mapping
-      // ───────────────────────────────────────────────────────
-      // Axes:
-      //   0 = Left stick X    (-32767 left, +32767 right)
-      //   1 = Left stick Y    (-32767 up,   +32767 down)
-      //   2 = Right stick X   (-32767 left, +32767 right)
-      //   3 = L2 trigger      (0 released, +32767 pressed)
-      //   4 = R2 trigger      (0 released, +32767 pressed)
-      //   5 = Right stick Y   (-32767 up,   +32767 down)
-      //   6 = D-pad X         (-32767 left, +32767 right)
-      //   7 = D-pad Y         (-32767 up,   +32767 down)
-      // ───────────────────────────────────────────────────────
+    while (LinuxJoystickRead(joystick_state->fd, &event) == sizeof(event)) {
 
-      switch (event.number) {
-      // ───────────────────────────────────────────────────────
-      // Left Stick (axes 0-1)
-      // ───────────────────────────────────────────────────────
-      case 0:
-        g_game_state.controls.left_stick_x = event.value;
-        printf("Left Stick X\n");
-        break;
-      case 1:
-        g_game_state.controls.left_stick_y = event.value;
-        printf("Left Stick Y\n");
-        break;
-
-      // ───────────────────────────────────────────────────────
-      // Right Stick (axes 2, 5) ← NOTE: Y is axis 5, not 3!
-      // ───────────────────────────────────────────────────────
-      case 3: // L2 trigger X
-        printf("Right Stick X\n");
-        // Optional: Store trigger pressure if you need it
-        g_game_state.controls.right_stick_x = event.value;
-        break;
-      case 4: // R2 trigger Y
-        printf("Right Stick Y\n");
-        g_game_state.controls.right_stick_y = event.value;
-        break;
-
-      // ───────────────────────────────────────────────────────
-      // Triggers (analog, 0 to +32767)
-      // ───────────────────────────────────────────────────────
-      case 2:
-        g_game_state.controls.left_trigger = event.value;
-        printf("L2 trigger\n");
-        break;
-      case 5: // ← Right stick Y is axis 5!
-        g_game_state.controls.right_trigger = event.value;
-        printf("R2 trigger\n");
-        break;
-
-      // ───────────────────────────────────────────────────────
-      // D-PAD (axes 6-7)
-      // ───────────────────────────────────────────────────────
-      case 6: { // D-pad horizontal
-        if (event.value < -16384) {
-          g_game_state.controls.left = true;
-          g_game_state.controls.right = false;
-          printf("D-pad LEFT\n");
-        } else if (event.value > 16384) {
-          g_game_state.controls.right = true;
-          g_game_state.controls.left = false;
-          printf("D-pad RIGHT\n");
-        } else {
-          g_game_state.controls.left = false;
-          g_game_state.controls.right = false;
-        }
-        break;
+      if (event.type & JS_EVENT_INIT) {
+        continue;
       }
 
-      case 7: { // D-pad vertical
-        if (event.value < -16384) {
-          g_game_state.controls.up = true;
-          g_game_state.controls.down = false;
-          printf("D-pad UP\n");
-        } else if (event.value > 16384) {
-          g_game_state.controls.down = true;
-          g_game_state.controls.up = false;
-          printf("D-pad DOWN\n");
-        } else {
-          g_game_state.controls.up = false;
-          g_game_state.controls.down = false;
+      // NOTE: Ignore the joystick for now since I don't have them
+
+      // printf("JS_EVENT_BUTTON: %d, JS_EVENT_AXIS: %d\n", JS_EVENT_BUTTON,
+      //  JS_EVENT_AXIS);
+      // printf("event.type: %d, JS_EVENT_AXIS: %d\n", event.type,
+      // JS_EVENT_AXIS);
+      // ═══════════════════════════════════════════════════════════
+      // 🎮 BUTTON EVENTS
+      // ═══════════════════════════════════════════════════════════
+      if (event.type == JS_EVENT_BUTTON) {
+        bool is_pressed = (event.value != 0);
+
+        printf("event.number: %d\n", event.number);
+        printf("is_pressed: %d\n", is_pressed);
+
+        // ───────────────────────────────────────────────────────
+        // PS4/PS5 "Wireless Controller" Button Mapping
+        // ───────────────────────────────────────────────────────
+        // Button layout (PlayStation naming):
+        //   0 = X (cross)     - South button
+        //   1 = O (circle)    - East button
+        //   3 = □ (square)    - West button
+        //   2 = △ (triangle)  - North button
+        //   4 = L1 (left bumper)
+        //   5 = R1 (right bumper)
+        //   6 = L2 (left trigger button, not analog value!)
+        //   7 = R2 (right trigger button, not analog value!)
+        //   8 = Share (PS4) / Create (PS5)
+        //   9 = Options (PS4/PS5)
+        //  10 = L3 (left stick button)
+        //  11 = R3 (right stick button)
+        //  12 = PS button (PlayStation logo)
+        //  13 = Touchpad button (PS4/PS5)
+        // ───────────────────────────────────────────────────────
+
+        switch (event.number) {
+          // // Face buttons (cross, circle, square, triangle)
+          // case 0: // X (cross) - Map to A button
+          //   new_controller1->a_button = is_pressed;
+          //   if (is_pressed)
+          //     printf("Button X (cross) pressed\n");
+          //   break;
+
+          // case 1: // O (circle) - Map to B button
+          //   new_controller1->b_button = is_pressed;
+          //   if (is_pressed)
+          //     printf("Button O (circle) pressed\n");
+          //   break;
+
+          // case 3: // □ (square) - Map to X button
+          //   new_controller1->x_button = is_pressed;
+          //   if (is_pressed)
+          //     printf("Button □ (square) pressed\n");
+          //   break;
+
+          // case 2: // △ (triangle) - Map to Y button
+          //   new_controller1->y_button = is_pressed;
+          //   if (is_pressed)
+          //     printf("Button △ (triangle) pressed\n");
+          //   break;
+
+          // Shoulder buttons
+        case 4: // L1
+                // new_controller1->left_shoulder = is_pressed;
+                // if (is_pressed)
+                //   printf("Button L1 pressed\n");
+          process_key(is_pressed, &old_controller->left_shoulder,
+                      &new_controller->left_shoulder);
+          break;
+
+        case 5: // R1
+          // new_controller1->right_shoulder = is_pressed;
+          // if (is_pressed)
+          //   printf("Button R1 pressed\n");
+          process_key(is_pressed, &old_controller->right_shoulder,
+                      &new_controller->right_shoulder);
+          break;
+
+          // // Trigger buttons (L2/R2 as digital buttons)
+          // // Note: Analog values are on axes 3 and 4
+          // case 6: // L2 button
+          //   if (is_pressed)
+          //     printf("Button L2 pressed\n");
+          //   break;
+
+          // case 7: // R2 button
+          //   if (is_pressed)
+          //     printf("Button R2 pressed\n");
+          //   break;
+
+          // // Menu buttons
+          // case 8: // Share/Create - Map to Back
+          //   new_controller1->back = is_pressed;
+          //   if (is_pressed)
+          //     printf("Button Share/Create pressed\n");
+          //   break;
+
+          // case 9: // Options - Map to Start
+          //   new_controller1->start = is_pressed;
+          //   if (is_pressed)
+          //     printf("Button Options pressed\n");
+          //   break;
+
+          // // Stick buttons
+          // case 11: // L3 (left stick click)
+          //   if (is_pressed)
+          //     printf("Button L3 (left stick) pressed\n");
+          //   break;
+
+          // case 12: // R3 (right stick click)
+          //   if (is_pressed)
+          //     printf("Button R3 (right stick) pressed\n");
+          //   break;
+
+          // // Special buttons
+          // case 10: // PS button
+          //   if (is_pressed)
+          //     printf("Button PS (logo) pressed\n");
+          //   break;
+
+          // case 13: // Touchpad button
+          //   if (is_pressed)
+          //     printf("Button Touchpad pressed\n");
+          //   break;
+
+          // default:
+          //   // Unknown button
+          //   if (is_pressed) {
+          //     printf("Unknown button %d pressed\n", event.number);
+          //   }
+          //   break;
         }
-        break;
       }
-      default:
-        printf("D-pad number: %d, value: %d\n", event.number, event.value);
+
+      // ═══════════════════════════════════════════════════════════
+      // 🎮 AXIS EVENTS (Analog Sticks + Triggers + D-Pad)
+      // ═══════════════════════════════════════════════════════════
+      else if (event.type == JS_EVENT_AXIS) {
+        new_controller->is_analog = true;
+        // printf("new_controller->is_analog: %d\n", new_controller->is_analog);
+
+        new_controller->start_x = old_controller->end_x;
+        new_controller->start_y = old_controller->end_y;
+
+        // ───────────────────────────────────────────────────────
+        // PS4/PS5 "Wireless Controller" Axis Mapping
+        // ───────────────────────────────────────────────────────
+        // Axes:
+        //   0 = Left stick X    (-32767 left, +32767 right)
+        //   1 = Left stick Y    (-32767 up,   +32767 down)
+        //   2 = Right stick X   (-32767 left, +32767 right)
+        //   3 = L2 trigger      (0 released, +32767 pressed)
+        //   4 = R2 trigger      (0 released, +32767 pressed)
+        //   5 = Right stick Y   (-32767 up,   +32767 down)
+        //   6 = D-pad X         (-32767 left, +32767 right)
+        //   7 = D-pad Y         (-32767 up,   +32767 down)
+        // ───────────────────────────────────────────────────────
+
+        switch (event.number) {
+        // ───────────────────────────────────────────────────────
+        // Left Stick (axes 0-1)
+        // ───────────────────────────────────────────────────────
+        case 0: {
+          // ═══════════════════════════════════════════════════
+          // 🔥 CRITICAL: Linux joystick normalization
+          // ═══════════════════════════════════════════════════
+          // Linux /dev/input/jsX range: -32767 to +32767
+          // This is SYMMETRIC (unlike XInput's asymmetric range)!
+          //
+          // SO WE USE SINGLE DIVISOR:
+          //   X = (real32)event.value / 32767.0f;
+          //
+          // Casey's XInput needs TWO divisors:
+          //   if(Pad->sThumbLX < 0) X = value / 32768.0f;
+          //   else X = value / 32767.0f;
+          //
+          // Because XInput has -32768 to +32767 (asymmetric)
+          // ═══════════════════════════════════════════════════
+
+          // new_controller1->left_stick_x = event.value;
+          real32 x = (real32)event.value / 32767.0f;
+
+          new_controller->end_x = x;
+          // new_controller1->min_x = fminf(new_controller1->min_x, x);
+          new_controller->min_x = x; // Day 13: just set to end_x
+          new_controller->max_x = x; // Day 14+: track actual min/max
+
+          break;
+        }
+        // ─────────────────────────────────────────────────────
+        // LEFT STICK Y (Axis 1)
+        // ─────────────────────────────────────────────────────
+        case 1: {
+          real32 y = (real32)event.value / 32767.0f;
+
+          // NOTE: Joystick Y is often inverted!
+          // Up = negative, Down = positive
+          // Game might want to flip this:
+          // y = -y;  // Uncomment if your game wants up = positive
+
+          new_controller->end_y = y;
+          new_controller->min_y = y;
+          new_controller->max_y = y;
+
+          break;
+        }
+
+          // // ───────────────────────────────────────────────────────
+          // // Right Stick (axes 2, 5) ← NOTE: Y is axis 5, not 3!
+          // // ───────────────────────────────────────────────────────
+          // // TODO(Day 14+): Add right stick support if needed
+          // case 3: // L2 trigger X
+          //   printf("Right Stick X\n");
+          //   // Optional: Store trigger pressure if you need it
+          //   new_controller1->right_stick_x = event.value;
+          //   break;
+          // case 4: // R2 trigger Y
+          //   printf("Right Stick Y\n");
+          //   new_controller1->right_stick_y = event.value;
+          //   break;
+
+          // // ───────────────────────────────────────────────────────
+          // // Triggers (analog, 0 to +32767)
+          // // ───────────────────────────────────────────────────────
+          // case 2:
+          //   new_controller1->left_trigger = event.value;
+          //   printf("L2 trigger\n");
+          //   break;
+          // case 5: // ← Right stick Y is axis 5!
+          //   new_controller1->right_trigger = event.value;
+          //   printf("R2 trigger\n");
+          //   break;
+
+          // ─────────────────────────────────────────────────────
+          // RIGHT STICK (Axes 2-5 depending on controller)
+          // ─────────────────────────────────────────────────────
+          // TODO(Day 14+): Add right stick support if needed
+
+          // ═══════════════════════════════════════════════════════════
+          // 🎮 D-PAD (Axes 6-7 on PlayStation controllers)
+          // ═══════════════════════════════════════════════════════════
+          // D-pad is DIGITAL (4 directions) but reported as ANALOG axis!
+          // We must set BOTH button states AND analog values.
+          //
+          // Range: -32767 (left/up) to +32767 (right/down)
+          // Threshold: Use ±16384 (half of max) for digital detection
+          // ═══════════════════════════════════════════════════════════
+
+        case 6: { // D-pad X (left/right)
+
+          // ✅ FIX: Set analog values for game layer!
+          new_controller->start_x = old_controller->end_x;
+          new_controller->start_y = old_controller->end_y;
+
+          if (event.value < -16384) {
+            // D-pad LEFT pressed
+            process_key(true, &old_controller->left, &new_controller->left);
+            process_key(false, &old_controller->right, &new_controller->right);
+
+            // ✅ Set analog value for left (-1.0)
+            new_controller->end_x = -1.0f;
+
+          } else if (event.value > 16384) {
+            // D-pad RIGHT pressed
+            process_key(true, &old_controller->right, &new_controller->right);
+            process_key(false, &old_controller->left, &new_controller->left);
+
+            // ✅ Set analog value for right (+1.0)
+            new_controller->end_x = +1.0f;
+
+          } else {
+            // D-pad X RELEASED (centered)
+            process_key(false, &old_controller->left, &new_controller->left);
+            process_key(false, &old_controller->right, &new_controller->right);
+
+            // ✅ Set analog value to zero
+            new_controller->end_x = 0.0f;
+          }
+
+          // Update min/max for Day 13 (just mirror end value)
+          new_controller->min_x = new_controller->max_x = new_controller->end_x;
+
+          break;
+        }
+
+        case 7: { // D-pad Y (up/down)
+
+          // ✅ FIX: Set analog values for game layer!
+          new_controller->start_x = old_controller->end_x;
+          new_controller->start_y = old_controller->end_y;
+
+          if (event.value < -16384) {
+            // D-pad UP pressed
+            process_key(true, &old_controller->up, &new_controller->up);
+            process_key(false, &old_controller->down, &new_controller->down);
+
+            // ✅ Set analog value for up (+1.0)
+            // NOTE: You might need to invert this depending on your coordinate
+            // system
+            new_controller->end_y = -1.0f;
+
+          } else if (event.value > 16384) {
+            // D-pad DOWN pressed
+            process_key(true, &old_controller->down, &new_controller->down);
+            process_key(false, &old_controller->up, &new_controller->up);
+
+            // ✅ Set analog value for down (-1.0)
+            new_controller->end_y = 1.0f;
+
+          } else {
+            // D-pad Y RELEASED (centered)
+            process_key(false, &old_controller->up, &new_controller->up);
+            process_key(false, &old_controller->down, &new_controller->down);
+
+            // ✅ Set analog value to zero
+            new_controller->end_y = 0.0f;
+          }
+
+          // Update min/max for Day 13 (just mirror end value)
+          new_controller->min_y = new_controller->max_y = new_controller->end_y;
+
+          break;
+        }
+
+        default:
+          // printf("D-pad number: %d, value: %d\n", event.number, event.value);
+        }
       }
     }
   }
@@ -546,11 +719,11 @@ static void update_window(OffscreenBuffer *backbuffer, XImage **backbuffer_info,
  * We check the event.type and handle each case, just like:
  * switch(event.type) { case 'click': ..., case 'resize': ... }
  */
-inline file_scoped_fn void handle_event(OffscreenBuffer *backbuffer,
-                                        XImage **backbuffer_info,
-                                        Display *display, Window window, GC gc,
-                                        XEvent *event, GameState *game_state,
-                                        SoundOutput *sound_output) {
+inline file_scoped_fn void
+handle_event(OffscreenBuffer *backbuffer, XImage **backbuffer_info,
+             Display *display, Window window, GC gc, XEvent *event,
+             SoundOutput *sound_output, GameInput *old_game_input,
+             GameInput *new_game_input) {
   switch (event->type) {
 
   /**
@@ -612,7 +785,7 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *backbuffer,
     Atom wmDelete = XInternAtom(display, "WM_DELETE_WINDOW", False);
     if ((Atom)event->xclient.data.l[0] == wmDelete) {
       printf("Window close requested\n");
-      game_state->is_running = false; // Stop the main loop
+      is_game_running = false; // Stop the main loop
     }
     break;
   }
@@ -665,7 +838,7 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *backbuffer,
    */
   case DestroyNotify: {
     printf("Window destroyed\n");
-    game_state->is_running = false;
+    is_game_running = false;
     break;
   }
 
@@ -676,7 +849,12 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *backbuffer,
    */
   case KeyPress: {
     KeySym key = XLookupKeysym(&event->xkey, 0);
-    printf("pressed\n");
+    // printf("pressed\n");
+
+    GameControllerInput *old_controller1 =
+        &old_game_input->controllers[KEYBOARD_CONTROLLER_INDEX];
+    GameControllerInput *new_controller1 =
+        &new_game_input->controllers[KEYBOARD_CONTROLLER_INDEX];
 
     switch (key) {
     case XK_F1: {
@@ -684,94 +862,49 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *backbuffer,
       linux_debug_audio_latency(sound_output);
       break;
     }
-    case XK_z:
-      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_C4;
-      break;
-    case XK_x:
-      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_D4;
-      break;
-    case XK_c:
-      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_E4;
-      break;
-    case XK_v:
-      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_F4;
-      break;
-    case XK_b:
-      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_G4;
-      break;
-    case XK_n:
-      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_A4;
-      break;
-    case XK_m:
-      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_B4;
-      break;
-    case XK_comma:
-      g_game_state.controls.set_to_defined_tone = DEFINED_TONE_C5;
-      break;
-    case XK_braceleft: // Sometimes not detected!{ // [ key (Shift for {)
-    {
-      printf("{ or [ pressed\n");
-      g_game_state.controls.decrease_sound_volume = true;
-      g_game_state.controls.increase_sound_volume = false;
-      break;
-    }
-    case XK_bracketleft: // [ key (Shift for {)
-    {
-      if (event->xkey.state & ShiftMask) {
-        printf("{ pressed (Shift + [)\n");
-        g_game_state.controls.decrease_sound_volume = true;
-        g_game_state.controls.increase_sound_volume = false;
-      } else {
-        g_game_state.controls.move_sound_pan_left = true;
-        g_game_state.controls.move_sound_pan_right = false;
-      }
-      break;
-    }
-    case XK_braceright: // Sometimes not detected!{ // ] key (Shift for })
-    {
-      printf("} or ] pressed\n");
-      g_game_state.controls.increase_sound_volume = true;
-      g_game_state.controls.decrease_sound_volume = false;
-      break;
-    }
-    case XK_bracketright: // [ key (Shift for {)
-    {
-      if (event->xkey.state & ShiftMask) {
-        printf("{ pressed (Shift + ])\n");
-        g_game_state.controls.increase_sound_volume = true;
-        g_game_state.controls.decrease_sound_volume = false;
-      } else {
-        g_game_state.controls.move_sound_pan_right = true;
-        g_game_state.controls.move_sound_pan_left = false;
-      }
-      break;
-    }
     case (XK_w):
     case (XK_W):
     case (XK_Up): {
-      printf("W pressed\n");
-      g_game_state.controls.up = true;
+      // W/Up = Move up = positive Y
+      new_controller1->end_y = +1.0f;
+      new_controller1->min_y = new_controller1->max_y = new_controller1->end_y;
+      new_controller1->is_analog = false;
+
+      // Also set button state for backward compatibility
+      process_key(true, &old_controller1->up, &new_controller1->up);
       break;
     }
     case (XK_a):
     case (XK_A):
     case (XK_Left): {
-      printf("A pressed\n");
-      g_game_state.controls.left = true;
+      // A/Left = Move left = negative X
+      new_controller1->end_x = -1.0f;
+      new_controller1->min_x = new_controller1->max_x = new_controller1->end_x;
+      new_controller1->is_analog = false;
+
+      process_key(true, &old_controller1->left, &new_controller1->left);
       break;
     }
     case (XK_s):
     case (XK_S):
     case (XK_Down): {
-      printf("S pressed\n");
-      g_game_state.controls.down = true;
+      // S/Down = Move down = negative Y
+      new_controller1->end_y = -1.0f;
+      new_controller1->min_y = new_controller1->max_y = new_controller1->end_y;
+      new_controller1->is_analog = false;
+
+      process_key(true, &old_controller1->down, &new_controller1->down);
       break;
     }
     case (XK_d):
     case (XK_D):
     case (XK_Right): {
-      printf("D pressed\n");
-      g_game_state.controls.right = true;
+      // D/Right = Move right = positive X
+      new_controller1->end_x = +1.0f;
+      new_controller1->min_x = new_controller1->max_x = new_controller1->end_x;
+      new_controller1->is_analog = false;
+
+      process_key(true, &old_controller1->right, &new_controller1->right);
       break;
     }
     case (XK_space): {
@@ -780,7 +913,7 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *backbuffer,
     }
     case (XK_Escape): {
       printf("ESCAPE pressed - exiting\n");
-      g_game_state.is_running = false;
+      is_game_running = false;
       break;
     }
     }
@@ -796,65 +929,46 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *backbuffer,
   case KeyRelease: {
     KeySym key = XLookupKeysym(&event->xkey, 0);
 
+    GameControllerInput *old_controller1 =
+        &old_game_input->controllers[KEYBOARD_CONTROLLER_INDEX];
+    GameControllerInput *new_controller1 =
+        &new_game_input->controllers[KEYBOARD_CONTROLLER_INDEX];
+
     switch (key) {
-    case XK_braceleft: // Sometimes not detected!{ // [ key (Shift for {)
-    {
-      printf("{ or [ pressed\n");
-      g_game_state.controls.increase_sound_volume = false;
-      break;
-    }
-    case XK_bracketleft: // [ key (Shift for {)
-    {
-      if (event->xkey.state & ShiftMask) {
-        printf("{ pressed (Shift + [)\n");
-        g_game_state.controls.decrease_sound_volume = false;
-      } else {
-        g_game_state.controls.move_sound_pan_left = false;
-      }
-      break;
-    }
-    case XK_braceright: // Sometimes not detected!{ // ] key (Shift for })
-    {
-      printf("} or ] pressed\n");
-      g_game_state.controls.decrease_sound_volume = false;
-      break;
-    }
-    case XK_bracketright: // [ key (Shift for {)
-    {
-      if (event->xkey.state & ShiftMask) {
-        printf("{ pressed (Shift + ])\n");
-        g_game_state.controls.increase_sound_volume = false;
-      } else {
-        g_game_state.controls.move_sound_pan_right = false;
-      }
-      break;
-    }
     case (XK_w):
     case (XK_W):
     case (XK_Up): {
-      printf("W released\n");
-      g_game_state.controls.up = false;
+      new_controller1->end_y = 0.0f;
+      new_controller1->min_y = new_controller1->max_y = 0.0f;
+      new_controller1->is_analog = false;
+      process_key(false, &old_controller1->up, &new_controller1->up);
       break;
     }
     case (XK_a):
     case (XK_A):
     case (XK_Left): {
-      printf("A released\n");
-      g_game_state.controls.left = false;
+      new_controller1->end_x = 0.0f;
+      new_controller1->min_x = new_controller1->max_x = 0.0f;
+      new_controller1->is_analog = false;
+      process_key(false, &old_controller1->left, &new_controller1->left);
       break;
     }
     case (XK_s):
     case (XK_S):
     case (XK_Down): {
-      printf("S released\n");
-      g_game_state.controls.down = false;
+      new_controller1->end_y = 0.0f;
+      new_controller1->min_y = new_controller1->max_y = 0.0f;
+      new_controller1->is_analog = false;
+      process_key(false, &old_controller1->down, &new_controller1->down);
       break;
     }
     case (XK_d):
     case (XK_D):
     case (XK_Right): {
-      printf("D released\n");
-      g_game_state.controls.right = false;
+      new_controller1->end_x = 0.0f;
+      new_controller1->min_x = new_controller1->max_x = 0.0f;
+      new_controller1->is_analog = false;
+      process_key(false, &old_controller1->right, &new_controller1->right);
       break;
     }
     case (XK_space): {
@@ -863,7 +977,7 @@ inline file_scoped_fn void handle_event(OffscreenBuffer *backbuffer,
     }
     case (XK_Escape): {
       printf("ESCAPE released - exiting\n");
-      g_game_state.is_running = false;
+      is_game_running = false;
       break;
     }
     }
@@ -892,11 +1006,70 @@ file_scoped_fn uint32_t compose_pixel_xrgb(uint8_t r, uint8_t g, uint8_t b,
   return ((a << 24) | (r << 16) | (g << 8) | (b));
 }
 
+// ═══════════════════════════════════════════════════════════
+// Clear new input buttons to released state
+// ═══════════════════════════════════════════════════════════
+// X11 keyboard only sends events on press/release.
+// If no event, button stays in old state (wrong!).
+// So we must explicitly clear to "not pressed".
+// ═══════════════════════════════════════════════════════════
+file_scoped_fn void prepare_input_frame(GameInput *old_input,
+                                        GameInput *new_input) {
+  for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
+    GameControllerInput *old_ctrl = &old_input->controllers[i];
+    GameControllerInput *new_ctrl = &new_input->controllers[i];
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 1: Copy connection state (doesn't change mid-frame)
+    // ═══════════════════════════════════════════════════════════
+    new_ctrl->is_connected = old_ctrl->is_connected;
+    new_ctrl->is_analog = old_ctrl->is_analog;
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 2: Set start position = last frame's end position
+    // ═══════════════════════════════════════════════════════════
+    new_ctrl->start_x = old_ctrl->end_x;
+    new_ctrl->start_y = old_ctrl->end_y;
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 3: Initialize analog values
+    // ═══════════════════════════════════════════════════════════
+
+    // ═══════════════════════════════════════════════════════════
+    // PRESERVE analog values for BOTH keyboard AND joystick!
+    // ═══════════════════════════════════════════════════════════
+    // Linux joystick only sends events on CHANGE, not while held.
+    // X11 keyboard only sends events on press/release, not while held.
+    // So we MUST preserve values for both!
+    new_ctrl->end_x = old_ctrl->end_x;
+    new_ctrl->end_y = old_ctrl->end_y;
+
+    new_ctrl->min_x = new_ctrl->max_x = new_ctrl->end_x;
+    new_ctrl->min_y = new_ctrl->max_y = new_ctrl->end_y;
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 4: Buttons - preserve state, clear transition count
+    // ═══════════════════════════════════════════════════════════
+    for (int btn = 0; btn < MAX_CONTROLLER_COUNT; btn++) {
+      // Preserve ended_down (button still held until release event)
+      new_ctrl->buttons[btn].ended_down = old_ctrl->buttons[btn].ended_down;
+      // Clear transition count (will be set if event occurs)
+      new_ctrl->buttons[btn].half_transition_count = 0;
+    }
+  }
+}
+
 int platform_main() {
+  static GameInput game_inputs[2] = {0}; // Static - survives across frames!
+  GameInput *new_game_input = &game_inputs[0];
+  GameInput *old_game_input = &game_inputs[1];
+
+  init_game_state();
+
   // ═══════════════════════════════════════════════════════════
   // 🎮 Initialize joystick BEFORE main loop (Casey's pattern)
   // ═══════════════════════════════════════════════════════════
-  linux_init_joystick(&g_game_state);
+  linux_init_joystick(old_game_input->controllers, new_game_input->controllers);
   // ═══════════════════════════════════════════════════════════
   // 🔊 Load ALSA library (Casey's Win32LoadXInput pattern)
   // ═══════════════════════════════════════════════════════════
@@ -965,12 +1138,6 @@ int platform_main() {
   // Create colormap for 32-bit visual
   Colormap colormap = XCreateColormap(display, root, vinfo.visual, AllocNone);
 
-  g_game_state.controls = (GameControls){0};
-  // g_game_state.gradient = (GradientState){0};
-  // g_game_state.pixel = (PixelState){0};
-  g_game_state.speed = 1;
-  g_game_state.is_running = true;
-
   g_buffer_info = NULL;
 
   int init_backbuffer_status =
@@ -979,8 +1146,6 @@ int platform_main() {
     fprintf(stderr, "Failed to initialize backbuffer\n");
     return init_backbuffer_status;
   }
-
-  init_game_state();
 
   g_buffer_info = XCreateImage(
       // display,                                        // X11 connection
@@ -1165,88 +1330,92 @@ int platform_main() {
   clock_gettime(CLOCK_MONOTONIC, &start);
   start_cycles = __rdtsc();
 
-  while (g_game_state.is_running) {
+  while (is_game_running) {
+    // ═══════════════════════════════════════════════════════════
+    // 🐛 DEBUG: Print controller states (TEMPORARY!)
+    // ═══════════════════════════════════════════════════════════
+    static int frame_count = 0;
+    if (frame_count++ % 60 == 0) { // Print once per second (60 FPS)
+      printf("\n🎮 Controller States:\n");
+      for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
+        GameControllerInput *c = &old_game_input->controllers[i];
+        LinuxJoystickState *joystick_state = NULL;
+        if (i > 0 && i - 1 < MAX_JOYSTICK_COUNT) {
+          joystick_state = &g_joysticks[i - 1];
+        }
+        printf("  [%d] connected=%d analog=%d fd=%d end_x=%.2f end_y=%.2f\n", i,
+               c->is_connected, c->is_analog,
+               joystick_state ? joystick_state->fd : -1, c->end_x, c->end_y);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Clear new input buttons to released state
+    // ═══════════════════════════════════════════════════════════
+    // X11 keyboard only sends events on press/release.
+    // If no event, button stays in old state (wrong!).
+    // So we must explicitly clear to "not pressed".
+    // ═══════════════════════════════════════════════════════════
+    prepare_input_frame(old_game_input, new_game_input);
+
     XEvent event;
 
-    // /**
-    //  * WAIT FOR NEXT EVENT
-    //  *
-    //  * XNextEvent() blocks (waits) until an event arrives.
-    //  * Like await in JavaScript - execution stops here until event.
-    //  *
-    //  * When an event arrives, it's stored in the 'event' variable.
-    //  */
-    // XNextEvent(display, &event);
-
+    // ═══════════════════════════════════════════════════════════
+    // Process events, joystick, call game...
+    // ═══════════════════════════════════════════════════════════
     while (XPending(display) > 0) {
       XNextEvent(display, &event);
       handle_event(&g_backbuffer, &g_buffer_info, display, window, gc, &event,
-                   &g_game_state, &g_sound_output);
+                   &g_sound_output, old_game_input, new_game_input);
     }
-    // ═══════════════════════════════════════════════════════
-    // 🎮 Poll joystick (Casey's XInputGetState pattern)
-    // ═══════════════════════════════════════════════════════
-    linux_poll_joystick();
+    linux_poll_joystick(old_game_input, new_game_input);
+    // printf("new_game_input->controllers[1].is_analog: %d\n",
+    //        new_game_input->controllers[1].is_analog);
 
-    // // ═══════════════════════════════════════════════════════
-    // // 🎮 Use joystick input to control gradient
-    // // ═══════════════════════════════════════════════════════
-    handle_controls();
-
-    // /**
-    //  * HANDLE THE EVENT
-    //  *
-    //  * This is like calling your event handler function.
-    //  * Our handle_event() is like Casey's MainWindowCallback()
-    //  */
-    // handle_event(display, window, &event);
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 🎨 DRAW DIAGONAL LINE (Learning Exercise - Day 3)
-    // ═══════════════════════════════════════════════════════════════════
-    //
-    // This draws a white diagonal line every frame.
-    //
-    // PIXEL ADDRESSING: offset = y * width + x
-    //
-    // In Day 4+, we'll do proper rendering with frame timing.
-    // For now, this demonstrates how to write pixels to memory.
-    //
     if (g_backbuffer.memory) {
 
       // Display the result
       update_window(&g_backbuffer, &g_buffer_info, display, window, gc, 0, 0,
                     g_backbuffer.width, g_backbuffer.height);
 
-      game_update_and_render(0xFFFF0000);
-
-      // offset_x++;
-
-      clock_gettime(CLOCK_MONOTONIC, &end);
-      end_cycles = __rdtsc();
-
-      double ms_per_frame = (end.tv_sec - start.tv_sec) * 1000.0 +
-                            (end.tv_nsec - start.tv_nsec) / 1000000.0;
-      double fps = 1000.0 / ms_per_frame;
-      double mcpf = (end_cycles - start_cycles) / 1000000.0;
-
-      // printf("%.2fms/f, %.2ff/s, %.2fmc/f\n", ms_per_frame, fps, mcpf);
-
-      start = end;
-      start_cycles = end_cycles;
+      game_update_and_render(new_game_input);
     }
-
     // ═══════════════════════════════════════════════════════════
     // Day 8: Fill and write audio backbuffer every frame
     // ═══════════════════════════════════════════════════════════
     //
-    // Casey calls this in the main loop after rendering.
     // We generate samples and write them to ALSA.
     //
     // NOTE: ALSA handles playback automatically once we start
     // writing. No explicit "Play()" call needed!
     // ═══════════════════════════════════════════════════════════
     linux_fill_sound_buffer(&g_sound_output);
+
+    // ═══════════════════════════════════════════════════════════
+    // Timing
+    // ═══════════════════════════════════════════════════════════
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    end_cycles = __rdtsc();
+
+    double ms_per_frame = (end.tv_sec - start.tv_sec) * 1000.0 +
+                          (end.tv_nsec - start.tv_nsec) / 1000000.0;
+    double fps = 1000.0 / ms_per_frame;
+    double mcpf = (end_cycles - start_cycles) / 1000000.0;
+
+    // printf("%.2fms/f, %.2ff/s, %.2fmc/f\n", ms_per_frame, fps, mcpf);
+
+    start = end;
+    start_cycles = end_cycles;
+
+    // ═══════════════════════════════════════════════════════════
+    // SWAP INPUT BUFFERS (THE CRITICAL STEP!)
+    // ═══════════════════════════════════════════════════════════
+    // This is what makes double buffering work!
+    // ═══════════════════════════════════════════════════════════
+    // Swap pointers (preserves previous frame!)
+    GameInput *temp_game_input = new_game_input;
+    new_game_input = old_game_input;
+    old_game_input = temp_game_input;
   }
 
   /**

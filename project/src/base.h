@@ -5,6 +5,11 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+
+#ifndef ArraySize
+#define ArraySize(Array) (sizeof(Array) / sizeof((Array)[0]))
+#endif
+
 #include <stdbool.h>
 #include <stdint.h>
 

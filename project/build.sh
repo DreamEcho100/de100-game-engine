@@ -12,7 +12,7 @@ fi
 
 echo "Building with backend: $BACKEND"
 
-FLAGS="-Isrc -Wall -Wextra -std=c11"
+FLAGS="-Isrc -Wall -Wextra -std=c11 -g -O0"
 
 SRC="src/main.c src/base.c src/game.c"
 

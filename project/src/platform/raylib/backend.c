@@ -1,8 +1,11 @@
 #define _POSIX_C_SOURCE 199309L
+
 #include "backend.h"
 #include "../../base.h"
 #include "../../game.h"
 #include "audio.h"
+#include <assert.h>
+#include <math.h>
 
 #include <raylib.h>
 #include <stdbool.h>
@@ -11,6 +14,14 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <time.h>
+
+typedef struct {
+  int gamepad_id;        // Which Raylib gamepad ID (0-3)
+  char device_name[128]; // For debugging
+} RaylibJoystickState;
+
+file_scoped_global_var RaylibJoystickState g_joysticks[MAX_JOYSTICK_COUNT] = {
+    0};
 
 typedef struct {
   Texture2D texture;
@@ -41,86 +52,155 @@ get_window_dimension(Display *display, Window window) {
 // ═══════════════════════════════════════════════════════════════
 // 🎮 Initialize gamepad (Raylib cross-platform!)
 // ═══════════════════════════════════════════════════════════════
-file_scoped_fn bool raylib_init_gamepad(GameState *game_state) {
+file_scoped_fn void
+raylib_init_gamepad(GameControllerInput *controller_old_input,
+                    GameControllerInput *controller_new_input) {
+
+  // Initialize ALL controllers FIRST
+  for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
+    if (i == KEYBOARD_CONTROLLER_INDEX)
+      continue;
+
+    controller_old_input[i].controller_index = i;
+    controller_old_input[i].is_connected = false;
+
+    controller_new_input[i].controller_index = i;
+    controller_new_input[i].is_connected = false;
+
+    int g_joysticks_index = i - 1; // Adjust for keyboard at index 0
+    if (g_joysticks_index >= 0 && g_joysticks_index < MAX_JOYSTICK_COUNT) {
+      g_joysticks[g_joysticks_index].gamepad_id = -1;
+      memset(g_joysticks[g_joysticks_index].device_name, 0,
+             sizeof(g_joysticks[g_joysticks_index].device_name));
+    }
+  }
+
+  // Mark keyboard (slot 0) as connected AFTER the loop
+  controller_old_input[KEYBOARD_CONTROLLER_INDEX].is_connected = true;
+  controller_old_input[KEYBOARD_CONTROLLER_INDEX].is_analog = false;
+
+  controller_new_input[KEYBOARD_CONTROLLER_INDEX].is_connected = true;
+  controller_new_input[KEYBOARD_CONTROLLER_INDEX].is_analog = false;
+
   printf("Searching for gamepad...\n");
 
   // Try gamepads 0-3 (Raylib supports up to 4 controllers)
-  for (int i = 0; i < 4; i++) {
-    if (IsGamepadAvailable(i)) {
+  for (int i = MAX_KEYBOARD_COUNT; i < MAX_JOYSTICK_COUNT; i++) {
+
+    if (IsGamepadAvailable(i - MAX_KEYBOARD_COUNT)) {
       const char *name = GetGamepadName(i);
       printf("✅ Gamepad %d connected: %s\n", i, name);
 
-      // Use the first available gamepad
-      game_state->gamepad_id = i;
-      return true;
+      int raylib_gamepad_id = i - MAX_KEYBOARD_COUNT;
+
+      // Store controller index AND file descriptor separately
+      controller_old_input[i].controller_index = i;
+      controller_old_input[i].is_connected = true;
+      controller_old_input[i].is_analog = true; // Joysticks are analog
+
+      controller_new_input[i].controller_index = i;
+      controller_new_input[i].is_connected = true;
+      controller_new_input[i].is_analog = true; // Joysticks are analog
+
+      int g_joysticks_index =
+          i - MAX_KEYBOARD_COUNT; // Adjust for keyboard at index 0
+
+      if (g_joysticks_index >= 0 && g_joysticks_index < MAX_JOYSTICK_COUNT) {
+        g_joysticks[g_joysticks_index].gamepad_id = raylib_gamepad_id;
+        strncpy(g_joysticks[g_joysticks_index].device_name, name,
+                sizeof(g_joysticks[g_joysticks_index].device_name) - 1);
+      }
     }
   }
-
-  printf("❌ No gamepad found\n");
-  printf("  - Is controller plugged in or paired via Bluetooth?\n");
-  printf("  - Raylib supports Xbox, PlayStation, Nintendo controllers\n");
-  printf("  - Game will run with keyboard input only\n");
-
-  game_state->gamepad_id = -1; // No gamepad
-  return false;
 }
 
-inline file_scoped_fn void handle_keyboard_inputs() {
+file_scoped_fn void process_key(bool is_down, GameButtonState *old_state,
+                                GameButtonState *new_state) {
+  new_state->ended_down = is_down;
+  new_state->half_transition_count =
+      old_state->ended_down != new_state->ended_down ? 1 : 0;
+}
 
-  g_game_state.controls.up = IsKeyDown(KEY_W) || IsKeyDown(KEY_UP);
-  g_game_state.controls.left = IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT);
-  g_game_state.controls.down = IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN);
-  g_game_state.controls.right = IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
+inline file_scoped_fn void handle_keyboard_inputs(GameInput *old_game_input,
+                                                  GameInput *new_game_input) {
 
-  // Musical note frequencies (same as X11 version)
-  if (IsKeyPressed(KEY_Z)) {
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_C4;
+  GameControllerInput *old_controller1 =
+      &old_game_input->controllers[KEYBOARD_CONTROLLER_INDEX];
+  GameControllerInput *new_controller1 =
+      &new_game_input->controllers[KEYBOARD_CONTROLLER_INDEX];
+
+  int upDown = IsKeyDown(KEY_W) || IsKeyDown(KEY_UP);
+  if (upDown) {
+    // W/Up = Move up = positive Y
+    new_controller1->end_y = +1.0f;
+    new_controller1->min_y = new_controller1->max_y = new_controller1->end_y;
+    new_controller1->is_analog = false;
+
+    // Also set button state for backward compatibility
+    process_key(true, &old_controller1->up, &new_controller1->up);
   }
-  if (IsKeyPressed(KEY_X)) {
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_D4;
-  }
-  if (IsKeyPressed(KEY_C)) {
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_E4;
-  }
-  if (IsKeyPressed(KEY_V)) {
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_F4;
-  }
-  if (IsKeyPressed(KEY_B)) {
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_G4;
-  }
-  if (IsKeyPressed(KEY_N)) {
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_A4;
-  }
-  if (IsKeyPressed(KEY_M)) {
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_B4;
-  }
-  if (IsKeyPressed(KEY_COMMA)) {
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_C5;
+  int upReleased = IsKeyReleased(KEY_W) || IsKeyReleased(KEY_UP);
+  if (upReleased) {
+    new_controller1->end_y = 0.0f;
+    new_controller1->min_y = new_controller1->max_y = 0.0f;
+    new_controller1->is_analog = false;
+    process_key(false, &old_controller1->up, &new_controller1->up);
   }
 
-  // Volume control ([ and ])
-  if (IsKeyPressed(KEY_LEFT_BRACKET)) {
-    if (IsKeyDown(KEY_LEFT_SHIFT)) {
-      g_game_state.controls.decrease_sound_volume = true;
-      g_game_state.controls.increase_sound_volume = false;
-    } else {
-      g_game_state.controls.move_sound_pan_left = true;
-      g_game_state.controls.move_sound_pan_right = false;
-    }
+  int left = IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT);
+  if (left) {
+    // A/Left = Move left = negative X
+    new_controller1->end_x = -1.0f;
+    new_controller1->min_x = new_controller1->max_x = new_controller1->end_x;
+    new_controller1->is_analog = false;
+
+    process_key(true, &old_controller1->left, &new_controller1->left);
   }
-  if (IsKeyPressed(KEY_RIGHT_BRACKET)) {
-    if (IsKeyDown(KEY_LEFT_SHIFT)) {
-      g_game_state.controls.increase_sound_volume = true;
-      g_game_state.controls.decrease_sound_volume = false;
-    } else {
-      g_game_state.controls.move_sound_pan_right = true;
-      g_game_state.controls.move_sound_pan_left = false;
-    }
+  int leftReleased = IsKeyReleased(KEY_A) || IsKeyReleased(KEY_LEFT);
+  if (leftReleased) {
+    new_controller1->end_x = 0.0f;
+    new_controller1->min_x = new_controller1->max_x = 0.0f;
+    new_controller1->is_analog = false;
+    process_key(false, &old_controller1->left, &new_controller1->left);
+  }
+
+  int down = IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN);
+  if (down) {
+    // S/Down = Move down = negative Y
+    new_controller1->end_y = -1.0f;
+    new_controller1->min_y = new_controller1->max_y = new_controller1->end_y;
+    new_controller1->is_analog = false;
+
+    process_key(true, &old_controller1->down, &new_controller1->down);
+  }
+  int downReleased = IsKeyReleased(KEY_S) || IsKeyReleased(KEY_DOWN);
+  if (downReleased) {
+    new_controller1->end_y = 0.0f;
+    new_controller1->min_y = new_controller1->max_y = 0.0f;
+    new_controller1->is_analog = false;
+    process_key(false, &old_controller1->down, &new_controller1->down);
+  }
+
+  int right = IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
+  if (right) {
+    // D/Right = Move right = positive X
+    new_controller1->end_x = +1.0f;
+    new_controller1->min_x = new_controller1->max_x = new_controller1->end_x;
+    new_controller1->is_analog = false;
+
+    process_key(true, &old_controller1->right, &new_controller1->right);
+  }
+  int rightReleased = IsKeyReleased(KEY_D) || IsKeyReleased(KEY_RIGHT);
+  if (rightReleased) {
+    new_controller1->end_x = 0.0f;
+    new_controller1->min_x = new_controller1->max_x = 0.0f;
+    new_controller1->is_analog = false;
+    process_key(false, &old_controller1->right, &new_controller1->right);
   }
 
   if (IsKeyPressed(KEY_ESCAPE)) {
     printf("ESCAPE pressed - exiting\n");
-    g_game_state.is_running = false;
+    is_game_running = false;
   }
 
   if (IsKeyPressed(KEY_F1)) {
@@ -132,87 +212,207 @@ inline file_scoped_fn void handle_keyboard_inputs() {
 // ═══════════════════════════════════════════════════════════════
 // 🎮 Poll gamepad state (Raylib's cross-platform API!)
 // ═══════════════════════════════════════════════════════════════
-file_scoped_fn void raylib_poll_gamepad(GameState *game_state) {
-  // Check if gamepad is still connected
-  if (game_state->gamepad_id < 0 ||
-      !IsGamepadAvailable(game_state->gamepad_id)) {
-    return;
-  }
+file_scoped_fn void raylib_poll_gamepad(GameInput *old_input,
+                                        GameInput *new_input) {
 
-  int gamepad = game_state->gamepad_id;
+  for (int controller_index = MAX_KEYBOARD_COUNT;
+       controller_index < MAX_CONTROLLER_COUNT; controller_index++) {
 
-  // ═══════════════════════════════════════════════════════════
-  // 🎮 BUTTON EVENTS (Raylib maps to standard layout)
-  // ═══════════════════════════════════════════════════════════
-  // Raylib uses SDL2 button mapping (works across all controllers!)
-  // - PlayStation: X=A, O=B, □=X, △=Y
-  // - Xbox: A=A, B=B, X=X, Y=Y
-  // - Nintendo: B=A, A=B, Y=X, X=Y
+    // Get controller state
+    GameControllerInput *old_controller =
+        &old_input->controllers[controller_index];
+    GameControllerInput *new_controller =
+        &new_input->controllers[controller_index];
 
-  // Face buttons
-  game_state->controls.a_button =
-      IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
-  game_state->controls.b_button =
-      IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT);
-  game_state->controls.x_button =
-      IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_LEFT);
-  game_state->controls.y_button =
-      IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_UP);
+    int g_joysticks_index = controller_index - MAX_KEYBOARD_COUNT;
+    printf("g_joysticks_index: %d\n", g_joysticks_index);
+    if (g_joysticks_index < 0 || g_joysticks_index >= MAX_JOYSTICK_COUNT) {
+      // Skip keyboard (index 0)
+      continue;
+    }
+    RaylibJoystickState *joystick_state = &g_joysticks[g_joysticks_index];
 
-  // Shoulder buttons
-  game_state->controls.left_shoulder =
-      IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_TRIGGER_1);
-  game_state->controls.right_shoulder =
-      IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_TRIGGER_1);
+    // Check if gamepad is still connected
+    if (joystick_state->gamepad_id < 0 ||
+        !IsGamepadAvailable(joystick_state->gamepad_id)) {
+      continue;
+    }
 
-  // Menu buttons
-  game_state->controls.back =
-      IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_MIDDLE_LEFT); // Share/Back
-  game_state->controls.start = IsGamepadButtonDown(
-      gamepad, GAMEPAD_BUTTON_MIDDLE_RIGHT); // Options/Start
+    int gamepad = joystick_state->gamepad_id;
 
-  // D-pad (works on ALL controllers!)
-  game_state->controls.up =
-      IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_UP);
-  game_state->controls.down =
-      IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_DOWN);
-  game_state->controls.left =
-      IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_LEFT);
-  game_state->controls.right =
-      IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_RIGHT);
+    // ═══════════════════════════════════════════════════════════
+    // 🎮 BUTTON EVENTS (Raylib maps to standard layout)
+    // ═══════════════════════════════════════════════════════════
+    // Raylib uses SDL2 button mapping (works across all controllers!)
+    // - PlayStation: X=A, O=B, □=X, △=Y
+    // - Xbox: A=A, B=B, X=X, Y=Y
+    // - Nintendo: B=A, A=B, Y=X, X=Y
 
-  // ═══════════════════════════════════════════════════════════
-  // 🎮 ANALOG STICKS (normalized -1.0 to +1.0)
-  // ═══════════════════════════════════════════════════════════
-  // Raylib automatically handles deadzones and normalization!
+    // // Face buttons
+    // game_state->controls.a_button =
+    //     IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    // game_state->controls.b_button =
+    //     IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT);
+    // game_state->controls.x_button =
+    //     IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_LEFT);
+    // game_state->controls.y_button =
+    //     IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_UP);
 
-  game_state->controls.left_stick_x =
-      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_X) *
-                32767.0f);
-  game_state->controls.left_stick_y =
-      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_Y) *
-                32767.0f);
-  game_state->controls.right_stick_x =
-      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_X) *
-                32767.0f);
-  game_state->controls.right_stick_y =
-      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_Y) *
-                32767.0f);
+    // // Shoulder buttons
+    // game_state->controls.left_shoulder =
+    //     IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_TRIGGER_1);
+    // game_state->controls.right_shoulder =
+    //     IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_TRIGGER_1);
 
-  // Triggers (also normalized 0.0 to +1.0)
-  game_state->controls.left_trigger =
-      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_TRIGGER) *
-                32767.0f);
-  game_state->controls.right_trigger =
-      (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_TRIGGER) *
-                32767.0f);
+    // // Menu buttons
+    // game_state->controls.back =
+    //     IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_MIDDLE_LEFT); //
+    //     Share/Back
+    // game_state->controls.start = IsGamepadButtonDown(
+    //     gamepad, GAMEPAD_BUTTON_MIDDLE_RIGHT); // Options/Start
 
-  // Debug output for button presses (only print on state change)
-  if (IsGamepadButtonPressed(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) {
-    printf("Button A pressed\n");
-  }
-  if (IsGamepadButtonPressed(gamepad, GAMEPAD_BUTTON_MIDDLE_RIGHT)) {
-    printf("Button Start pressed\n");
+    // ═══════════════════════════════════════════════════════════
+    // 🎮 D-PAD (works on ALL controllers!)
+    // ═══════════════════════════════════════════════════════════
+    // Raylib treats D-pad as buttons (digital), not axes (analog).
+    // We must convert button states to analog values for game layer.
+    // ═══════════════════════════════════════════════════════════
+
+    // ✅ Update start position BEFORE reading buttons
+    new_controller->start_x = old_controller->end_x;
+    new_controller->start_y = old_controller->end_y;
+
+    // ─────────────────────────────────────────────────────────
+    // D-PAD UP/DOWN (Y-axis)
+    // ─────────────────────────────────────────────────────────
+    bool dpad_up = IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_UP);
+    bool dpad_down =
+        IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_DOWN);
+
+    if (dpad_up && !dpad_down) {
+      // Only UP pressed
+      new_controller->end_y = +1.0f;
+      process_key(true, &old_controller->up, &new_controller->up);
+      process_key(false, &old_controller->down, &new_controller->down);
+
+    } else if (dpad_down && !dpad_up) {
+      // Only DOWN pressed
+      new_controller->end_y = -1.0f;
+      process_key(true, &old_controller->down, &new_controller->down);
+      process_key(false, &old_controller->up, &new_controller->up);
+
+    } else if (dpad_up && dpad_down) {
+      // Both pressed (cancel out)
+      new_controller->end_y = 0.0f;
+      process_key(true, &old_controller->up, &new_controller->up);
+      process_key(true, &old_controller->down, &new_controller->down);
+
+    } else {
+      // Neither pressed
+      new_controller->end_y = 0.0f;
+      process_key(false, &old_controller->up, &new_controller->up);
+      process_key(false, &old_controller->down, &new_controller->down);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // D-PAD LEFT/RIGHT (X-axis)
+    // ─────────────────────────────────────────────────────────
+    bool dpad_left =
+        IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_LEFT);
+    bool dpad_right =
+        IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_FACE_RIGHT);
+
+    if (dpad_left && !dpad_right) {
+      // Only LEFT pressed
+      new_controller->end_x = -1.0f;
+      process_key(true, &old_controller->left, &new_controller->left);
+      process_key(false, &old_controller->right, &new_controller->right);
+
+    } else if (dpad_right && !dpad_left) {
+      // Only RIGHT pressed
+      new_controller->end_x = +1.0f;
+      process_key(true, &old_controller->right, &new_controller->right);
+      process_key(false, &old_controller->left, &new_controller->left);
+
+    } else if (dpad_left && dpad_right) {
+      // Both pressed (cancel out)
+      new_controller->end_x = 0.0f;
+      process_key(true, &old_controller->left, &new_controller->left);
+      process_key(true, &old_controller->right, &new_controller->right);
+
+    } else {
+      // Neither pressed
+      new_controller->end_x = 0.0f;
+      process_key(false, &old_controller->left, &new_controller->left);
+      process_key(false, &old_controller->right, &new_controller->right);
+    }
+
+    // Update min/max (Day 13 pattern)
+    new_controller->min_x = new_controller->max_x = new_controller->end_x;
+    new_controller->min_y = new_controller->max_y = new_controller->end_y;
+
+    // ═══════════════════════════════════════════════════════════
+    // 🎮 ANALOG STICKS (normalized -1.0 to +1.0)
+    // ═══════════════════════════════════════════════════════════
+    // Platform layer reports RAW values (no filtering!)
+    // Game layer applies deadzone in handle_controls()
+    //
+    // Raylib automatically:
+    // - Normalizes to -1.0 to +1.0 range
+    // - Applies small internal deadzone (~0.05)
+    // - Handles platform differences (Windows/Linux/Mac)
+    //
+    // We just pass the values through!
+    // ═══════════════════════════════════════════════════════════
+
+    real32 left_stick_x = GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_X);
+    real32 left_stick_y = GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_Y);
+
+    // Must set is_analog EVERY FRAME because:
+    // 1. Raylib always returns a value (even 0.0)
+    // 2. prepare_input_frame() preserves old value
+    // 3. We need to mark "this frame used joystick, not keyboard"
+    new_controller->is_analog = true;
+
+    // Update start position (for movement tracking)
+    new_controller->start_x = old_controller->end_x;
+    new_controller->start_y = old_controller->end_y;
+
+    // Store RAW values (game layer will apply deadzone!)
+    new_controller->end_x = left_stick_x;
+    new_controller->end_y = left_stick_y;
+
+    // Day 13: Just set min/max to current value
+    // Day 14+: These will track actual min/max during frame
+    new_controller->min_x = left_stick_x;
+    new_controller->max_x = left_stick_x;
+    new_controller->min_y = left_stick_y;
+    new_controller->max_y = left_stick_y;
+
+    // game_state->controls.right_stick_x =
+    //     (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_X) *
+    //               32767.0f);
+    // game_state->controls.right_stick_y =
+    //     (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_Y) *
+    //               32767.0f);
+
+    // // Triggers (also normalized 0.0 to +1.0)
+    // game_state->controls.left_trigger =
+    //     (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_LEFT_TRIGGER)
+    //     *
+    //               32767.0f);
+    // game_state->controls.right_trigger =
+    //     (int16_t)(GetGamepadAxisMovement(gamepad, GAMEPAD_AXIS_RIGHT_TRIGGER)
+    //     *
+    //               32767.0f);
+
+    // Debug output for button presses (only print on state change)
+    if (IsGamepadButtonPressed(gamepad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) {
+      printf("Button A pressed\n");
+    }
+    if (IsGamepadButtonPressed(gamepad, GAMEPAD_BUTTON_MIDDLE_RIGHT)) {
+      printf("Button Start pressed\n");
+    }
   }
 }
 
@@ -381,12 +581,48 @@ file_scoped_fn void ResizeBackBuffer(OffscreenBuffer *backbuffer,
   printf("Raylib texture created successfully\n");
 }
 
+void prepare_input_frame(GameInput *old_input, GameInput *new_input) {
+  // ═══════════════════════════════════════════════════════════
+  // Clear new input buttons to released state
+  // ═══════════════════════════════════════════════════════════
+  for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
+    GameControllerInput *old_ctrl = &old_input->controllers[i];
+    GameControllerInput *new_ctrl = &new_input->controllers[i];
+
+    // Preserve connection state
+    new_ctrl->is_connected = old_ctrl->is_connected;
+    new_ctrl->is_analog = old_ctrl->is_analog;
+
+    // Set start position = last frame's end position
+    new_ctrl->start_x = old_ctrl->end_x;
+    new_ctrl->start_y = old_ctrl->end_y;
+
+    // Preserve analog values (for joystick held positions)
+    new_ctrl->end_x = old_ctrl->end_x;
+    new_ctrl->end_y = old_ctrl->end_y;
+    new_ctrl->min_x = new_ctrl->max_x = new_ctrl->end_x;
+    new_ctrl->min_y = new_ctrl->max_y = new_ctrl->end_y;
+
+    // Buttons - preserve state, clear transition count
+    for (int btn = 0; btn < MAX_CONTROLLER_COUNT; btn++) {
+      new_ctrl->buttons[btn].ended_down = old_ctrl->buttons[btn].ended_down;
+      new_ctrl->buttons[btn].half_transition_count = 0;
+    }
+  }
+}
+
 /**
  * MAIN FUNCTION
  *
  * Same purpose as X11 version, but MUCH simpler!
  */
 int platform_main() {
+  static GameInput game_inputs[2] = {0}; // Static - survives across frames!
+  GameInput *new_game_input = &game_inputs[0];
+  GameInput *old_game_input = &game_inputs[1];
+
+  init_game_state();
+
   /**
    * InitWindow() does ALL of this:
    * - XOpenDisplay() - Connect to display server
@@ -435,13 +671,10 @@ int platform_main() {
    */
   SetTargetFPS(60);
 
-  // Initialize game state
-  init_game_state();
-
   // ═══════════════════════════════════════════════════════════
   // 🎮 Initialize gamepad (cross-platform!)
   // ═══════════════════════════════════════════════════════════
-  raylib_init_gamepad(&g_game_state);
+  raylib_init_gamepad(old_game_input->controllers, new_game_input->controllers);
 
   // ═══════════════════════════════════════════════════════════
   // 🔊 Initialize audio (Day 7-9)
@@ -454,8 +687,6 @@ int platform_main() {
     fprintf(stderr, "Failed to initialize backbuffer\n");
     return init_backbuffer_status;
   }
-
-  init_game_state();
 
   resize_back_buffer(&g_backbuffer, &g_backbuffer_meta, g_backbuffer.width,
                      g_backbuffer.height);
@@ -496,6 +727,31 @@ int platform_main() {
    * Raylib handles the event queue internally - we don't see XNextEvent()
    */
   while (!WindowShouldClose()) {
+    // ═══════════════════════════════════════════════════════════
+    // 🐛 DEBUG: Print controller states (TEMPORARY!)
+    // ═══════════════════════════════════════════════════════════
+    static int frame_count = 0;
+    if (frame_count++ % 60 == 0) { // Print once per second (60 FPS)
+      printf("\n🎮 Controller States:\n");
+      for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
+        GameControllerInput *c = &old_game_input->controllers[i];
+        // LinuxJoystickState *joystick_state = NULL;
+        // if (i > 0 && i - 1 < MAX_JOYSTICK_COUNT) {
+        //   joystick_state = &g_joysticks[i - 1];
+        // }
+        RaylibJoystickState *joystick_state = NULL;
+        if (i > 0 && i - 1 < MAX_JOYSTICK_COUNT) {
+          joystick_state = &g_joysticks[i - 1];
+        }
+        printf("  [%d] connected=%d analog=%d gamepad_id=%d end_x=%.2f "
+               "end_y=%.2f\n",
+               i, c->is_connected, c->is_analog,
+               joystick_state ? joystick_state->gamepad_id : -1, c->end_x,
+               c->end_y);
+      }
+    }
+
+    prepare_input_frame(old_game_input, new_game_input);
 
     /**
      * CHECK FOR WINDOW RESIZE EVENT
@@ -525,17 +781,12 @@ int platform_main() {
     // ═══════════════════════════════════════════════════════
     // ⌨️ KEYBOARD INPUT (cross-platform!)
     // ═══════════════════════════════════════════════════════
-    handle_keyboard_inputs();
+    handle_keyboard_inputs(old_game_input, new_game_input);
 
     // ═══════════════════════════════════════════════════════
     // 🎮 GAMEPAD INPUT (cross-platform!)
     // ═══════════════════════════════════════════════════════
-    raylib_poll_gamepad(&g_game_state);
-
-    // ═══════════════════════════════════════════════════════
-    // 🎮 Process all input
-    // ═══════════════════════════════════════════════════════
-    handle_controls();
+    raylib_poll_gamepad(old_game_input, new_game_input);
 
     // ═══════════════════════════════════════════════════════
     // 🎨 RENDER
@@ -546,7 +797,7 @@ int platform_main() {
       render_weird_gradient();
       testPixelAnimation(0xFF0000FF); // opaque red in R8G8B8A8
 
-      game_update_and_render(0xFF0000FF);
+      game_update_and_render(new_game_input);
       // Example: Convert Raylib Color struct to int (RGBA)
       // You can now use color_int as a packed 32-bit RGBA value
       BeginDrawing();
@@ -554,6 +805,10 @@ int platform_main() {
       update_window_from_backbuffer(&g_backbuffer, &g_backbuffer_meta);
       EndDrawing();
     }
+
+    GameInput *temp_game_input = new_game_input;
+    new_game_input = old_game_input;
+    old_game_input = temp_game_input;
 
     clock_gettime(CLOCK_MONOTONIC, &g_frame_end);
 

@@ -1,13 +1,39 @@
 #include "game.h"
 #include "base.h"
+#include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <sys/mman.h>
 
+// ═══════════════════════════════════════════════════════════════
+// PLATFORM-SHARED STATE (declared extern in game.h)
+// ═══════════════════════════════════════════════════════════════
 OffscreenBuffer g_backbuffer = {0};
 SoundOutput g_sound_output = {0};
-GameState g_game_state = {0};
-local_persist_var GradientState g_gradient_state = {0};
-local_persist_var PixelState g_pixel_state = {0};
+bool is_game_running = true;
+
+// CONFIGURATION (could be const)
+int KEYBOARD_CONTROLLER_INDEX = 0;
+
+// ═══════════════════════════════════════════════════════════════
+// GAME-PRIVATE STATE (not visible to platform)
+// ═══════════════════════════════════════════════════════════════
+file_scoped_global_var GameState g_game_state = {0};
+
+file_scoped_global_var inline real32 apply_deadzone(real32 value) {
+  if (fabsf(value) < CONTROLLER_DEADZONE) {
+    return 0.0f;
+  }
+  return value;
+}
+
+file_scoped_global_var inline bool
+controller_has_input(GameControllerInput *controller) {
+  return (fabsf(controller->end_x) > CONTROLLER_DEADZONE ||
+          fabsf(controller->end_y) > CONTROLLER_DEADZONE ||
+          controller->up.ended_down || controller->down.ended_down ||
+          controller->left.ended_down || controller->right.ended_down);
+}
 
 INIT_BACKBUFFER_STATUS init_backbuffer(int width, int height,
                                        int bytes_per_pixel,
@@ -37,12 +63,15 @@ INIT_BACKBUFFER_STATUS init_backbuffer(int width, int height,
 }
 
 void init_game_state() {
-  g_game_state.controls = (GameControls){0};
-  g_gradient_state = (GradientState){0};
-  g_pixel_state = (PixelState){0};
+  g_game_state = (GameState){0};
   g_game_state.speed = 5;
-  g_game_state.is_running = true;
-  g_game_state.gamepad_id = -1; // No gamepad yet
+  is_game_running = true;
+}
+
+void game_shutdown() {
+  is_game_running = false;
+  // Equivalent to c++ `delete g_game_state`
+  g_game_state = (GameState){0};
 }
 
 void render_weird_gradient() {
@@ -53,12 +82,12 @@ void render_weird_gradient() {
     uint32_t *pixels = (uint32_t *)row;
     for (int x = 0; x < g_backbuffer.width; ++x) {
 
-      *pixels++ =
-          g_backbuffer.compose_pixel(0, // Default red value (for both backends)
-                                     (y + g_gradient_state.offset_y), //
-                                     (x + g_gradient_state.offset_x),
-                                     255 // Full opacity for Raylib
-          );
+      *pixels++ = g_backbuffer.compose_pixel(
+          0, // Default red value (for both backends)
+          (y + g_game_state.gradient_state.offset_y), //
+          (x + g_game_state.gradient_state.offset_x),
+          255 // Full opacity for Raylib
+      );
     }
     row += g_backbuffer.pitch;
   }
@@ -69,173 +98,149 @@ void testPixelAnimation(int pixelColor) {
   uint32_t *pixels = (uint32_t *)g_backbuffer.memory;
   int total_pixels = g_backbuffer.width * g_backbuffer.height;
 
-  int test_offset =
-      g_pixel_state.offset_y * g_backbuffer.width + g_pixel_state.offset_x;
+  int test_offset = g_game_state.pixel_state.offset_y * g_backbuffer.width +
+                    g_game_state.pixel_state.offset_x;
 
   if (test_offset < total_pixels) {
     pixels[test_offset] = pixelColor;
   }
 
-  if (g_pixel_state.offset_x + 1 < g_backbuffer.width - 1) {
-    g_pixel_state.offset_x += 1;
+  if (g_game_state.pixel_state.offset_x + 1 < g_backbuffer.width - 1) {
+    g_game_state.pixel_state.offset_x += 1;
   } else {
-    g_pixel_state.offset_x = 0;
-    if (g_pixel_state.offset_y + 75 < g_backbuffer.height - 1) {
-      g_pixel_state.offset_y += 75;
+    g_game_state.pixel_state.offset_x = 0;
+    if (g_game_state.pixel_state.offset_y + 75 < g_backbuffer.height - 1) {
+      g_game_state.pixel_state.offset_y += 75;
     } else {
-      g_pixel_state.offset_y = 0;
+      g_game_state.pixel_state.offset_y = 0;
     }
   }
 }
 
 // Handle game controls
-inline void handle_controls() {
+inline void handle_controls(GameControllerInput *controller) {
+  if (controller->is_analog) {
+    // ═════════════════════════════════════════════════════════
+    // ANALOG MOVEMENT (Joystick)
+    // ═════════════════════════════════════════════════════════
+    // Casey's Day 13 formula:
+    //   BlueOffset += (int)(4.0f * Input0->EndX);
+    //   ToneHz = 256 + (int)(128.0f * Input0->EndY);
+    //
+    // end_x/end_y are NORMALIZED (-1.0 to +1.0)!
+    // ═════════════════════════════════════════════════════════
 
-  if (g_game_state.controls.up) {
-    g_gradient_state.offset_y += g_game_state.speed;
-  }
-  if (g_game_state.controls.left) {
-    g_gradient_state.offset_x += g_game_state.speed;
-  }
-  if (g_game_state.controls.down) {
-    g_gradient_state.offset_y -= g_game_state.speed;
-  }
-  if (g_game_state.controls.right) {
-    g_gradient_state.offset_x -= g_game_state.speed;
+    real32 x = apply_deadzone(controller->end_x);
+    real32 y = apply_deadzone(controller->end_y);
+
+    // Horizontal stick controls blue offset
+    g_game_state.gradient_state.offset_x -= (int)(4.0f * x);
+    g_game_state.gradient_state.offset_y -= (int)(4.0f * y);
+
+    // Vertical stick controls tone frequency
+    // NOTE: `tone_hz` is moved to the game layer, but initilized by the
+    // platform layer
+    g_sound_output.tone_hz = 256 + (int)(128.0f * y);
+
+  } else {
+    // ═════════════════════════════════════════════════════════
+    // DIGITAL MOVEMENT (Keyboard only)
+    // ═════════════════════════════════════════════════════════
+    // Option A: Use button states (discrete, snappy)
+    if (controller->up.ended_down) {
+      g_game_state.gradient_state.offset_y += g_game_state.speed;
+    }
+    if (controller->down.ended_down) {
+      g_game_state.gradient_state.offset_y -= g_game_state.speed;
+    }
+    if (controller->left.ended_down) {
+      g_game_state.gradient_state.offset_x += g_game_state.speed;
+    }
+    if (controller->right.ended_down) {
+      g_game_state.gradient_state.offset_x -= g_game_state.speed;
+    }
+
+    // OR Option B: Use analog values (same formula as joystick)
+    // g_game_state.gradient_state.offset_x += (int)(4.0f * controller->end_x);
+    // g_game_state.gradient_state.offset_y += (int)(4.0f * controller->end_y);
+
+    // Pick ONE, not both!
+
+    // g_game_state.gradient_state.offset_x += (int)(4.0f * controller->end_x);
+    // g_game_state.gradient_state.offset_y += (int)(4.0f * controller->end_y);
+    // g_sound_output.tone_hz = 256 + (int)(128.0f * controller->end_y);
   }
 
-  // if (g_game_state.gamepad_id >= 0) {
-  //   // Same math as Casey! (>> 12 = divide by 4096)
-  //   // This converts -32767..+32767 to about -8..+8 pixels/frame
-  //   int normalized_left_stick_x = g_game_state.controls.left_stick_x / 4096;
-  //   int normalized_left_stick_y = g_game_state.controls.left_stick_y / 4096;
+  // Clamp tone
+  if (g_sound_output.tone_hz < 20)
+    g_sound_output.tone_hz = 20;
+  if (g_sound_output.tone_hz > 2000)
+    g_sound_output.tone_hz = 2000;
 
-  //   g_gradient_state.offset_x -= normalized_left_stick_x;
-  //   g_gradient_state.offset_y -= normalized_left_stick_y;
-
-  //   // set_tone_frequency(
-  //   //     512 +
-  //   //     (int)(256.0f * ((real32)g_game_state.controls.left_stick_y /
-  //   //     30000.0f)));
-  //   if (normalized_left_stick_y != 0) {
-  //     handle_update_tone_frequency(normalized_left_stick_y);
-  //     g_game_state.controls.set_to_defined_tone = DEFINED_TONE_NONE;
-  //   }
-  //   if (normalized_left_stick_x != 0) {
-  //     handle_update_tone_frequency(normalized_left_stick_x);
-  //     g_game_state.controls.set_to_defined_tone = DEFINED_TONE_NONE;
-  //   }
-  //   // Optional: Start button resets
-  //   if (g_game_state.controls.start) {
-  //     g_gradient_state.offset_x = 0;
-  //     g_gradient_state.offset_y = 0;
-  //     printf("START pressed - reset offsets\n");
-  //   }
+  // // Audio volume/pan controls
+  // if (controller->increase_sound_volume) {
+  //   handle_increase_volume(500);
+  //   controller->increase_sound_volume = false;
+  // }
+  // if (controller->decrease_sound_volume) {
+  //   handle_increase_volume(-500);
+  //   controller->decrease_sound_volume = false;
+  // }
+  // if (controller->move_sound_pan_left) {
+  //   handle_increase_pan(-10);
+  //   controller->move_sound_pan_left = false;
+  // }
+  // if (controller->move_sound_pan_right) {
+  //   handle_increase_pan(10);
+  //   controller->move_sound_pan_right = false;
   // }
 
-  /*
+  // switch (controller->set_to_defined_tone) {
 
-
-  // ═══════════════════════════════════════════════════════════
-  // 🎮 Analog stick controls (Casey's Day 6 pattern!)
-  // ═══════════════════════════════════════════════════════════
-  // Raylib gives us -1.0 to +1.0, Casey expects -32767 to +32767
-  // So we convert: float * 32767 = int16 range
-  // Then apply Casey's >> 12 bit shift
-
-  if (game_state->gamepad_id >= 0) {
-    // Convert Raylib's normalized floats to Casey's int16 range
-    int16_t stick_x = (int16_t)(game_state->controls.left_stick_x * 32767.0f);
-    int16_t stick_y = (int16_t)(game_state->controls.left_stick_y * 32767.0f);
-
-    // Apply Casey's >> 12 math (divide by 4096)
-    game_state->gradient.offset_x -= stick_x >> 12;
-    game_state->gradient.offset_y -= stick_y >> 12;
-
-    // ═══════════════════════════════════════════════════════════
-    // Day 8: Use analog stick for frequency control
-    // ═══════════════════════════════════════════════════════════
-    // Matches your X11 backend exactly!
-    if (stick_y >> 12 != 0) {
-      handle_update_tone_frequency(stick_y >> 12);
-    }
-    if (stick_x >> 12 != 0) {
-      handle_update_tone_frequency(stick_x >> 12);
-    }
-
-    // Start button resets
-    if (game_state->controls.start) {
-      game_state->gradient.offset_x = 0;
-      game_state->gradient.offset_y = 0;
-      printf("START pressed - reset offsets\n");
-    }
-  }
-*/
-
-  // Audio volume/pan controls
-  if (g_game_state.controls.increase_sound_volume) {
-    handle_increase_volume(500);
-    g_game_state.controls.increase_sound_volume = false;
-  }
-  if (g_game_state.controls.decrease_sound_volume) {
-    handle_increase_volume(-500);
-    g_game_state.controls.decrease_sound_volume = false;
-  }
-  if (g_game_state.controls.move_sound_pan_left) {
-    handle_increase_pan(-10);
-    g_game_state.controls.move_sound_pan_left = false;
-  }
-  if (g_game_state.controls.move_sound_pan_right) {
-    handle_increase_pan(10);
-    g_game_state.controls.move_sound_pan_right = false;
-  }
-
-  switch (g_game_state.controls.set_to_defined_tone) {
-
-  case DEFINED_TONE_C4:
-    set_tone_frequency((int)261.63f);
-    printf("🎵 Note: C4 (261.63 Hz)\n");
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_NONE;
-    break;
-  case DEFINED_TONE_D4:
-    set_tone_frequency((int)293.66f);
-    printf("🎵 Note: D4 (293.66 Hz)\n");
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_NONE;
-    break;
-  case DEFINED_TONE_E4:
-    set_tone_frequency((int)329.63f);
-    printf("🎵 Note: E4 (329.63 Hz)\n");
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_NONE;
-    break;
-  case DEFINED_TONE_F4:
-    set_tone_frequency((int)349.23f);
-    printf("🎵 Note: F4 (349.23 Hz)\n");
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_NONE;
-    break;
-  case DEFINED_TONE_G4:
-    set_tone_frequency((int)392.00f);
-    printf("🎵 Note: G4 (392.00 Hz)\n");
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_NONE;
-    break;
-  case DEFINED_TONE_A4:
-    set_tone_frequency((int)440.00f);
-    printf("🎵 Note: A4 (440.00 Hz) - Concert Pitch\n");
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_NONE;
-    break;
-  case DEFINED_TONE_B4:
-    set_tone_frequency((int)493.88f);
-    printf("🎵 Note: B4 (493.88 Hz)\n");
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_NONE;
-    break;
-  case DEFINED_TONE_C5:
-    set_tone_frequency((int)523.25f);
-    printf("🎵 Note: C5 (523.25 Hz)\n");
-    g_game_state.controls.set_to_defined_tone = DEFINED_TONE_NONE;
-    break;
-  case DEFINED_TONE_NONE:
-    break;
-  }
-  // controls.defined_tone = DEFINED_TONE_NONE;
+  // case DEFINED_TONE_C4:
+  //   set_tone_frequency((int)261.63f);
+  //   printf("🎵 Note: C4 (261.63 Hz)\n");
+  //   controller->set_to_defined_tone = DEFINED_TONE_NONE;
+  //   break;
+  // case DEFINED_TONE_D4:
+  //   set_tone_frequency((int)293.66f);
+  //   printf("🎵 Note: D4 (293.66 Hz)\n");
+  //   controller->set_to_defined_tone = DEFINED_TONE_NONE;
+  //   break;
+  // case DEFINED_TONE_E4:
+  //   set_tone_frequency((int)329.63f);
+  //   printf("🎵 Note: E4 (329.63 Hz)\n");
+  //   controller->set_to_defined_tone = DEFINED_TONE_NONE;
+  //   break;
+  // case DEFINED_TONE_F4:
+  //   set_tone_frequency((int)349.23f);
+  //   printf("🎵 Note: F4 (349.23 Hz)\n");
+  //   controller->set_to_defined_tone = DEFINED_TONE_NONE;
+  //   break;
+  // case DEFINED_TONE_G4:
+  //   set_tone_frequency((int)392.00f);
+  //   printf("🎵 Note: G4 (392.00 Hz)\n");
+  //   controller->set_to_defined_tone = DEFINED_TONE_NONE;
+  //   break;
+  // case DEFINED_TONE_A4:
+  //   set_tone_frequency((int)440.00f);
+  //   printf("🎵 Note: A4 (440.00 Hz) - Concert Pitch\n");
+  //   controller->set_to_defined_tone = DEFINED_TONE_NONE;
+  //   break;
+  // case DEFINED_TONE_B4:
+  //   set_tone_frequency((int)493.88f);
+  //   printf("🎵 Note: B4 (493.88 Hz)\n");
+  //   controller->set_to_defined_tone = DEFINED_TONE_NONE;
+  //   break;
+  // case DEFINED_TONE_C5:
+  //   set_tone_frequency((int)523.25f);
+  //   printf("🎵 Note: C5 (523.25 Hz)\n");
+  //   controller->set_to_defined_tone = DEFINED_TONE_NONE;
+  //   break;
+  // case DEFINED_TONE_NONE:
+  //   break;
+  // }
+  // // controls.defined_tone = DEFINED_TONE_NONE;
 }
 
 // Audio control handlers
@@ -360,7 +365,79 @@ inline void handle_increase_pan(int num) {
   printf("    L ◀%s▶ R\n", indicator);
 }
 
-void game_update_and_render(int pixel_color) {
+void game_update_and_render(GameInput *input) {
+
+  static int frame = 0;
+  frame++;
+
+  // Find active controller
+  GameControllerInput *active_controller = NULL;
+
+  // Priority 1: Check for active joystick input (controllers 1-4)
+  for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
+    if (i == KEYBOARD_CONTROLLER_INDEX)
+      continue;
+
+    GameControllerInput *c = &input->controllers[i];
+    if (c->is_connected) {
+      // Use helper function instead of hardcoded 0.15!
+      if (controller_has_input(c)) {
+        active_controller = c;
+        break;
+      }
+    }
+  }
+
+  // Priority 2: Check keyboard if no joystick input
+  if (!active_controller) {
+    GameControllerInput *keyboard =
+        &input->controllers[KEYBOARD_CONTROLLER_INDEX];
+    bool has_input = (keyboard->up.ended_down || keyboard->down.ended_down ||
+                      keyboard->left.ended_down || keyboard->right.ended_down);
+    if (has_input) {
+      active_controller = keyboard;
+    }
+  }
+
+  // Fallback: Always use keyboard (controller[0]) if nothing else
+  if (!active_controller) {
+    active_controller = &input->controllers[KEYBOARD_CONTROLLER_INDEX];
+  }
+
+  if (frame % 60 == 0) {
+    printf("Frame %d: active_controller=%p\n", frame,
+           (void *)active_controller);
+    if (active_controller) {
+      printf("  is_analog=%d end_x=%.2f end_y=%.2f\n",
+             active_controller->is_analog, active_controller->end_x,
+             active_controller->end_y);
+      printf("  up=%d down=%d left=%d right=%d\n",
+             active_controller->up.ended_down,
+             active_controller->down.ended_down,
+             active_controller->left.ended_down,
+             active_controller->right.ended_down);
+      printf("Frame %d: is_analog=%d end_x=%.2f end_y=%.2f "
+             "up=%d down=%d left=%d right=%d\n",
+             frame, active_controller->is_analog, active_controller->end_x,
+             active_controller->end_y, active_controller->up.ended_down,
+             active_controller->down.ended_down,
+             active_controller->left.ended_down,
+             active_controller->right.ended_down);
+    }
+  }
+
+  handle_controls(active_controller);
+
   render_weird_gradient();
-  testPixelAnimation(pixel_color);
+
+  int testPixelAnimationColor = g_backbuffer.compose_pixel(255, 0, 0, 255);
+  testPixelAnimation(testPixelAnimationColor);
 }
+
+// #ifdef PLATFORM_X11
+// // On X11, define colors in BGRA directly
+// #define GAME_RED 0x0000FFFF
+// #else
+// // On Raylib/other, use RGBA
+// #define GAME_RED 0xFF0000FF
+// #endif
