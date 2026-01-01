@@ -140,13 +140,6 @@ linux_init_joystick(GameControllerInput *controller_old_input,
   }
 }
 
-file_scoped_fn void process_key(bool is_down, GameButtonState *old_state,
-                                GameButtonState *new_state) {
-  new_state->ended_down = is_down;
-  new_state->half_transition_count =
-      old_state->ended_down != new_state->ended_down ? 1 : 0;
-}
-
 // ═══════════════════════════════════════════════════════════════
 // 🎮 Poll joystick state (Casey's XInputGetState equivalent)
 // ═══════════════════════════════════════════════════════════════
@@ -251,16 +244,16 @@ file_scoped_fn void linux_poll_joystick(GameInput *old_input,
                 // new_controller1->left_shoulder = is_pressed;
                 // if (is_pressed)
                 //   printf("Button L1 pressed\n");
-          process_key(is_pressed, &old_controller->left_shoulder,
-                      &new_controller->left_shoulder);
+          process_game_button_state(is_pressed, &old_controller->left_shoulder,
+                                    &new_controller->left_shoulder);
           break;
 
         case 5: // R1
           // new_controller1->right_shoulder = is_pressed;
           // if (is_pressed)
           //   printf("Button R1 pressed\n");
-          process_key(is_pressed, &old_controller->right_shoulder,
-                      &new_controller->right_shoulder);
+          process_game_button_state(is_pressed, &old_controller->right_shoulder,
+                                    &new_controller->right_shoulder);
           break;
 
           // // Trigger buttons (L2/R2 as digital buttons)
@@ -441,24 +434,30 @@ file_scoped_fn void linux_poll_joystick(GameInput *old_input,
 
           if (event.value < -16384) {
             // D-pad LEFT pressed
-            process_key(true, &old_controller->left, &new_controller->left);
-            process_key(false, &old_controller->right, &new_controller->right);
+            process_game_button_state(true, &old_controller->left,
+                                      &new_controller->left);
+            process_game_button_state(false, &old_controller->right,
+                                      &new_controller->right);
 
             // ✅ Set analog value for left (-1.0)
             new_controller->end_x = -1.0f;
 
           } else if (event.value > 16384) {
             // D-pad RIGHT pressed
-            process_key(true, &old_controller->right, &new_controller->right);
-            process_key(false, &old_controller->left, &new_controller->left);
+            process_game_button_state(true, &old_controller->right,
+                                      &new_controller->right);
+            process_game_button_state(false, &old_controller->left,
+                                      &new_controller->left);
 
             // ✅ Set analog value for right (+1.0)
             new_controller->end_x = +1.0f;
 
           } else {
             // D-pad X RELEASED (centered)
-            process_key(false, &old_controller->left, &new_controller->left);
-            process_key(false, &old_controller->right, &new_controller->right);
+            process_game_button_state(false, &old_controller->left,
+                                      &new_controller->left);
+            process_game_button_state(false, &old_controller->right,
+                                      &new_controller->right);
 
             // ✅ Set analog value to zero
             new_controller->end_x = 0.0f;
@@ -478,8 +477,10 @@ file_scoped_fn void linux_poll_joystick(GameInput *old_input,
 
           if (event.value < -16384) {
             // D-pad UP pressed
-            process_key(true, &old_controller->up, &new_controller->up);
-            process_key(false, &old_controller->down, &new_controller->down);
+            process_game_button_state(true, &old_controller->up,
+                                      &new_controller->up);
+            process_game_button_state(false, &old_controller->down,
+                                      &new_controller->down);
 
             // ✅ Set analog value for up (+1.0)
             // NOTE: You might need to invert this depending on your coordinate
@@ -488,16 +489,20 @@ file_scoped_fn void linux_poll_joystick(GameInput *old_input,
 
           } else if (event.value > 16384) {
             // D-pad DOWN pressed
-            process_key(true, &old_controller->down, &new_controller->down);
-            process_key(false, &old_controller->up, &new_controller->up);
+            process_game_button_state(true, &old_controller->down,
+                                      &new_controller->down);
+            process_game_button_state(false, &old_controller->up,
+                                      &new_controller->up);
 
             // ✅ Set analog value for down (-1.0)
             new_controller->end_y = 1.0f;
 
           } else {
             // D-pad Y RELEASED (centered)
-            process_key(false, &old_controller->up, &new_controller->up);
-            process_key(false, &old_controller->down, &new_controller->down);
+            process_game_button_state(false, &old_controller->up,
+                                      &new_controller->up);
+            process_game_button_state(false, &old_controller->down,
+                                      &new_controller->down);
 
             // ✅ Set analog value to zero
             new_controller->end_y = 0.0f;
@@ -871,7 +876,8 @@ handle_event(OffscreenBuffer *backbuffer, XImage **backbuffer_info,
       new_controller1->is_analog = false;
 
       // Also set button state for backward compatibility
-      process_key(true, &old_controller1->up, &new_controller1->up);
+      process_game_button_state(true, &old_controller1->up,
+                                &new_controller1->up);
       break;
     }
     case (XK_a):
@@ -882,7 +888,8 @@ handle_event(OffscreenBuffer *backbuffer, XImage **backbuffer_info,
       new_controller1->min_x = new_controller1->max_x = new_controller1->end_x;
       new_controller1->is_analog = false;
 
-      process_key(true, &old_controller1->left, &new_controller1->left);
+      process_game_button_state(true, &old_controller1->left,
+                                &new_controller1->left);
       break;
     }
     case (XK_s):
@@ -893,7 +900,8 @@ handle_event(OffscreenBuffer *backbuffer, XImage **backbuffer_info,
       new_controller1->min_y = new_controller1->max_y = new_controller1->end_y;
       new_controller1->is_analog = false;
 
-      process_key(true, &old_controller1->down, &new_controller1->down);
+      process_game_button_state(true, &old_controller1->down,
+                                &new_controller1->down);
       break;
     }
     case (XK_d):
@@ -904,7 +912,8 @@ handle_event(OffscreenBuffer *backbuffer, XImage **backbuffer_info,
       new_controller1->min_x = new_controller1->max_x = new_controller1->end_x;
       new_controller1->is_analog = false;
 
-      process_key(true, &old_controller1->right, &new_controller1->right);
+      process_game_button_state(true, &old_controller1->right,
+                                &new_controller1->right);
       break;
     }
     case (XK_space): {
@@ -941,7 +950,8 @@ handle_event(OffscreenBuffer *backbuffer, XImage **backbuffer_info,
       new_controller1->end_y = 0.0f;
       new_controller1->min_y = new_controller1->max_y = 0.0f;
       new_controller1->is_analog = false;
-      process_key(false, &old_controller1->up, &new_controller1->up);
+      process_game_button_state(false, &old_controller1->up,
+                                &new_controller1->up);
       break;
     }
     case (XK_a):
@@ -950,7 +960,8 @@ handle_event(OffscreenBuffer *backbuffer, XImage **backbuffer_info,
       new_controller1->end_x = 0.0f;
       new_controller1->min_x = new_controller1->max_x = 0.0f;
       new_controller1->is_analog = false;
-      process_key(false, &old_controller1->left, &new_controller1->left);
+      process_game_button_state(false, &old_controller1->left,
+                                &new_controller1->left);
       break;
     }
     case (XK_s):
@@ -959,7 +970,8 @@ handle_event(OffscreenBuffer *backbuffer, XImage **backbuffer_info,
       new_controller1->end_y = 0.0f;
       new_controller1->min_y = new_controller1->max_y = 0.0f;
       new_controller1->is_analog = false;
-      process_key(false, &old_controller1->down, &new_controller1->down);
+      process_game_button_state(false, &old_controller1->down,
+                                &new_controller1->down);
       break;
     }
     case (XK_d):
@@ -968,7 +980,8 @@ handle_event(OffscreenBuffer *backbuffer, XImage **backbuffer_info,
       new_controller1->end_x = 0.0f;
       new_controller1->min_x = new_controller1->max_x = 0.0f;
       new_controller1->is_analog = false;
-      process_key(false, &old_controller1->right, &new_controller1->right);
+      process_game_button_state(false, &old_controller1->right,
+                                &new_controller1->right);
       break;
     }
     case (XK_space): {

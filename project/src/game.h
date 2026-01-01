@@ -300,5 +300,6 @@ void handle_update_tone_frequency(int hz_to_add);
 void handle_increase_volume(int num);
 void handle_increase_pan(int num);
 void handle_controls(GameControllerInput *controller);
+void process_game_button_state(bool is_down, GameButtonState *old_state, GameButtonState *new_state);
 
 #endif // GAME_H

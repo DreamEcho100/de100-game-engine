@@ -365,6 +365,16 @@ inline void handle_increase_pan(int num) {
   printf("    L ◀%s▶ R\n", indicator);
 }
 
+inline void process_game_button_state(bool is_down, GameButtonState *old_state,
+                                      GameButtonState *new_state) {
+  new_state->ended_down = is_down;
+  if (old_state->ended_down != new_state->ended_down) {
+    new_state->half_transition_count++;
+  }
+  // new_state->half_transition_count +=
+  //     ((old_state->ended_down != new_state->ended_down && 1) || 0);
+}
+
 void game_update_and_render(GameInput *input) {
 
   static int frame = 0;

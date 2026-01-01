@@ -1149,6 +1149,14 @@ Exercises should be:
 - **Self-verifiable** — Student knows when they've succeeded without asking
 - **Curiosity-driven** — Opens doors to explore further
 - **Resource-linked** — Points to documentation, not solutions
+- **Platform-aware** — Includes X11/Linux-specific considerations alongside concepts
+
+### Special Focus for X11/Linux Port
+When creating exercises for the Linux port:
+- Compare Windows API vs X11 API differences
+- Explore ALSA vs DirectSound concepts
+- Investigate platform abstraction patterns
+- Research Linux-specific debugging tools (gdb, valgrind, perf)
 
 ---
 
@@ -1345,6 +1353,43 @@ Create a file: docs/alsa_notes.md
 
 NO COPYING ALLOWED - Rewrite in your own words.
 If you can't explain it simply, you don't understand it yet.
+```
+
+---
+
+#### Type F: "Platform Comparison Analysis" 🔄
+
+Compare Windows vs X11 implementations to understand abstraction.
+
+**Example Template:**
+```
+EXERCISE: Window Creation - Windows vs X11
+
+Compare how Casey creates a window on Windows vs your X11 implementation.
+
+ANALYSIS TASKS:
+1. List ALL steps Casey takes to create a window (Win32)
+2. List ALL steps you take to create a window (X11)
+3. Create a side-by-side comparison table
+4. Identify: What's conceptually the same? What's different?
+5. Which approach is simpler? Which is more explicit?
+
+DELIVERABLE (docs/platform_comparison.md):
+```
+| Step | Windows (Win32) | Linux (X11) | Notes |
+|------|----------------|-------------|-------|
+| 1    | RegisterClass  | XOpenDisplay| [your analysis] |
+| 2    | CreateWindow   | XCreateWindow | [your analysis] |
+...
+```
+
+REFLECTION:
+- Why does Windows need RegisterClass but X11 doesn't?
+- Why does X11 need XMapWindow but Windows doesn't?
+- What's the conceptual model each system uses?
+- How would you abstract this in your platform layer?
+
+TIME ESTIMATE: 45-60 minutes
 ```
 
 ---
@@ -1892,6 +1937,477 @@ void Oscillator_SetFrequency(Oscillator* osc, int hz) {
 
 ---
 
+## 17. Detailed Analysis Framework for Platform Code
+
+### When Analyzing Windows vs X11/Linux Code
+
+When comparing Casey's Windows implementation with your X11 port, follow this systematic analysis framework:
+
+#### 17.1 Step-by-Step Code Comparison Process
+
+**PHASE 1: Understand Casey's Intent (15-20 minutes)**
+```
+1. Watch the episode carefully
+2. Identify WHAT Casey is trying to achieve (high level)
+3. List the Windows API calls Casey uses
+4. Understand WHY each call is made (not just what it does)
+5. Note any important parameters or flags
+```
+
+**PHASE 2: Research X11 Equivalent (20-30 minutes)**
+```
+1. For each Windows concept, find the X11 equivalent:
+   - Window messages → X11 events
+   - WNDCLASS → X11 window attributes
+   - HDC → X11 GC (Graphics Context)
+   - BitBlt → XPutImage
+   - DirectSound → ALSA
+
+2. Read the man pages:
+   - man XCreateWindow
+   - man XSelectInput
+   - man XPutImage
+   etc.
+
+3. Understand the differences:
+   - What's explicit in X11 that's implicit in Windows?
+   - What's automatic in X11 that's manual in Windows?
+   - What's the X11 way of thinking vs Windows way?
+```
+
+**PHASE 3: Implementation Mapping (30-45 minutes)**
+```
+1. Create a mapping document for THIS episode:
+
+### Episode X: [Title]
+
+#### Casey's Approach (Windows)
+```c
+// List Casey's code here with comments explaining intent
+WNDCLASS wc = {};
+wc.lpfnWndProc = WindowProc;  // Set message handler
+RegisterClass(&wc);
+```
+
+#### Your Approach (X11)
+```c
+// Your equivalent X11 code with parallel comments
+XSetWMProtocols(display, window, &wm_delete, 1);  // Set close handler
+// Note: X11 doesn't have window classes, uses atoms instead
+```
+
+#### Key Differences
+- Windows: [explanation]
+- X11: [explanation]
+- Abstraction opportunity: [how to make this cross-platform]
+
+#### Gotchas Discovered
+- [List things that tripped you up]
+- [List non-obvious X11 requirements]
+```
+
+**PHASE 4: Test and Validate (15-30 minutes)**
+```
+1. Compile and run
+2. Compare behavior to Casey's version
+3. Test edge cases:
+   - Window resize
+   - Window close
+   - Alt+Tab
+   - Multiple monitors (if applicable)
+4. Note any behavioral differences
+```
+
+---
+
+#### 17.2 Platform Abstraction Strategy
+
+When you encounter a platform-specific API, think in layers:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    PLATFORM ABSTRACTION LAYERS                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  LAYER 1: Game Code (Platform-Independent)                             │
+│  ──────────────────────────────────────────────────────────             │
+│  void GameUpdateAndRender(game_buffer* buffer, game_input* input);      │
+│  - NO Windows/X11 specific code                                         │
+│  - Works with abstract types                                            │
+│  - Pure game logic                                                      │
+│                                                                         │
+│  ─────────────────────────────────────────────────────────              │
+│                                                                         │
+│  LAYER 2: Platform API (Your Interface)                                │
+│  ────────────────────────────────────────────────────────               │
+│  struct game_buffer {                                                   │
+│      void* memory;                                                      │
+│      int width, height, pitch;                                          │
+│  };                                                                     │
+│  - Platform-independent structs                                         │
+│  - Clear, documented contracts                                          │
+│  - Minimal surface area                                                 │
+│                                                                         │
+│  ─────────────────────────────────────────────────────────              │
+│                                                                         │
+│  LAYER 3: Platform Implementation (Windows/X11 specific)                │
+│  ──────────────────────────────────────────────────────────             │
+│  #ifdef _WIN32                      #elif __linux__                     │
+│    HDC device_context;                Display* display;                 │
+│    BITMAPINFO bitmap_info;            XImage* image;                    │
+│    BitBlt(...);                       XPutImage(...);                   │
+│  #endif                             #endif                              │
+│  - All platform-specific code isolated here                             │
+│  - Implements the Platform API                                          │
+│  - Can swap implementations                                             │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 17.3 Detailed API Mapping Reference
+
+Build this table as you progress through episodes:
+
+```markdown
+### Windows API → X11 API Mapping
+
+| Windows Concept | X11 Equivalent | Notes |
+|----------------|----------------|-------|
+| **Window Management** |
+| WNDCLASS | XSetWindowAttributes | X11 uses per-window attrs, not classes |
+| RegisterClass() | N/A | X11 doesn't have window classes |
+| CreateWindowEx() | XCreateWindow() | Different parameter order |
+| ShowWindow() | XMapWindow() | Must explicitly map to display |
+| DestroyWindow() | XDestroyWindow() | Similar |
+| GetMessage() | XNextEvent() | Blocking event retrieval |
+| PeekMessage() | XCheckWindowEvent() | Non-blocking variant |
+| **Graphics** |
+| HDC | GC (Graphics Context) | X11 GC is less stateful |
+| BITMAPINFO | XImage | X11 separates format from data |
+| BitBlt() | XPutImage() | X11 doesn't automatically handle clipping |
+| CreateDIBSection() | XCreateImage() + manual memory | X11 requires explicit buffer management |
+| **Input** |
+| WM_KEYDOWN | KeyPress event | X11 uses event masks |
+| WM_CHAR | KeyPress + XLookupString | Must convert keysym to char |
+| GetAsyncKeyState() | XQueryKeymap() | Less commonly used in X11 |
+| **Audio** |
+| DirectSound | ALSA | Completely different model |
+| IDirectSoundBuffer | snd_pcm_t | ALSA is lower level |
+| Lock()/Unlock() | Direct write to buffer | ALSA uses ring buffer directly |
+| **Timing** |
+| QueryPerformanceCounter | clock_gettime(CLOCK_MONOTONIC) | Linux more explicit about clock source |
+| Sleep() | usleep() or nanosleep() | Microsecond vs millisecond precision |
+```
+
+---
+
+#### 17.4 Deep Dive Checklist for Each Episode
+
+When implementing an episode, check ALL of these:
+
+**Functional Requirements:**
+- [ ] Does it do what Casey's version does?
+- [ ] Are all features implemented?
+- [ ] Are all inputs handled?
+- [ ] Are all outputs correct?
+
+**Performance Requirements:**
+- [ ] Is it as fast as it should be?
+- [ ] Are there unnecessary allocations?
+- [ ] Are there unnecessary system calls?
+- [ ] Does it maintain 60 FPS?
+
+**Correctness Requirements:**
+- [ ] Are there memory leaks? (valgrind check)
+- [ ] Are there race conditions?
+- [ ] Are there buffer overflows?
+- [ ] Are all edge cases handled?
+
+**Platform-Specific Gotchas:**
+- [ ] X11: Did you call XSelectInput for all needed events?
+- [ ] X11: Did you handle WM_DELETE_WINDOW?
+- [ ] X11: Did you XFlush/XSync where needed?
+- [ ] X11: Did you free all X11 resources?
+- [ ] ALSA: Did you handle underruns?
+- [ ] ALSA: Is latency acceptable?
+
+**Code Quality:**
+- [ ] Is it readable?
+- [ ] Is it well-commented (where necessary)?
+- [ ] Can you explain every line?
+- [ ] Would you understand this in 6 months?
+
+---
+
+#### 17.5 Common X11 Pitfalls to Avoid
+
+Based on common mistakes when porting from Windows:
+
+**PITFALL 1: Forgetting XSelectInput**
+```c
+// ❌ WRONG - Events won't arrive!
+Window window = XCreateWindow(...);
+// Missing: XSelectInput(display, window, KeyPressMask | StructureNotifyMask);
+
+// ✅ CORRECT
+Window window = XCreateWindow(...);
+XSelectInput(display, window, 
+    KeyPressMask | KeyReleaseMask | 
+    ButtonPressMask | ButtonReleaseMask |
+    StructureNotifyMask | ExposureMask);
+```
+
+**PITFALL 2: Not Handling Window Close**
+```c
+// ❌ WRONG - Window won't close, just unmap
+while (running) {
+    XNextEvent(display, &event);
+    if (event.type == DestroyNotify) {  // This never happens by default!
+        running = false;
+    }
+}
+
+// ✅ CORRECT
+Atom wm_delete = XInternAtom(display, "WM_DELETE_WINDOW", False);
+XSetWMProtocols(display, window, &wm_delete, 1);
+
+while (running) {
+    XNextEvent(display, &event);
+    if (event.type == ClientMessage) {
+        if (event.xclient.data.l[0] == wm_delete) {
+            running = false;
+        }
+    }
+}
+```
+
+**PITFALL 3: XImage Memory Management**
+```c
+// ❌ WRONG - Double free or leak!
+XImage* image = XCreateImage(...);
+free(image->data);  // Who owns this?
+XDestroyImage(image);  // This tries to free data too!
+
+// ✅ CORRECT - Know who owns what
+// Option 1: XDestroyImage frees everything
+XImage* image = XCreateImage(...);
+image->data = malloc(size);  // You allocate
+XDestroyImage(image);  // X11 frees data AND image
+
+// Option 2: Keep data separate
+XImage* image = XCreateImage(...);
+static uint8_t buffer[SIZE];  // Static buffer
+image->data = buffer;  // Point to static
+XFree(image);  // Only free XImage, not data
+```
+
+**PITFALL 4: ALSA Underruns**
+```c
+// ❌ WRONG - Underruns crash or cause glitches
+snd_pcm_writei(pcm, buffer, frames);  // If buffer underruns, this fails
+
+// ✅ CORRECT - Handle underruns
+int err = snd_pcm_writei(pcm, buffer, frames);
+if (err == -EPIPE) {
+    fprintf(stderr, "Audio underrun, recovering\n");
+    snd_pcm_prepare(pcm);  // Recover from underrun
+    err = snd_pcm_writei(pcm, buffer, frames);  // Retry
+}
+```
+
+---
+
+#### 17.6 Documentation Template for Each Day
+
+Create a file: `docs/dayXX_notes.md`
+
+```markdown
+# Day XX: [Episode Title]
+
+## Casey's Goal
+[What Casey set out to accomplish this episode]
+
+## Windows Implementation Summary
+```c
+// Key code snippets from Casey's version
+// With comments explaining the Windows approach
+```
+
+## My X11 Implementation
+```c
+// Your equivalent code
+// With comments explaining X11 differences
+```
+
+## Challenges Encountered
+1. [Challenge 1 and how you solved it]
+2. [Challenge 2 and how you solved it]
+
+## Key Learnings
+- [What you learned about X11]
+- [What you learned about the underlying concepts]
+- [What you learned about platform abstraction]
+
+## Performance Notes
+- Frame time: [your measurement]
+- Memory usage: [your measurement]
+- Any hotspots identified
+
+## Questions for Later
+- [Things you still don't fully understand]
+- [Things to investigate further]
+
+## Resources Consulted
+- [Man pages read]
+- [Documentation referenced]
+- [Useful forum posts or articles]
+```
+
+---
+
+#### 17.7 Debugging Workflow for Platform Issues
+
+When something works on Casey's Windows but not your X11:
+
+**Step 1: Isolate the Difference (30 min)**
+```
+1. What EXACTLY is different?
+   - Behavior description
+   - Expected vs actual
+   - When does it diverge?
+
+2. Minimal reproduction:
+   - Strip away everything else
+   - Create smallest test case
+   - Verify issue persists
+```
+
+**Step 2: Verify Assumptions (30 min)**
+```
+1. Add extensive logging:
+   printf("XPutImage: x=%d y=%d w=%d h=%d\n", ...);
+
+2. Check return values:
+   int result = XPutImage(...);
+   if (result == BadMatch) {
+       fprintf(stderr, "XPutImage failed: BadMatch\n");
+   }
+
+3. Verify data:
+   // Is the buffer actually filled?
+   printf("First pixel: R=%d G=%d B=%d\n", buffer[0], buffer[1], buffer[2]);
+```
+
+**Step 3: Consult Documentation (30 min)**
+```
+1. Read man pages carefully:
+   man XPutImage  # Every parameter, every requirement
+
+2. Check for requirements you missed:
+   - Do you need to XFlush?
+   - Is the GC configured correctly?
+   - Is the image format correct?
+
+3. Look for examples:
+   - Search for working X11 code
+   - Compare parameter usage
+```
+
+**Step 4: Use X11 Debugging Tools (30 min)**
+```
+1. xev - Watch events in real time
+   $ xev -id <window_id>
+
+2. xprop - Inspect window properties
+   $ xprop -id <window_id>
+
+3. xtrace - Trace all X11 protocol calls
+   $ xtrace ./handmade_hero
+
+4. xdpyinfo - Display information
+   $ xdpyinfo
+```
+
+**Step 5: Systematic Experimentation (variable)**
+```
+1. Change one thing at a time
+2. Document what you tried
+3. Form hypotheses, test them
+4. Narrow down the problem space
+```
+
+---
+
+#### 17.8 Quick Reference: Casey's Patterns to Preserve
+
+Even though the platform code differs, preserve these Casey patterns:
+
+✅ **Simple, Direct Code**
+```c
+// Casey's style - clear and obvious
+void RenderWeirdGradient(game_buffer* buffer) {
+    uint8_t* row = (uint8_t*)buffer->memory;
+    for (int y = 0; y < buffer->height; y++) {
+        uint32_t* pixel = (uint32_t*)row;
+        for (int x = 0; x < buffer->width; x++) {
+            *pixel++ = (x << 16) | (y << 8);  // Clear bit manipulation
+        }
+        row += buffer->pitch;
+    }
+}
+```
+
+✅ **Performance-Conscious**
+```c
+// Preallocate, don't allocate per-frame
+static uint32_t back_buffer[1920 * 1080];  // Static allocation
+static XImage* image;  // Created once
+
+// NOT this:
+void Render() {
+    XImage* image = XCreateImage(...);  // ❌ Per-frame allocation!
+    // ...
+    XDestroyImage(image);
+}
+```
+
+✅ **Debug-Friendly**
+```c
+// Make state inspectable
+struct linux_state {
+    bool running;
+    Display* display;
+    Window window;
+    GC gc;
+    XImage* image;
+    // Easy to see in debugger
+};
+
+// NOT deeply nested pointers:
+struct opaque_state {
+    void* internal;  // ❌ Can't inspect in debugger
+};
+```
+
+✅ **Explicit Over Implicit**
+```c
+// Make the intent obvious
+XSelectInput(display, window, 
+    KeyPressMask |         // We want key press events
+    KeyReleaseMask |       // We want key release events
+    ButtonPressMask |      // We want mouse button events
+    StructureNotifyMask);  // We want resize/configure events
+
+// NOT magic numbers:
+XSelectInput(display, window, 0x1F);  // ❌ What does this mean?
+```
+
+---
+
+This systematic framework ensures you learn deeply while making progress. Each episode becomes a case study in platform abstraction.
+
+---
+
 #### Template Summary for LLM
 
 When creating ANY exercise, ALWAYS include:
@@ -2001,3 +2517,665 @@ When writing hints, use these question patterns:
 - "Add this logging and analyze the output: [code]"
 - "Use gdb to break at [location] and inspect [variable]"
 - "Draw a timeline of when [value] changes"
+
+---
+
+## 18. Learning Progress Tracking & Reflection System
+
+### 18.1 Daily Learning Journal Template
+
+Create: `docs/journal/YYYY-MM-DD.md`
+
+```markdown
+# Learning Journal - [Date]
+
+## Day [X] Implementation: [Episode Title]
+
+### What I Built Today
+- Brief summary of what was implemented
+- Key features added
+- Lines of code written
+
+### Time Breakdown
+- Video watching: [X] minutes
+- Research/reading docs: [X] minutes  
+- Coding: [X] minutes
+- Debugging: [X] minutes
+- Total: [X] hours
+
+### Concepts Learned
+1. **[Concept 1]**: [Your explanation in 1-2 sentences]
+2. **[Concept 2]**: [Your explanation]
+3. **[Concept 3]**: [Your explanation]
+
+### Aha! Moments 💡
+- [Moment when something clicked]
+- [Understanding that wasn't obvious from the video]
+
+### Struggles & Solutions
+| Problem | Time Spent | Solution | What I Learned |
+|---------|-----------|----------|----------------|
+| [Issue] | [30 min] | [How fixed] | [Takeaway] |
+
+### Code I'm Proud Of
+```c
+// Snippet of code you wrote that you're proud of
+// With explanation of why it's good
+```
+
+### Code I'm Uncertain About
+```c
+// Code that works but you don't fully understand
+// Questions you have about it
+```
+
+### Tomorrow's Goals
+- [ ] [Specific goal 1]
+- [ ] [Specific goal 2]
+- [ ] [Specific goal 3]
+
+### Energy & Focus Reflection
+- Energy level (1-5): [X]
+- Focus quality (1-5): [X]
+- Best time of day: [morning/afternoon/evening]
+- Distractions encountered: [list]
+
+### Resources Used
+- Man pages: [list]
+- Documentation: [URLs]
+- Videos rewatched: [timestamps]
+```
+
+---
+
+### 18.2 Weekly Review Template
+
+Create: `docs/weekly_reviews/week_XX.md`
+
+```markdown
+# Week [XX] Review - [Date Range]
+
+## Episodes Completed
+- Day [X]: [Title] - [Status: Complete/Partial/Understanding needed]
+- Day [Y]: [Title] - [Status]
+
+## Cumulative Learning
+
+### Mastery Level Assessment
+Rate your understanding (1-5) for each area:
+
+| Topic | Week Start | Week End | Change |
+|-------|-----------|----------|--------|
+| C language basics | 3 | 4 | +1 |
+| Pointers & memory | 2 | 3 | +1 |
+| X11 API | 1 | 3 | +2 |
+| ALSA audio | 1 | 2 | +1 |
+| Platform abstraction | 2 | 3 | +1 |
+| Debugging skills | 3 | 4 | +1 |
+| Performance thinking | 2 | 3 | +1 |
+
+### Skills Acquired This Week
+- ✅ [Skill 1]: Can now [specific capability]
+- ✅ [Skill 2]: Understand [specific concept]
+- ✅ [Skill 3]: Able to debug [specific issue type]
+
+### Challenges Overcome
+1. **[Challenge]**: [How you overcame it]
+   - Time to solve: [X hours/days]
+   - Key insight: [What helped you solve it]
+   - Pattern recognition: [Can you apply this elsewhere?]
+
+### Patterns Recognized
+- [Pattern you noticed across multiple episodes]
+- [Common mistakes you keep making]
+- [Techniques that keep proving useful]
+
+### Questions Still Unresolved
+1. [Question about X11]
+2. [Question about memory management]
+3. [Question about performance]
+
+### Code Quality Metrics
+- Total lines written: [~X lines]
+- Bugs fixed: [X]
+- Refactorings done: [X]
+- Memory leaks found/fixed: [X/Y]
+- Valgrind clean runs: [Yes/No]
+
+### Time Statistics
+- Total hours: [X]
+- Most productive day: [Day + why]
+- Least productive day: [Day + why]
+- Average session length: [X hours]
+
+### What Worked Well
+- [Practice/technique that helped]
+- [Time of day that was most productive]
+- [Resource that was particularly useful]
+
+### What Didn't Work
+- [Approach that wasted time]
+- [Distraction that hurt productivity]
+- [Misconception that delayed progress]
+
+### Adjustments for Next Week
+- [ ] [Change to make based on this week's lessons]
+- [ ] [New technique to try]
+- [ ] [Resource to explore]
+
+### Morale & Motivation
+- Overall satisfaction (1-5): [X]
+- Most exciting moment: [Description]
+- Most frustrating moment: [Description]
+- Motivation level for next week (1-5): [X]
+```
+
+---
+
+### 18.3 Concept Mastery Tracker
+
+Create: `docs/mastery_tracker.md`
+
+```markdown
+# Concept Mastery Tracker
+
+Track your understanding of key concepts over time.
+
+## Mastery Levels
+- 🔴 Level 1: Heard of it, don't understand
+- 🟡 Level 2: Basic understanding, can follow explanations
+- 🟢 Level 3: Can use it with guidance
+- 🔵 Level 4: Can use it independently
+- 🟣 Level 5: Can teach it to others, understand tradeoffs
+
+## C Language & Memory
+
+| Concept | Current Level | Date Achieved | Notes |
+|---------|--------------|---------------|-------|
+| Pointers | 🔵 4 | 2025-12-15 | Comfortable with pointer arithmetic |
+| Arrays vs pointers | 🟢 3 | 2025-12-10 | Still occasional confusion |
+| Stack vs heap | 🔵 4 | 2025-12-18 | Understand allocation patterns |
+| Memory alignment | 🟡 2 | 2025-12-20 | Basic concept, need more practice |
+| Cache coherency | 🟡 2 | - | Theoretical knowledge only |
+| Struct packing | 🟢 3 | 2025-12-22 | Understand padding |
+| Function pointers | 🟢 3 | 2025-12-12 | Can use but still feels odd |
+| Undefined behavior | 🟢 3 | 2025-12-15 | Know common cases |
+
+## X11 / Linux Platform
+
+| Concept | Current Level | Date Achieved | Notes |
+|---------|--------------|---------------|-------|
+| X11 event system | 🔵 4 | 2025-12-25 | Comfortable |
+| XImage format | 🟢 3 | 2025-12-20 | Works but details fuzzy |
+| Graphics Context (GC) | 🟢 3 | 2025-12-18 | Basic usage |
+| Window properties | 🟡 2 | - | Know they exist |
+| Atoms | 🟢 3 | 2025-12-24 | Understand WM_DELETE |
+| ALSA PCM | 🟢 3 | 2025-12-28 | Basic audio works |
+| ALSA ring buffer | 🟡 2 | 2025-12-28 | Conceptual understanding |
+| clock_gettime | 🟢 3 | 2025-12-16 | Using for timing |
+
+## Systems Programming
+
+| Concept | Current Level | Date Achieved | Notes |
+|---------|--------------|---------------|-------|
+| Binary representations | 🔵 4 | 2025-12-10 | Solid |
+| Bit manipulation | 🟢 3 | 2025-12-12 | Can do shifts/masks |
+| Endianness | 🟢 3 | 2025-12-19 | Understand concept |
+| File I/O | 🟢 3 | 2025-12-08 | Basic read/write |
+| Process vs thread | 🟡 2 | - | Theoretical only |
+| System calls | 🟢 3 | 2025-12-15 | Know they're expensive |
+| Dynamic linking | 🟡 2 | 2025-12-05 | Vague understanding |
+
+## Performance & Optimization
+
+| Concept | Current Level | Date Achieved | Notes |
+|---------|--------------|---------------|-------|
+| CPU cache basics | 🟢 3 | 2025-12-20 | Know it matters |
+| Data-oriented design | 🟡 2 | 2025-12-22 | Conceptual only |
+| Branch prediction | 🟡 2 | 2025-12-21 | Aware of it |
+| SIMD | 🔴 1 | - | Haven't used yet |
+| Profiling | 🟢 3 | 2025-12-14 | Used gprof |
+| Memory bandwidth | 🟡 2 | 2025-12-20 | Know it exists |
+| Hot path identification | 🟢 3 | 2025-12-17 | Can identify |
+
+## Game Engine Architecture
+
+| Concept | Current Level | Date Achieved | Notes |
+|---------|--------------|---------------|-------|
+| Platform layer | 🔵 4 | 2025-12-25 | Good understanding |
+| Game loop | 🔵 4 | 2025-12-15 | Solid |
+| Fixed timestep | 🟢 3 | - | Haven't implemented yet |
+| Double buffering | 🔵 4 | 2025-12-19 | Using it |
+| Input handling | 🟢 3 | 2025-12-23 | Basic keyboard works |
+| Asset pipeline | 🔴 1 | - | Future topic |
+| State machines | 🟡 2 | - | Know the pattern |
+
+## Debugging & Tools
+
+| Concept | Current Level | Date Achieved | Notes |
+|---------|--------------|---------------|-------|
+| gdb basics | 🟢 3 | 2025-12-11 | Breakpoints, print |
+| gdb advanced | 🟡 2 | 2025-12-13 | Know features exist |
+| valgrind | 🟢 3 | 2025-12-12 | Finding leaks |
+| printf debugging | 🔵 4 | 2025-12-05 | My go-to |
+| Compiler warnings | 🟢 3 | 2025-12-08 | Reading them |
+| Static analysis | 🔴 1 | - | Haven't used |
+| Performance profiling | 🟡 2 | 2025-12-14 | Basic perf usage |
+
+---
+
+## Goals
+
+### Short-term (this month)
+- [ ] Reach Level 4 on ALSA PCM
+- [ ] Reach Level 4 on pointer arithmetic
+- [ ] Reach Level 3 on memory alignment
+
+### Medium-term (3 months)
+- [ ] Reach Level 4 on all X11 concepts
+- [ ] Reach Level 3 on all performance concepts
+- [ ] Reach Level 4 on gdb debugging
+
+### Long-term (6 months)
+- [ ] Reach Level 5 on platform layer design
+- [ ] Reach Level 4 on SIMD
+- [ ] Reach Level 4 on game engine architecture
+```
+
+---
+
+### 18.4 Problem-Solution Database
+
+Create: `docs/problem_database.md`
+
+This becomes your personal Stack Overflow.
+
+```markdown
+# Personal Problem-Solution Database
+
+## How to Use This
+When you encounter a problem, first SEARCH this file.
+If the problem is new, ADD it after solving.
+
+---
+
+## X11 Problems
+
+### Problem: XPutImage shows nothing on screen
+**Date First Encountered:** 2025-12-19  
+**Frequency:** 3 times  
+**Last Encountered:** 2025-12-28
+
+**Symptoms:**
+- Window opens correctly
+- No errors in terminal
+- Screen remains black
+- Buffer is being filled (verified with printf)
+
+**Root Causes Found:**
+1. Forgot to call XFlush() after XPutImage
+2. GC wasn't set correctly (wrong values)
+3. XImage format didn't match visual
+
+**Solution:**
+```c
+// Always XFlush after drawing
+XPutImage(display, window, gc, image, 0, 0, 0, 0, width, height);
+XFlush(display);  // ← This is required!
+
+// Verify GC is correct
+GC gc = XCreateGC(display, window, 0, NULL);
+// If still issues, check with:
+XGCValues values;
+XGetGCValues(display, gc, GCForeground | GCBackground, &values);
+printf("GC: fg=%ld bg=%ld\n", values.foreground, values.background);
+```
+
+**Prevention:**
+- Add XFlush to helper function wrapper
+- Create checklist for graphics setup
+
+**Related Concepts:**
+- X11 is buffered by default
+- XSync vs XFlush differences
+
+---
+
+### Problem: Window won't close when clicking X button
+**Date First Encountered:** 2025-12-15  
+**Frequency:** 1 time (learned immediately)
+
+**Symptoms:**
+- Clicking X button does nothing
+- Have to kill process with Ctrl+C
+- No DestroyNotify event received
+
+**Root Cause:**
+X11 doesn't send DestroyNotify by default for window manager close.
+Must explicitly handle WM_DELETE_WINDOW protocol.
+
+**Solution:**
+```c
+Atom wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", False);
+XSetWMProtocols(display, window, &wm_delete_window, 1);
+
+// In event loop:
+case ClientMessage:
+    if (event.xclient.data.l[0] == wm_delete_window) {
+        running = false;
+    }
+    break;
+```
+
+**Prevention:**
+- Add to window creation template
+- This is ALWAYS needed for proper X11 windows
+
+---
+
+## ALSA Problems
+
+### Problem: Audio stuttering and underruns
+**Date First Encountered:** 2025-12-27  
+**Frequency:** Ongoing issue
+
+**Symptoms:**
+- Audio plays but stutters
+- Console shows "underrun" messages
+- Happens during window resize
+
+**Root Causes Found:**
+1. Buffer too small (latency too low)
+2. Not writing enough frames per cycle
+3. Blocking on event loop (no threading)
+
+**Solutions Tried:**
+```c
+// Solution 1: Increase buffer size
+snd_pcm_hw_params_set_buffer_size_near(pcm, params, &buffer_size);
+// Increased from 2048 to 8192 frames → helped
+
+// Solution 2: Write more frames per call
+// Was writing 256 frames, increased to 512 → helped
+
+// Solution 3: Handle underruns gracefully
+int err = snd_pcm_writei(pcm, buffer, frames);
+if (err == -EPIPE) {
+    snd_pcm_prepare(pcm);
+    err = snd_pcm_writei(pcm, buffer, frames);
+}
+```
+
+**Best Solution:**
+Combination of larger buffer + handle underruns.
+Accept that some latency is needed.
+
+**Prevention:**
+- Profile frame times
+- Ensure game loop doesn't block
+- Consider audio on separate thread (future)
+
+---
+
+## Memory Problems
+
+### Problem: Segmentation fault in buffer
+**Date First Encountered:** 2025-12-18  
+**Frequency:** 2 times
+
+**Symptoms:**
+- Crash when writing to pixel buffer
+- gdb shows SIGSEGV
+- Address looks reasonable
+
+**Root Causes Found:**
+1. Buffer allocated too small (width * height, forgot * 4 for RGBA)
+2. Pitch calculation wrong (used width instead of pitch)
+
+**Solution:**
+```c
+// ❌ WRONG
+uint32_t* buffer = malloc(width * height);  // Too small!
+
+// ✅ CORRECT
+uint32_t* buffer = malloc(width * height * sizeof(uint32_t));
+
+// Pitch usage:
+uint8_t* row = (uint8_t*)buffer;
+for (int y = 0; y < height; y++) {
+    uint32_t* pixel = (uint32_t*)row;
+    for (int x = 0; x < width; x++) {
+        *pixel++ = color;
+    }
+    row += pitch;  // NOT += width!
+}
+```
+
+**Prevention:**
+- Always use sizeof()
+- Valgrind before running
+- Add buffer bounds assertions
+
+---
+
+## Build Problems
+
+### Problem: Undefined reference to XOpenDisplay
+**Date First Encountered:** 2025-12-10  
+**Frequency:** 1 time
+
+**Symptoms:**
+- Code compiles but linker fails
+- "undefined reference to XOpenDisplay"
+
+**Root Cause:**
+Missing -lX11 linker flag
+
+**Solution:**
+```bash
+# ❌ WRONG
+gcc handmade.c -o handmade
+
+# ✅ CORRECT
+gcc handmade.c -o handmade -lX11 -lXext
+```
+
+**Prevention:**
+- Keep build.sh with all required flags
+- Document all dependencies
+
+---
+
+## Performance Problems
+
+### Problem: Frame rate drops during rendering
+**Date First Encountered:** 2025-12-22
+
+**Symptoms:**
+- 60 FPS drops to 30 FPS
+- Happens with larger windows
+
+**Root Cause:**
+O(n²) nested loops doing unnecessary work
+
+**Solution:**
+```c
+// Before: Recalculating every pixel every frame
+for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+        // Complex calculation here
+    }
+}
+
+// After: Cache calculations
+static int last_width = 0;
+static uint32_t* lookup_table = NULL;
+if (width != last_width) {
+    // Rebuild lookup table only on resize
+}
+// Use lookup table in inner loop
+```
+
+**Prevention:**
+- Profile before optimizing
+- Identify hot paths
+- Cache when possible
+
+---
+
+## Template for New Problem
+
+### Problem: [Brief description]
+**Date First Encountered:** [Date]  
+**Frequency:** [How often it happens]
+
+**Symptoms:**
+- [Observable behavior]
+- [Error messages]
+
+**Root Cause:**
+[What actually caused it]
+
+**Solution:**
+```c
+// Code solution
+```
+
+**Prevention:**
+[How to avoid in future]
+
+**Related Concepts:**
+[Links to concepts in mastery tracker]
+```
+
+---
+
+### 18.5 Learning Velocity Tracker
+
+Create: `docs/velocity_tracker.md`
+
+Track how long things take to learn over time.
+
+```markdown
+# Learning Velocity Tracker
+
+## Purpose
+Track how long it takes to learn/implement concepts.
+Over time, you should see velocity increase as understanding deepens.
+
+## Metrics
+
+### Episode Completion Time
+
+| Day | Episode | Watch Time | Implement Time | Debug Time | Total | Notes |
+|-----|---------|-----------|----------------|------------|-------|-------|
+| 1 | Open Window | 60 min | 120 min | 30 min | 210 min | First X11 code, slow |
+| 2 | Graphics | 55 min | 90 min | 45 min | 190 min | XImage confusion |
+| 3 | Keyboard | 50 min | 60 min | 15 min | 125 min | Getting faster |
+| 8 | Audio | 65 min | 180 min | 90 min | 335 min | ALSA learning curve |
+| 9 | Sine Wave | 40 min | 30 min | 5 min | 75 min | Building on Day 8 |
+
+**Observations:**
+- Audio episode took longest (new subsystem)
+- Day 9 much faster than Day 8 (learned ALSA)
+- Debug time decreasing overall (better practices)
+
+### Concept Learning Time
+
+| Concept | Time to Basic | Time to Comfortable | Time to Mastery | Total |
+|---------|--------------|-------------------|----------------|-------|
+| Pointers | 2 days | 1 week | 3 weeks | 4 weeks |
+| X11 Events | 1 day | 4 days | - | In progress |
+| ALSA | 3 days | - | - | In progress |
+
+### Bug Resolution Time
+
+| Bug Type | Average Time | Fastest | Slowest | Trend |
+|----------|-------------|---------|---------|-------|
+| Segfault | 25 min | 5 min | 90 min | ↓ Improving |
+| X11 visual issue | 35 min | 10 min | 120 min | ↓ Improving |
+| ALSA underrun | 45 min | - | 90 min | → Stable |
+| Build error | 8 min | 2 min | 20 min | ↓ Rare now |
+
+### Weekly Velocity
+
+| Week | Episodes | Hours | Episodes/Hour | Quality Score |
+|------|----------|-------|--------------|---------------|
+| 1 | 2 | 14 | 0.14 | 3/5 (many bugs) |
+| 2 | 3 | 12 | 0.25 | 4/5 (cleaner) |
+| 3 | 4 | 13 | 0.31 | 4/5 (solid) |
+
+**Quality Score Criteria:**
+- 5/5: Clean code, no bugs, fully understood
+- 4/5: Clean code, minor bugs, well understood
+- 3/5: Works but messy, some confusion
+- 2/5: Works but don't understand why
+- 1/5: Doesn't work or copied without understanding
+
+---
+
+## Insights
+
+### What Makes Me Faster
+- Good night's sleep (increases velocity ~30%)
+- Morning sessions (2x faster than evening)
+- Pre-reading man pages (saves debug time)
+- Taking breaks every 50 minutes
+
+### What Slows Me Down
+- Trying to implement before watching full episode
+- Skipping documentation (leads to more debug time)
+- Coding when tired (error rate increases 3x)
+- Distractions (phone, social media)
+
+### Improvement Trajectory
+```
+Episodes Per Week:
+Week 1: ██ (2)
+Week 2: ███ (3)
+Week 3: ████ (4)
+Target: ██████ (6)
+
+Understanding Depth:
+Week 1: ███░░░░ (3/7) Shallow, copying
+Week 2: █████░░ (5/7) Getting it
+Week 3: ██████░ (6/7) Can modify freely
+Target: ███████ (7/7) Can teach others
+```
+```
+
+---
+
+### 18.6 Reflection Prompts for Different Scenarios
+
+#### After Successfully Implementing Something:
+1. Can I explain this to someone who knows C but not X11?
+2. Could I implement this again from scratch without reference?
+3. What alternative approaches exist? Why did I choose this one?
+4. What would break if I changed [X]? (Test your understanding)
+5. How does this relate to what I learned last week?
+
+#### After Getting Stuck:
+1. What assumption did I make that was wrong?
+2. How could I have discovered this faster?
+3. What tool or technique would have helped?
+4. Is this a knowledge gap or a careless mistake?
+5. How can I prevent this category of error?
+
+#### After Completing an Episode:
+1. What surprised me about how Casey did this?
+2. How is the X11 way different from the Windows way?
+3. What's the core concept underneath the platform specifics?
+4. If I were explaining this to past-me from last week, what would I say?
+5. What question do I have for future episodes?
+
+#### After a Week of Work:
+1. What pattern keeps appearing in Casey's approach?
+2. What pattern keeps appearing in my bugs?
+3. Am I understanding WHY or just copying WHAT?
+4. Is my velocity increasing or plateauing?
+5. What adjustment would make next week better?
+
+---
+
+This reflection system ensures you're not just accumulating code, but accumulating understanding. The goal is to build a mental model that persists beyond this project.
