@@ -115,11 +115,7 @@ raylib_init_gamepad(GameControllerInput *controller_old_input,
 }
 
 inline file_scoped_fn void handle_keyboard_inputs(GameSoundOutput *sound_output,
-                                                  GameInput *old_game_input,
                                                   GameInput *new_game_input) {
-
-  GameControllerInput *old_controller1 =
-      &old_game_input->controllers[KEYBOARD_CONTROLLER_INDEX];
   GameControllerInput *new_controller1 =
       &new_game_input->controllers[KEYBOARD_CONTROLLER_INDEX];
 
@@ -131,15 +127,14 @@ inline file_scoped_fn void handle_keyboard_inputs(GameSoundOutput *sound_output,
     new_controller1->is_analog = false;
 
     // Also set button state for backward compatibility
-    process_game_button_state(true, &old_controller1->up, &new_controller1->up);
+    process_game_button_state(true, &new_controller1->up);
   }
   int upReleased = IsKeyReleased(KEY_W) || IsKeyReleased(KEY_UP);
   if (upReleased) {
     new_controller1->end_y = 0.0f;
     new_controller1->min_y = new_controller1->max_y = 0.0f;
     new_controller1->is_analog = false;
-    process_game_button_state(false, &old_controller1->up,
-                              &new_controller1->up);
+    process_game_button_state(false, &new_controller1->up);
   }
 
   int left = IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT);
@@ -149,16 +144,14 @@ inline file_scoped_fn void handle_keyboard_inputs(GameSoundOutput *sound_output,
     new_controller1->min_x = new_controller1->max_x = new_controller1->end_x;
     new_controller1->is_analog = false;
 
-    process_game_button_state(true, &old_controller1->left,
-                              &new_controller1->left);
+    process_game_button_state(true, &new_controller1->left);
   }
   int leftReleased = IsKeyReleased(KEY_A) || IsKeyReleased(KEY_LEFT);
   if (leftReleased) {
     new_controller1->end_x = 0.0f;
     new_controller1->min_x = new_controller1->max_x = 0.0f;
     new_controller1->is_analog = false;
-    process_game_button_state(false, &old_controller1->left,
-                              &new_controller1->left);
+    process_game_button_state(false, &new_controller1->left);
   }
 
   int down = IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN);
@@ -168,16 +161,14 @@ inline file_scoped_fn void handle_keyboard_inputs(GameSoundOutput *sound_output,
     new_controller1->min_y = new_controller1->max_y = new_controller1->end_y;
     new_controller1->is_analog = false;
 
-    process_game_button_state(true, &old_controller1->down,
-                              &new_controller1->down);
+    process_game_button_state(true, &new_controller1->down);
   }
   int downReleased = IsKeyReleased(KEY_S) || IsKeyReleased(KEY_DOWN);
   if (downReleased) {
     new_controller1->end_y = 0.0f;
     new_controller1->min_y = new_controller1->max_y = 0.0f;
     new_controller1->is_analog = false;
-    process_game_button_state(false, &old_controller1->down,
-                              &new_controller1->down);
+    process_game_button_state(false, &new_controller1->down);
   }
 
   int right = IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
@@ -187,16 +178,14 @@ inline file_scoped_fn void handle_keyboard_inputs(GameSoundOutput *sound_output,
     new_controller1->min_x = new_controller1->max_x = new_controller1->end_x;
     new_controller1->is_analog = false;
 
-    process_game_button_state(true, &old_controller1->right,
-                              &new_controller1->right);
+    process_game_button_state(true, &new_controller1->right);
   }
   int rightReleased = IsKeyReleased(KEY_D) || IsKeyReleased(KEY_RIGHT);
   if (rightReleased) {
     new_controller1->end_x = 0.0f;
     new_controller1->min_x = new_controller1->max_x = 0.0f;
     new_controller1->is_analog = false;
-    process_game_button_state(false, &old_controller1->right,
-                              &new_controller1->right);
+    process_game_button_state(false, &new_controller1->right);
   }
 
   if (IsKeyPressed(KEY_ESCAPE)) {
@@ -292,32 +281,26 @@ file_scoped_fn void raylib_poll_gamepad(GameInput *old_input,
     if (dpad_up && !dpad_down) {
       // Only UP pressed
       new_controller->end_y = +1.0f;
-      process_game_button_state(true, &old_controller->up, &new_controller->up);
-      process_game_button_state(false, &old_controller->down,
-                                &new_controller->down);
+      process_game_button_state(true, &new_controller->up);
+      process_game_button_state(false, &new_controller->down);
 
     } else if (dpad_down && !dpad_up) {
       // Only DOWN pressed
       new_controller->end_y = -1.0f;
-      process_game_button_state(true, &old_controller->down,
-                                &new_controller->down);
-      process_game_button_state(false, &old_controller->up,
-                                &new_controller->up);
+      process_game_button_state(true, &new_controller->down);
+      process_game_button_state(false, &new_controller->up);
 
     } else if (dpad_up && dpad_down) {
       // Both pressed (cancel out)
       new_controller->end_y = 0.0f;
-      process_game_button_state(true, &old_controller->up, &new_controller->up);
-      process_game_button_state(true, &old_controller->down,
-                                &new_controller->down);
+      process_game_button_state(true, &new_controller->up);
+      process_game_button_state(true, &new_controller->down);
 
     } else {
       // Neither pressed
       new_controller->end_y = 0.0f;
-      process_game_button_state(false, &old_controller->up,
-                                &new_controller->up);
-      process_game_button_state(false, &old_controller->down,
-                                &new_controller->down);
+      process_game_button_state(false, &new_controller->up);
+      process_game_button_state(false, &new_controller->down);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -331,34 +314,26 @@ file_scoped_fn void raylib_poll_gamepad(GameInput *old_input,
     if (dpad_left && !dpad_right) {
       // Only LEFT pressed
       new_controller->end_x = -1.0f;
-      process_game_button_state(true, &old_controller->left,
-                                &new_controller->left);
-      process_game_button_state(false, &old_controller->right,
-                                &new_controller->right);
+      process_game_button_state(true, &new_controller->left);
+      process_game_button_state(false, &new_controller->right);
 
     } else if (dpad_right && !dpad_left) {
       // Only RIGHT pressed
       new_controller->end_x = +1.0f;
-      process_game_button_state(true, &old_controller->right,
-                                &new_controller->right);
-      process_game_button_state(false, &old_controller->left,
-                                &new_controller->left);
+      process_game_button_state(true, &new_controller->right);
+      process_game_button_state(false, &new_controller->left);
 
     } else if (dpad_left && dpad_right) {
       // Both pressed (cancel out)
       new_controller->end_x = 0.0f;
-      process_game_button_state(true, &old_controller->left,
-                                &new_controller->left);
-      process_game_button_state(true, &old_controller->right,
-                                &new_controller->right);
+      process_game_button_state(true, &new_controller->left);
+      process_game_button_state(true, &new_controller->right);
 
     } else {
       // Neither pressed
       new_controller->end_x = 0.0f;
-      process_game_button_state(false, &old_controller->left,
-                                &new_controller->left);
-      process_game_button_state(false, &old_controller->right,
-                                &new_controller->right);
+      process_game_button_state(false, &new_controller->left);
+      process_game_button_state(false, &new_controller->right);
     }
 
     // Update min/max (Day 13 pattern)
@@ -796,8 +771,7 @@ int platform_main() {
       // ═══════════════════════════════════════════════════════
       // ⌨️ KEYBOARD INPUT (cross-platform!)
       // ═══════════════════════════════════════════════════════
-      handle_keyboard_inputs(&game_sound_output, old_game_input,
-                             new_game_input);
+      handle_keyboard_inputs(&game_sound_output, new_game_input);
 
       // ═══════════════════════════════════════════════════════
       // 🎮 GAMEPAD INPUT (cross-platform!)

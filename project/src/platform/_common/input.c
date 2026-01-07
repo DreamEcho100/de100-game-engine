@@ -1,14 +1,9 @@
 #include "input.h"
 
-inline void process_game_button_state(bool is_down, GameButtonState *old_state,
+inline void process_game_button_state(bool is_down,
                                       GameButtonState *new_state) {
   new_state->ended_down = is_down;
   ++new_state->half_transition_count;
-  // if (old_state->ended_down != new_state->ended_down) {
-  //   new_state->half_transition_count++;
-  // }
-  // new_state->half_transition_count +=
-  //     ((old_state->ended_down != new_state->ended_down && 1) || 0);
 }
 
 // ═══════════════════════════════════════════════════════════
