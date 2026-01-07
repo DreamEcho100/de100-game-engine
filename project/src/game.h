@@ -1,7 +1,6 @@
 #ifndef GAME_H
 #define GAME_H
 
-#include "platform/platform.h"
 #include "platform/_common/memory.h"
 #include "base.h"
 #include <stdint.h>
@@ -127,7 +126,29 @@ typedef struct {
   * ───────────────────────────────────────────────────────────────
   */
 typedef struct {
-  /**  Number of state changes this frame */
+  /**
+    * Number of state changes this frame
+    *
+    * half_transition_count is NOT a boolean flag!
+    *
+    * It's a COUNTER that tracks:
+    *   0 = No change this frame (button held or released)
+    *   1 = Changed once (normal press or release)
+    *   2 = Changed twice (press then release, or release then press)
+    *   3 = Changed three times (press-release-press, extremely rare!)
+    *
+    * Why this matters:
+    * ```c
+    *   if (button.ended_down && button.half_transition_count > 0) {
+    *       // Button JUST pressed (not held from last frame)
+    *   }
+    * 
+    *   if (button.half_transition_count > 1) {
+    *       // User is mashing the button VERY fast!
+    *       // Might be lag, or input recording glitch
+    *   }
+    * ```
+    */
   int half_transition_count;
   /** Final state (true = pressed, false = released) */
   bool32 ended_down;
@@ -257,12 +278,6 @@ typedef struct {
 } GameState;
 
 
-typedef enum {
-  INIT_BACKBUFFER_STATUS_SUCCESS = 0,
-  INIT_BACKBUFFER_STATUS_MMAP_FAILED = 1,
-} INIT_BACKBUFFER_STATUS;
-INIT_BACKBUFFER_STATUS init_backbuffer(GameOffscreenBuffer *buffer, int width, int height, int bytes_per_pixel, pixel_composer_fn composer);
-
 /**
 * 🎮 DAY 13: Updated Game Entry Point
 * ═══════════════════════════════════════════════════════════════
@@ -282,9 +297,5 @@ INIT_BACKBUFFER_STATUS init_backbuffer(GameOffscreenBuffer *buffer, int width, i
 * ═══════════════════════════════════════════════════════════════
 */
 void game_update_and_render(GameMemory *memory, GameInput *input, GameOffscreenBuffer *buffer, GameSoundOutput *sound_buffer);
-
-
-//
-void process_game_button_state(bool is_down, GameButtonState *old_state, GameButtonState *new_state);
 
 #endif // GAME_H

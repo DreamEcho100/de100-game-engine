@@ -1,5 +1,5 @@
-#ifndef HANDMADE_DEBUG_FILE_IO_H
-#define HANDMADE_DEBUG_FILE_IO_H
+#ifndef HANDMADE_COMMON_DEBUG_FILE_IO_H
+#define HANDMADE_COMMON_DEBUG_FILE_IO_H
 #include "../../base.h"
 #include "memory.h"
 
@@ -15,4 +15,4 @@ bool32 debug_platform_write_entire_file(char *filename, uint32_t memory_size,
 
 #endif // HANDMADE_INTERNAL
        
-#endif // HANDMADE_DEBUG_FILE_IO_H
+#endif // HANDMADE_COMMON_DEBUG_FILE_IO_H

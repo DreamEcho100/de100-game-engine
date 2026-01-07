@@ -3,6 +3,8 @@
 #include "backend.h"
 #include "../../base.h"
 #include "../../game.h"
+#include "../_common/backbuffer.h"
+#include "../_common/input.h"
 #include "audio.h"
 #include <assert.h>
 
@@ -582,36 +584,6 @@ file_scoped_fn void ResizeBackBuffer(GameOffscreenBuffer *backbuffer,
   printf("Raylib texture created successfully\n");
 }
 
-void prepare_input_frame(GameInput *old_input, GameInput *new_input) {
-  // ═══════════════════════════════════════════════════════════
-  // Clear new input buttons to released state
-  // ═══════════════════════════════════════════════════════════
-  for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
-    GameControllerInput *old_ctrl = &old_input->controllers[i];
-    GameControllerInput *new_ctrl = &new_input->controllers[i];
-
-    // Preserve connection state
-    new_ctrl->is_connected = old_ctrl->is_connected;
-    new_ctrl->is_analog = old_ctrl->is_analog;
-
-    // Set start position = last frame's end position
-    new_ctrl->start_x = old_ctrl->end_x;
-    new_ctrl->start_y = old_ctrl->end_y;
-
-    // Preserve analog values (for joystick held positions)
-    new_ctrl->end_x = old_ctrl->end_x;
-    new_ctrl->end_y = old_ctrl->end_y;
-    new_ctrl->min_x = new_ctrl->max_x = new_ctrl->end_x;
-    new_ctrl->min_y = new_ctrl->max_y = new_ctrl->end_y;
-
-    // Buttons - preserve state, clear transition count
-    for (int btn = 0; btn < MAX_CONTROLLER_COUNT; btn++) {
-      new_ctrl->buttons[btn].ended_down = old_ctrl->buttons[btn].ended_down;
-      new_ctrl->buttons[btn].half_transition_count = 0;
-    }
-  }
-}
-
 // Helper to get current time in seconds
 static inline double get_wall_clock() {
   struct timespec ts;
@@ -637,7 +609,7 @@ int platform_main() {
 #endif
 
   uint64_t permanent_storage_size = MEGABYTES(64);
-  uint64_t transient_storage_size = GIGABYTES(4);
+  uint64_t transient_storage_size = GIGABYTES(1);
   PlatformMemoryBlock permanent_storage = platform_allocate_memory(
       base_address, permanent_storage_size,
       PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE | PLATFORM_MEMORY_ZEROED);

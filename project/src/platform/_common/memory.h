@@ -1,5 +1,5 @@
-#ifndef HANDMADE_MEMORY_H
-#define HANDMADE_MEMORY_H
+#ifndef HANDMADE_COMMON_MEMORY_H
+#define HANDMADE_COMMON_MEMORY_H
 #include "../../base.h"
 
 
@@ -77,4 +77,4 @@ PlatformMemoryBlock platform_allocate_memory(void *base_hint, size_t size,
 // void platform_free_memory(void* base, size_t total_size);
 void platform_free_memory(PlatformMemoryBlock *block);
 
-#endif // HANDMADE_MEMORY_H
+#endif // HANDMADE_COMMON_MEMORY_H

@@ -35,33 +35,6 @@ controller_has_input(GameControllerInput *controller) {
           controller->left.ended_down || controller->right.ended_down);
 }
 
-INIT_BACKBUFFER_STATUS init_backbuffer(GameOffscreenBuffer *buffer, int width,
-                                       int height, int bytes_per_pixel,
-                                       pixel_composer_fn composer) {
-  buffer->memory.base = NULL;
-  buffer->width = width;
-  buffer->height = height;
-  buffer->bytes_per_pixel = bytes_per_pixel;
-  buffer->pitch = buffer->width * buffer->bytes_per_pixel;
-  int initial_initial_buffer_size = buffer->pitch * buffer->height;
-  PlatformMemoryBlock memory_block =
-      platform_allocate_memory(NULL, initial_initial_buffer_size,
-                               PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE);
-  if (!memory_block.base) {
-    fprintf(stderr,
-            "platform_allocate_memory failed: could not allocate %d "
-            "bytes\n",
-            initial_initial_buffer_size);
-    return INIT_BACKBUFFER_STATUS_MMAP_FAILED;
-  }
-  buffer->memory = memory_block;
-
-  // Set pixel composer function for Raylib (R8G8B8A8)
-  buffer->compose_pixel = composer;
-
-  return INIT_BACKBUFFER_STATUS_SUCCESS;
-}
-
 void render_weird_gradient(GameOffscreenBuffer *buffer, GameState *game_state) {
   uint8_t *row = (uint8_t *)buffer->memory.base;
 
@@ -104,16 +77,6 @@ void testPixelAnimation(GameOffscreenBuffer *buffer, GameState *game_state,
       game_state->pixel_state.offset_y = 0;
     }
   }
-}
-
-inline void process_game_button_state(bool is_down, GameButtonState *old_state,
-                                      GameButtonState *new_state) {
-  new_state->ended_down = is_down;
-  if (old_state->ended_down != new_state->ended_down) {
-    new_state->half_transition_count++;
-  }
-  // new_state->half_transition_count +=
-  //     ((old_state->ended_down != new_state->ended_down && 1) || 0);
 }
 
 // Handle game controls

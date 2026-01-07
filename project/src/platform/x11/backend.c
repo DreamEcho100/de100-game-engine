@@ -3,13 +3,14 @@
 #include "backend.h"
 #include "../../base.h"
 #include "../../game.h"
+#include "../_common/backbuffer.h"
+#include "../_common/input.h"
 #include "audio.h"
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <fcntl.h>
 #include <linux/joystick.h>
-#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -1021,60 +1022,8 @@ handle_event(GameOffscreenBuffer *backbuffer, XImage **backbuffer_info,
 // X11 pixel composer (0xAARRGGBB format)
 file_scoped_fn uint32_t compose_pixel_xrgb(uint8_t r, uint8_t g, uint8_t b,
                                            uint8_t a) {
-  return ((a << 24) | (r << 16) | (g << 8) | (b));
-}
-
-// ═══════════════════════════════════════════════════════════
-// Clear new input buttons to released state
-// ═══════════════════════════════════════════════════════════
-// X11 keyboard only sends events on press/release.
-// If no event, button stays in old state (wrong!).
-// So we must explicitly clear to "not pressed".
-// ═══════════════════════════════════════════════════════════
-file_scoped_fn void prepare_input_frame(GameInput *old_input,
-                                        GameInput *new_input) {
-  for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
-    GameControllerInput *old_ctrl = &old_input->controllers[i];
-    GameControllerInput *new_ctrl = &new_input->controllers[i];
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 1: Copy connection state (doesn't change mid-frame)
-    // ═══════════════════════════════════════════════════════════
-    new_ctrl->is_connected = old_ctrl->is_connected;
-    new_ctrl->is_analog = old_ctrl->is_analog;
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 2: Set start position = last frame's end position
-    // ═══════════════════════════════════════════════════════════
-    new_ctrl->start_x = old_ctrl->end_x;
-    new_ctrl->start_y = old_ctrl->end_y;
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 3: Initialize analog values
-    // ═══════════════════════════════════════════════════════════
-
-    // ═══════════════════════════════════════════════════════════
-    // PRESERVE analog values for BOTH keyboard AND joystick!
-    // ═══════════════════════════════════════════════════════════
-    // Linux joystick only sends events on CHANGE, not while held.
-    // X11 keyboard only sends events on press/release, not while held.
-    // So we MUST preserve values for both!
-    new_ctrl->end_x = old_ctrl->end_x;
-    new_ctrl->end_y = old_ctrl->end_y;
-
-    new_ctrl->min_x = new_ctrl->max_x = new_ctrl->end_x;
-    new_ctrl->min_y = new_ctrl->max_y = new_ctrl->end_y;
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 4: Buttons - preserve state, clear transition count
-    // ═══════════════════════════════════════════════════════════
-    for (int btn = 0; btn < MAX_CONTROLLER_COUNT; btn++) {
-      // Preserve ended_down (button still held until release event)
-      new_ctrl->buttons[btn].ended_down = old_ctrl->buttons[btn].ended_down;
-      // Clear transition count (will be set if event occurs)
-      new_ctrl->buttons[btn].half_transition_count = 0;
-    }
-  }
+  return (((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) |
+          ((uint32_t)b));
 }
 
 // Helper to get current time in seconds

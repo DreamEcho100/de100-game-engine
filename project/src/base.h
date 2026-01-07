@@ -1,9 +1,9 @@
 #ifndef BASE_H
 #define BASE_H
 
-#include <stdint.h>
-#include <stddef.h> 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -14,16 +14,27 @@
 #endif
 
 #if HANDMADE_SLOW
-#define Assert(expression) \
-  if (!(expression))    \
-  {                     \
-    *(int *)0 = 0;     \
+#if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__) ||       \
+    defined(__CYGWIN__) || defined(__BORLANDC__)
+#include <intrin.h>
+#define DebugTrap() __debugbreak()
+#elif defined(__GNUC__) || defined(__clang__)
+#define DebugTrap() __builtin_trap()
+#else
+#define DebugTrap()                                                            \
+  {                                                                            \
+    *(volatile int *)0 = 0;                                                    \
+  }
+#endif
+#define Assert(expression)                                                     \
+  if (!(expression)) {                                                         \
+    DebugTrap();                                                               \
   }
 #else
 #define Assert(expression)
 #endif
 
-#define KILOBYTES(value) ((value)*1024LL)
+#define KILOBYTES(value) ((value) * 1024LL)
 #define MEGABYTES(value) (KILOBYTES(value) * 1024LL)
 #define GIGABYTES(value) (MEGABYTES(value) * 1024LL)
 #define TERABYTES(value) (GIGABYTES(value) * 1024LL)
@@ -37,10 +48,10 @@
 typedef int32_t bool32;
 
 /**
-* Platform-agnostic pixel composer function
-*
-* Platform sets this once, game just calls it
-*/
+ * Platform-agnostic pixel composer function
+ *
+ * Platform sets this once, game just calls it
+ */
 typedef uint32_t (*pixel_composer_fn)(uint8_t r, uint8_t g, uint8_t b,
                                       uint8_t a);
 
