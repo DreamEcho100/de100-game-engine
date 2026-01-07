@@ -4085,6 +4085,729 @@ src/
 3. **Assertions are documentation** – They communicate assumptions to future readers
 4. **Refactoring improves clarity** – Moving files to `_common/` made architecture more obvious
 
+### 📆 Day 16: Platform-Independent Input System & Code Refactoring
+
+**Focus:** Unified input processing architecture, transition tracking improvements, dead code elimination, and professional project organization.
+
+---
+
+#### 🗓️ Commits
+
+| Date       | Commit    | What Changed                                                                                                                                                                                                                                         | What I Changed & Why                                                                                                                                                                                                                                                                                                                            |
+| ---------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-01-07 | `2fecd79` | **Day 16 Core Implementation**: Refactored build script with Casey's Day 16 flags, extracted input/backbuffer to `_common/`, fixed button state tracking, reduced transient memory 4GB→1GB, improved Assert macro with platform-specific debug traps | **Why I changed it**: Separated platform code from game code for reusability across X11/Raylib backends. Added `HANDMADE_SLOW` define and `-Wl,--gc-sections` for dead code elimination matching Casey's `-opt:ref`. Improved Assert to use `__builtin_trap()` on GCC/Clang instead of just segfault.                                           |
+| 2026-01-07 | `b60d0dd` | **API Cleanup**: Removed unused `old_state` parameter from `process_game_button_state()`, deleted commented dead code, added comprehensive TODO comment documenting input abstraction decision                                                       | **Why I changed it**: After attempting generic input abstraction layer, realized it was premature optimization. Documented this decision for future self with trigger conditions and references. Cleaned up 50+ call sites across X11/Raylib/joystick code. Matches Casey's philosophy: "Solve problems you have, not problems you might have." |
+
+---
+
+#### 📊 Input Processing Architecture Evolution
+
+##### **Day 15 (Split Processing - BROKEN)**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ WINDOWS MESSAGE PUMP (Async)                                │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ PeekMessage() → DispatchMessage()                       │ │
+│ │         ↓                                               │ │
+│ │ Win32MainWindowCallback() ← INTERRUPTS GAME LOOP!       │ │
+│ │         ↓                                               │ │
+│ │ WM_KEYDOWN handler                                      │ │
+│ │ Updates keyboard state ASYNCHRONOUSLY                   │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                                                             │
+│ PROBLEM: Race condition! Game might read input             │
+│          while callback is updating it.                     │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ GAME LOOP (Different timing!)                               │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ XInput polling (controllers)                            │ │
+│ │ GameUpdateAndRender() ← Might see inconsistent input!   │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+##### **Day 16 (Unified Processing - CORRECT)**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ GAME LOOP (Single-threaded, deterministic)                  │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ 1. prepare_input_frame()                                │ │
+│ │    - Preserve button state from last frame              │ │
+│ │    - Clear half_transition_count (will rebuild)         │ │
+│ │                                                         │ │
+│ │ 2. Win32ProcessPendingMessages() / handle_event()      │ │
+│ │    - Process ALL keyboard events                        │ │
+│ │    - Increment half_transition_count on change          │ │
+│ │                                                         │ │
+│ │ 3. XInput polling / linux_poll_joystick()               │ │
+│ │    - Read controller state                              │ │
+│ │    - Update button transitions                          │ │
+│ │                                                         │ │
+│ │ 4. GameUpdateAndRender()                                │ │
+│ │    - Reads FROZEN snapshot of input                     │ │
+│ │    - No race conditions possible!                       │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                                                             │
+│ BENEFIT: Deterministic replay - save input, get exact       │
+│          same gameplay! Critical for debugging.             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 🎯 Core Concepts
+
+| Concept                   | Casey's Implementation                                                    | What I Learned / Adapted & Why                                                                                                                                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Input Determinism**     | `Win32ProcessPendingMessages()` polls messages in main loop, not callback | ✅ **Adapted to X11**: Created `prepare_input_frame()` + `handle_event()` pattern. X11's `XNextEvent()` is synchronous (no callbacks), so naturally deterministic! **Why**: Enables frame-perfect input recording/replay for debugging. |
+| **Transition Tracking**   | `++NewState->HalfTransitionCount` on EVERY button event                   | ✅ **Fixed my bug**: Was only incrementing on state CHANGE, not on every event. Now matches Casey's pattern. **Why**: Detects multiple presses in same frame (user mashing button or input lag).                                        |
+| **State Preservation**    | Zero keyboard controller, preserve gamepad analog values                  | ✅ **Adapted for X11**: Must preserve BOTH keyboard AND joystick values (Linux joystick only sends events on change). **Why**: X11 KeyPress doesn't repeat like Windows WM_KEYDOWN does.                                                |
+| **Dead Code Elimination** | `/link -opt:ref` strips unreferenced functions                            | ✅ **Linux equivalent**: `-Wl,--gc-sections` with `-ffunction-sections -fdata-sections`. **Why**: Reduces binary size, faster loading. Learned linker can't GC without compile-time section splitting!                                  |
+| **Debug Assertions**      | `*(int *)0 = 0` crashes with segfault                                     | ✅ **Improved on Casey**: Platform-specific `__debugbreak()` (MSVC) / `__builtin_trap()` (GCC/Clang) / segfault (fallback). **Why**: Breaks into debugger on assert instead of just crashing. Better debugging experience!              |
+| **Code Organization**     | Platform code in `win32_handmade.cpp`, game in `handmade.cpp`             | ✅ **Extended pattern**: Created `platform/_common/` for X11/Raylib shared code (`input.c`, `backbuffer.c`). **Why**: Eliminates duplicate code, single source of truth for input clearing logic.                                       |
+| **Memory Footprint**      | Reduced transient storage from 4GB → 1GB                                  | ✅ **Direct copy**: Changed `GIGABYTES(4)` → `GIGABYTES(1)`. **Why**: 4GB might fail on low-RAM machines, 1GB still huge for temp data. Pragmatic sizing!                                                                               |
+
+---
+
+#### 💻 Code Snippets with Explanations
+
+##### **1. Fixed Button State Processing (Critical Bug Fix!)**
+
+**Before (Day 15 - BROKEN):**
+
+```c
+// My buggy implementation
+void process_game_button_state(bool is_down, GameButtonState *old_state,
+                               GameButtonState *new_state) {
+  new_state->ended_down = is_down;
+
+  // ❌ WRONG! Only increments on state CHANGE
+  if (old_state->ended_down != new_state->ended_down) {
+    new_state->half_transition_count++;
+  }
+}
+
+// Problem:
+// Frame N:   Button pressed   → half_transition_count = 1 ✅
+// Frame N+1: Button held      → half_transition_count = 0 ❌ (looks like released!)
+// Frame N+2: Button released  → half_transition_count = 1 ✅
+```
+
+**After (Day 16 - CORRECT):**
+
+```c
+// Casey's Day 16 pattern (Win32)
+internal void Win32ProcessKeyboardMessage(game_button_state *NewState, bool32 IsDown) {
+    NewState->EndedDown = IsDown;
+    ++NewState->HalfTransitionCount;  // ← ALWAYS increment on event!
+}
+
+// My corrected X11 implementation
+inline void process_game_button_state(bool is_down, GameButtonState *new_state) {
+  new_state->ended_down = is_down;
+  ++new_state->half_transition_count;  // ← FIXED! Always increment
+
+  // (void)old_state removed - wasn't used after preserving state in prepare_input_frame()
+}
+
+// Now works correctly:
+// Frame N:   Button pressed   → half_transition_count = 1 ✅
+// Frame N+1: Button held      → half_transition_count = 0 ✅ (no event, not incremented)
+// Frame N+2: Button released  → half_transition_count = 1 ✅
+```
+
+**What I Learned:**
+
+- `half_transition_count` is NOT a boolean "did it change?" flag
+- It's a COUNTER: 0 = held/released, 1 = normal press/release, 2+ = rapid mashing
+- Always increment on EVENT, not on state CHANGE
+- State preservation happens BEFORE event processing (in `prepare_input_frame()`)
+
+---
+
+##### **2. Input State Clearing Pattern**
+
+**Casey's Day 16 Windows Pattern:**
+
+```cpp
+// win32_handmade.cpp
+game_controller_input *KeyboardController = &NewInput->Controllers[0];
+game_controller_input ZeroController = {};
+*KeyboardController = ZeroController;  // ← Zero everything
+
+Win32ProcessPendingMessages(KeyboardController);  // Rebuild from events
+```
+
+**My X11 Adaptation (Different! Here's Why):**
+
+```c
+// platform/_common/input.c
+void prepare_input_frame(GameInput *old_input, GameInput *new_input) {
+  for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
+    GameControllerInput *old_ctrl = &old_input->controllers[i];
+    GameControllerInput *new_ctrl = &new_input->controllers[i];
+
+    // ═══════════════════════════════════════════════════════════
+    // PRESERVE button state (NOT zero like Casey!)
+    // ═══════════════════════════════════════════════════════════
+    // Why different: X11 KeyPress doesn't repeat like WM_KEYDOWN!
+    // If user holds 'W' for 10 frames, X11 only sends:
+    //   Frame 1: KeyPress event
+    //   Frame 2-9: NO EVENTS!  ← Must preserve ended_down=true
+    //   Frame 10: KeyRelease event
+    for (int btn = 0; btn < ArraySize(new_ctrl->buttons); btn++) {
+      new_ctrl->buttons[btn].ended_down = old_ctrl->buttons[btn].ended_down;
+      new_ctrl->buttons[btn].half_transition_count = 0;  // ← Clear count!
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // PRESERVE analog values (joystick + keyboard movement)
+    // ═══════════════════════════════════════════════════════════
+    // Linux joystick only sends events on CHANGE, not while held
+    new_ctrl->end_x = old_ctrl->end_x;
+    new_ctrl->end_y = old_ctrl->end_y;
+    new_ctrl->min_x = new_ctrl->max_x = new_ctrl->end_x;
+    new_ctrl->min_y = new_ctrl->max_y = new_ctrl->end_y;
+  }
+}
+```
+
+**Key Difference Table:**
+
+| Aspect                  | Casey (Windows)               | My X11 Implementation             | Why Different?                                                          |
+| ----------------------- | ----------------------------- | --------------------------------- | ----------------------------------------------------------------------- |
+| **Keyboard zeroing**    | Zeros `KeyboardController`    | Preserves `ended_down`            | X11 KeyPress doesn't repeat! Must preserve held state.                  |
+| **Analog preservation** | Preserves gamepad values      | Preserves BOTH keyboard & gamepad | X11 keyboard movement uses analog values too (WASD → stick simulation). |
+| **Event frequency**     | WM_KEYDOWN repeats while held | KeyPress fires ONCE per press     | Windows sends repeat events, X11 doesn't.                               |
+
+---
+
+##### **3. Platform-Specific Debug Traps (Improved on Casey!)**
+
+**Casey's Day 16 Assert (Simple but works):**
+
+```cpp
+// handmade.h
+###if HANDMADE_SLOW
+###define Assert(Expression) if(!(Expression)) {*(int *)0 = 0;}
+###else
+###define Assert(Expression)
+###endif
+```
+
+**My Enhanced Assert (Better debugging experience):**
+
+```c
+// base.h
+###if HANDMADE_SLOW
+  #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
+    #include <intrin.h>
+    #define DebugTrap() __debugbreak()  // ← MSVC: Breaks into Visual Studio
+  #elif defined(__GNUC__) || defined(__clang__)
+    #define DebugTrap() __builtin_trap()  // ← GCC/Clang: Triggers SIGTRAP
+  #else
+    #define DebugTrap() { *(volatile int *)0 = 0; }  // ← Fallback: Segfault
+  #endif
+
+  #define Assert(expression) \
+    if (!(expression)) { \
+      DebugTrap(); \
+    }
+###else
+  #define Assert(expression)
+###endif
+```
+
+**Why This Is Better:**
+
+| Platform      | Casey's Assert        | My Enhanced Assert  | Benefit                                                 |
+| ------------- | --------------------- | ------------------- | ------------------------------------------------------- |
+| **MSVC**      | Segfault (`*(int*)0`) | `__debugbreak()`    | Pauses in Visual Studio debugger at assert line!        |
+| **GCC/Clang** | Segfault              | `__builtin_trap()`  | Triggers `SIGTRAP`, debugger catches it cleanly         |
+| **Unknown**   | Segfault              | `*(volatile int*)0` | Same as Casey (prevents compiler optimizing away crash) |
+
+**What I Learned:**
+
+- `volatile` keyword prevents optimizer from removing "dead write"
+- Compiler intrinsics (`__debugbreak__`, `__builtin_trap()`) are better than segfaults
+- Platform-specific code is OK if it improves debugging workflow!
+
+---
+
+##### **4. Build Script Refactoring (Casey's Day 16 Flags)**
+
+**Casey's Day 16 build.bat:**
+
+```batch
+cl -MT -nologo -Gm- -GR- -EHa- -Od -Oi -WX -W4 -wd4201 -wd4100 -wd4189 ^
+   -DHANDMADE_INTERNAL=1 -DHANDMADE_SLOW=1 -DHANDMADE_WIN32=1 ^
+   -FC -Z7 -Fmwin32_handmade.map ^
+   win32_handmade.cpp ^
+   /link -opt:ref -subsystem:windows,5.1 user32.lib gdi32.lib
+```
+
+**My X11 build.sh equivalent:**
+
+```bash
+###!/bin/bash
+### Day 16 Build Flags (Match Casey's MSVC flags)
+FLAGS="-Isrc -std=c11 -g -O0"
+
+### Warnings (Casey's -WX -W4 -wd4100 -wd4189)
+FLAGS="$FLAGS -Werror -Wall -Wextra"
+### FLAGS="$FLAGS -Wno-unused-parameter"  # Casey's -wd4100 (optional)
+### FLAGS="$FLAGS -Wno-unused-variable"   # Casey's -wd4189 (optional)
+
+### Dead code elimination (Casey's -opt:ref)
+FLAGS="$FLAGS -ffunction-sections -fdata-sections"  # ← Split code into sections
+FLAGS="$FLAGS -Wl,--gc-sections"                    # ← Linker removes unused
+FLAGS="$FLAGS -Wl,-Map=build/game.map"              # ← Casey's -Fmwin32_handmade.map
+
+### Platform defines (Casey's -DHANDMADE_*)
+FLAGS="$FLAGS -DHANDMADE_INTERNAL=1 -DHANDMADE_SLOW=1"
+
+### Math library
+FLAGS="$FLAGS -lm"
+
+### Source files (NEW: input.c, backbuffer.c extracted!)
+SRC="src/main.c src/platform/_common/input.c src/platform/_common/backbuffer.c"
+SRC="$SRC src/platform/_common/memory.c src/platform/_common/debug-file-io.c src/game.c"
+
+### Backend-specific
+if [ "$BACKEND" = "x11" ]; then
+    FLAGS="$FLAGS -DUSE_X11 -lX11"
+    SRC="$SRC src/platform/x11/backend.c src/platform/x11/audio.c"
+fi
+
+clang $SRC -o build/game $FLAGS
+```
+
+**Flag Mapping Table:**
+
+| Casey's MSVC Flag       | My GCC/Clang Equivalent   | Purpose                                   |
+| ----------------------- | ------------------------- | ----------------------------------------- |
+| `-MT`                   | (default)                 | Static C runtime (no DLL dependency)      |
+| `-nologo`               | (no equivalent)           | Suppress compiler banner                  |
+| `-Gm-`                  | (no equivalent)           | Disable incremental compilation           |
+| `-GR-`                  | `-fno-rtti`               | Disable RTTI (C++ only)                   |
+| `-EHa-`                 | `-fno-exceptions`         | Disable exceptions (C++ only)             |
+| `-Od`                   | `-O0`                     | Disable optimizations ✅                  |
+| `-Oi`                   | (always on)               | Enable intrinsics (memcpy → rep movsb) ✅ |
+| `-WX`                   | `-Werror`                 | Warnings as errors ✅                     |
+| `-W4`                   | `-Wall -Wextra`           | Maximum warnings ✅                       |
+| `-wd4201`               | (not needed)              | GCC allows anonymous structs in C11       |
+| `-wd4100`               | `-Wno-unused-parameter`   | Suppress unused param warnings            |
+| `-wd4189`               | `-Wno-unused-variable`    | Suppress unused var warnings              |
+| `-FC`                   | (default)                 | Full paths in errors                      |
+| `-Z7`                   | `-g`                      | Embed debug info ✅                       |
+| `-Fmwin32_handmade.map` | `-Wl,-Map=build/game.map` | Generate map file ✅                      |
+| `-opt:ref`              | `-Wl,--gc-sections`       | Remove dead code ✅                       |
+
+**What I Learned:**
+
+- `-ffunction-sections` is REQUIRED for `--gc-sections` to work!
+- Map files show symbol addresses and section sizes (great for optimization)
+- Casey's `-wd4201` suppresses "anonymous struct" warning (C11 allows it, MSVC complains)
+
+---
+
+##### **5. Code Organization: Extracting Common Platform Code**
+
+**Before (Day 15 - Duplicate Code):**
+
+```
+project/src/
+├── game.c                        ← init_backbuffer(), process_game_button_state()
+├── platform/x11/backend.c        ← prepare_input_frame() (X11 version)
+└── platform/raylib/backend.c     ← prepare_input_frame() (Raylib version)
+                                    ↑ DUPLICATE LOGIC!
+```
+
+**After (Day 16 - Single Source of Truth):**
+
+```
+project/src/
+├── game.c                        ← ONLY game logic now!
+├── platform/_common/
+│   ├── input.c                   ← prepare_input_frame() (shared!)
+│   ├── input.h                   ← process_game_button_state() (shared!)
+│   ├── backbuffer.c              ← init_backbuffer() (shared!)
+│   └── backbuffer.h
+├── platform/x11/backend.c        ← Uses _common/input.h
+└── platform/raylib/backend.c     ← Uses _common/input.h
+```
+
+**Why This Matters:**
+
+```c
+// OLD (game.c - WRONG LAYER!)
+INIT_BACKBUFFER_STATUS init_backbuffer(...) {
+  buffer->memory = platform_allocate_memory(...);  // ← Platform operation in GAME code!
+  // ...
+}
+
+// NEW (platform/_common/backbuffer.c - CORRECT LAYER!)
+INIT_BACKBUFFER_STATUS init_backbuffer(...) {
+  buffer->memory = platform_allocate_memory(...);  // ← Platform operation in PLATFORM code!
+  // ...
+}
+```
+
+**Dependency Flow (Correct):**
+
+```
+Game Layer (high level)
+    ↑ uses
+Platform Layer (low level)
+    ↑ uses
+OS APIs (lowest level)
+```
+
+**What I Learned:**
+
+- Game code should NEVER call `mmap()` or allocate platform memory!
+- `init_backbuffer()` is platform code (uses `platform_allocate_memory()`)
+- `process_game_button_state()` is platform code (processes OS events)
+- Extracting to `_common/` eliminates 100+ lines of duplicate code!
+
+---
+
+#### 📊 Transition Tracking Visualization
+
+##### **How `half_transition_count` Works (Casey's Pattern)**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ FRAME-BY-FRAME BUTTON STATE TRACKING                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│ Frame N-1: Button UP (no events)                               │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ prepare_input_frame():                                      │ │
+│ │   new->ended_down = old->ended_down (false)                 │ │
+│ │   new->half_transition_count = 0  ← CLEARED!                │ │
+│ │                                                             │ │
+│ │ handle_event(): (no KeyPress/KeyRelease events)             │ │
+│ │   (process_game_button_state NOT called)                    │ │
+│ │                                                             │ │
+│ │ Result: ended_down=false, half_transition_count=0           │ │
+│ │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^              │ │
+│ │         Button released, no transitions this frame          │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ ───────────────────────────────────────────────────────────── │
+│                                                                 │
+│ Frame N: USER PRESSES BUTTON!                                  │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ prepare_input_frame():                                      │ │
+│ │   new->ended_down = old->ended_down (false)                 │ │
+│ │   new->half_transition_count = 0  ← CLEARED!                │ │
+│ │                                                             │ │
+│ │ handle_event(KeyPress, 'W'):                                │ │
+│ │   process_game_button_state(true, &new->up):                │ │
+│ │     new->ended_down = true       ← State CHANGED!           │ │
+│ │     ++new->half_transition_count ← Now = 1                  │ │
+│ │                                                             │ │
+│ │ Result: ended_down=true, half_transition_count=1            │ │
+│ │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^               │ │
+│ │         "Button JUST pressed this frame!"                   │ │
+│ │                                                             │ │
+│ │ Game code can detect this:                                  │ │
+│ │   if (up.ended_down && up.half_transition_count > 0) {      │ │
+│ │     Jump();  // ← Only jumps ONCE per press!                │ │
+│ │   }                                                         │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ ───────────────────────────────────────────────────────────── │
+│                                                                 │
+│ Frame N+1: USER HOLDS BUTTON (no new events!)                  │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ prepare_input_frame():                                      │ │
+│ │   new->ended_down = old->ended_down (true)  ← PRESERVE!     │ │
+│ │   new->half_transition_count = 0  ← CLEARED!                │ │
+│ │                                                             │ │
+│ │ handle_event(): (no events! key still down)                 │ │
+│ │   (process_game_button_state NOT called)                    │ │
+│ │                                                             │ │
+│ │ Result: ended_down=true, half_transition_count=0            │ │
+│ │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^               │ │
+│ │         "Button held, no transition this frame"             │ │
+│ │                                                             │ │
+│ │ Game code:                                                  │ │
+│ │   if (up.ended_down && up.half_transition_count > 0) {      │ │
+│ │     // ← NOT triggered! half_transition_count = 0           │ │
+│ │   }                                                         │ │
+│ │   if (up.ended_down) {                                      │ │
+│ │     ContinueFlying();  // ← Hold to fly (jetpack)           │ │
+│ │   }                                                         │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ ───────────────────────────────────────────────────────────── │
+│                                                                 │
+│ Frame N+2: USER RELEASES BUTTON!                               │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ prepare_input_frame():                                      │ │
+│ │   new->ended_down = old->ended_down (true)                  │ │
+│ │   new->half_transition_count = 0  ← CLEARED!                │ │
+│ │                                                             │ │
+│ │ handle_event(KeyRelease, 'W'):                              │ │
+│ │   process_game_button_state(false, &new->up):               │ │
+│ │     new->ended_down = false      ← State CHANGED!           │ │
+│ │     ++new->half_transition_count ← Now = 1                  │ │
+│ │                                                             │ │
+│ │ Result: ended_down=false, half_transition_count=1           │ │
+│ │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^              │ │
+│ │         "Button JUST released this frame!"                  │ │
+│ │                                                             │ │
+│ │ Game code:                                                  │ │
+│ │   if (!up.ended_down && up.half_transition_count > 0) {     │ │
+│ │     StopJetpack();  // ← Trigger release action             │ │
+│ │   }                                                         │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ EDGE CASE: Rapid Button Mashing (2 presses in 1 frame!)        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│ Frame N: User taps button TWICE in 16ms window                 │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ prepare_input_frame():                                      │ │
+│ │   new->ended_down = false                                   │ │
+│ │   new->half_transition_count = 0                            │ │
+│ │                                                             │ │
+│ │ Event 1: KeyPress                                           │ │
+│ │   process_game_button_state(true, &new->up):                │ │
+│ │     new->ended_down = true                                  │ │
+│ │     ++new->half_transition_count  (now = 1)                 │ │
+│ │                                                             │ │
+│ │ Event 2: KeyRelease (0.008s later)                          │ │
+│ │   process_game_button_state(false, &new->up):               │ │
+│ │     new->ended_down = false                                 │ │
+│ │     ++new->half_transition_count  (now = 2)                 │ │
+│ │                                                             │ │
+│ │ Event 3: KeyPress (0.012s later)                            │ │
+│ │   process_game_button_state(true, &new->up):                │ │
+│ │     new->ended_down = true                                  │ │
+│ │     ++new->half_transition_count  (now = 3)                 │ │
+│ │                                                             │ │
+│ │ Result: ended_down=true, half_transition_count=3            │ │
+│ │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^               │ │
+│ │         "Button ended pressed, but changed 3 times!"        │ │
+│ │                                                             │ │
+│ │ Game code can detect weird input:                           │ │
+│ │   if (up.half_transition_count > 1) {                       │ │
+│ │     LogWarning("Rapid input detected! Lag or macro?");      │ │
+│ │   }                                                         │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 🐛 Common Pitfalls
+
+| Issue                                                    | Cause                                                       | Fix                                                                  | My Encountered Issues & Solutions                                                                                                                 |
+| -------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Button stays "pressed" after release**                 | Not preserving `ended_down` in `prepare_input_frame()`      | Copy `old->ended_down` to `new->ended_down` before processing events | ✅ **Hit this!** X11 KeyRelease event wasn't clearing button state. Fixed by preserving state in `prepare_input_frame()`, not zeroing like Casey. |
+| **"Just pressed" detection fails**                       | Only incrementing `half_transition_count` on state CHANGE   | Always increment on EVERY event: `++new->half_transition_count`      | ✅ **This was my Day 15 bug!** Was checking `if (old != new)` before incrementing. Now always increment like Casey.                               |
+| **Joystick analog values reset to 0**                    | Not preserving analog values when no events arrive          | Copy `old->end_x/y` to `new->end_x/y` in `prepare_input_frame()`     | ✅ **Hit this!** Linux joystick only sends events on CHANGE. Must preserve values for held stick positions.                                       |
+| **`--gc-sections` doesn't remove dead code**             | Missing `-ffunction-sections -fdata-sections` compile flags | Add both compile flags AND linker flag                               | ✅ **Learned this!** Linker can't garbage-collect without per-function sections. Casey's MSVC does this automatically with `/Gy`.                 |
+| **Circular include between `game.h` and `backbuffer.h`** | `backbuffer.h` includes `game.h` (wrong direction!)         | Forward-declare `GameOffscreenBuffer` in `backbuffer.h`              | ✅ **Documented in TODO!** Realized this is acceptable coupling for Day 16. Will refactor when building second game.                              |
+| **Compiler warnings about unused `old_state` param**     | Parameter passed but never used after refactor              | Remove parameter from function signature                             | ✅ **Fixed in commit `b60d0dd`!** Cleaned up 50+ call sites across X11/Raylib/joystick code.                                                      |
+
+---
+
+#### 📋 ASCII Diagrams: Memory & Input Flow
+
+##### **Memory Layout (Day 16 - Reduced Transient)**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ GAME MEMORY LAYOUT (Day 15 vs Day 16)                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│ Day 15 (Casey's initial allocation):                            │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ Permanent Storage: 64 MB                                    │ │
+│ │ ┌─────────────────────────────────────────────────────────┐ │ │
+│ │ │ GameState (persistent across sessions)                  │ │ │
+│ │ │ - Player position                                       │ │ │
+│ │ │ - Inventory                                             │ │ │
+│ │ │ - Save game data                                        │ │ │
+│ │ └─────────────────────────────────────────────────────────┘ │ │
+│ │                                                             │ │
+│ │ Transient Storage: 4096 MB (4 GB!)                          │ │
+│ │ ┌─────────────────────────────────────────────────────────┐ │ │
+│ │ │ Level assets (textures, sounds, models)                 │ │ │
+│ │ │ Particle systems                                        │ │ │
+│ │ │ Temporary render targets                                │ │ │
+│ │ │ Pathfinding data                                        │ │ │
+│ │ │                                                         │ │ │
+│ │ │ PROBLEM: 4GB might fail to allocate!                    │ │ │
+│ │ │ - 32-bit systems: Can't address >2GB                    │ │ │
+│ │ │ - Low-RAM machines: Swap thrashing                      │ │ │
+│ │ └─────────────────────────────────────────────────────────┘ │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ Day 16 (Pragmatic sizing):                                      │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ Permanent Storage: 64 MB (unchanged)                        │ │
+│ │ ┌─────────────────────────────────────────────────────────┐ │ │
+│ │ │ GameState                                               │ │ │
+│ │ └─────────────────────────────────────────────────────────┘ │ │
+│ │                                                             │ │
+│ │ Transient Storage: 1024 MB (1 GB) ← 75% REDUCTION!          │ │
+│ │ ┌─────────────────────────────────────────────────────────┐ │ │
+│ │ │ Level assets                                            │ │ │
+│ │ │ Particle systems                                        │ │ │
+│ │ │ Temporary data                                          │ │ │
+│ │ │                                                         │ │ │
+│ │ │ BENEFIT: 1GB still HUGE for transient data!             │ │ │
+│ │ │ - Faster allocation (smaller page tables)               │ │ │
+│ │ │ - Works on low-RAM systems                              │ │ │
+│ │ └─────────────────────────────────────────────────────────┘ │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+##### **Code Organization Flow (Before/After Refactor)**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ BEFORE (Day 15 - Mixed Responsibilities)                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│ game.c (WRONG! Contains platform code)                          │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ init_backbuffer()          ← Platform memory allocation     │ │
+│ │   platform_allocate_memory() ← OS-specific call!            │ │
+│ │                                                             │ │
+│ │ process_game_button_state() ← Input processing             │ │
+│ │   (handles OS button events)                                │ │
+│ │                                                             │ │
+│ │ render_weird_gradient()    ← Game logic (correct layer!)    │ │
+│ │ game_update_and_render()   ← Game logic (correct layer!)    │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ platform/x11/backend.c (Duplicate code!)                        │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ prepare_input_frame()      ← X11-specific version           │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ platform/raylib/backend.c (More duplicate code!)                │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ prepare_input_frame()      ← Raylib-specific version        │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ PROBLEMS:                                                       │
+│ ✗ Game code calls platform_allocate_memory() (wrong layer!)    │
+│ ✗ prepare_input_frame() duplicated 2x (100+ lines!)            │
+│ ✗ Bug fix requires updating 3 files                            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ AFTER (Day 16 - Clean Separation of Concerns)                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│ game.c (ONLY game logic now!)                                   │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ render_weird_gradient()    ← Pure game code                 │ │
+│ │ game_update_and_render()   ← Pure game code                 │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ platform/_common/backbuffer.c (Shared platform code!)           │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ init_backbuffer()          ← Calls platform_allocate_memory │ │
+│ │   (used by BOTH X11 and Raylib!)                            │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ platform/_common/input.c (Shared platform code!)                │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ prepare_input_frame()      ← Single implementation!         │ │
+│ │ process_game_button_state() ← Single implementation!        │ │
+│ │   (used by BOTH X11 and Raylib!)                            │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ platform/x11/backend.c (Backend-specific only!)                 │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ #include "_common/input.h"   ← Uses shared code             │ │
+│ │ #include "_common/backbuffer.h"                             │ │
+│ │                                                             │ │
+│ │ handle_event()             ← X11-specific event handling    │ │
+│ │   calls prepare_input_frame()                               │ │
+│ │   calls process_game_button_state()                         │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ platform/raylib/backend.c (Backend-specific only!)              │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ #include "_common/input.h"   ← Uses shared code             │ │
+│ │ #include "_common/backbuffer.h"                             │ │
+│ │                                                             │ │
+│ │ handle_keyboard_inputs()   ← Raylib-specific input          │ │
+│ │   calls prepare_input_frame()                               │ │
+│ │   calls process_game_button_state()                         │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ BENEFITS:                                                       │
+│ ✅ Game code never touches platform memory allocation          │
+│ ✅ prepare_input_frame() in ONE place (single source of truth)  │
+│ ✅ Bug fix updates 1 file, fixes BOTH backends automatically    │
+│ ✅ Easy to add new backend (just include _common/*.h)           │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### ✅ Skills Acquired
+
+- ✅ **Input Architecture Design** - Learned difference between polling (Windows repeat events) vs event-driven (X11 press/release only). Adapted Casey's pattern to X11's event model.
+- ✅ **Transition Tracking** - Understood `half_transition_count` is a COUNTER, not a boolean. Fixed Day 15 bug where held buttons looked released.
+- ✅ **State Preservation** - Learned when to preserve vs clear input state. X11/Linux require preserving `ended_down` AND analog values (no repeat events).
+- ✅ **Dead Code Elimination** - Discovered GCC's `--gc-sections` requires `-ffunction-sections -fdata-sections` at compile time. Linker can't GC without per-function sections!
+- ✅ **Platform-Specific Debugging** - Improved on Casey's assert with `__debugbreak__()` (MSVC) and `__builtin_trap()` (GCC/Clang). Breaks into debugger instead of segfault.
+- ✅ **Code Organization** - Extracted 100+ lines of duplicate code to `platform/_common/`. Learned proper dependency flow: Game → Platform → OS.
+- ✅ **Memory Pragmatism** - Reduced transient storage 4GB→1GB. Learned "big numbers feel safe" isn't always practical. 1GB still HUGE for temp data!
+- ✅ **Build System Equivalence** - Mapped ALL Casey's MSVC flags to GCC/Clang equivalents. Learned `-opt:ref` needs `-ffunction-sections` on GCC!
+- ✅ **Circular Dependency Recognition** - Hit circular include (`backbuffer.h` → `game.h` → platform headers → `backbuffer.h`). Documented as acceptable coupling for Day 16.
+- ✅ **Premature Optimization Recognition** - Attempted generic input abstraction (PhysicalKey → GameAction binding). Realized it's premature. Documented decision with TODO for future self.
+- ✅ **Professional Code Cleanup** - Removed unused `old_state` parameter from `process_game_button_state()`. Updated 50+ call sites. Deleted commented dead code (trust git history!).
+- ✅ **Documentation Best Practices** - Wrote comprehensive TODO comment explaining: current status, limitations, why NOT fixing, when to revisit, future references. Production-quality self-documentation!
+- ✅ **Pragmatic Engineering Decision-Making** - Learned to recognize when simple is better than perfect. "Solve problems you HAVE, not problems you MIGHT have." (Casey's philosophy internalized!)
+
+---
+
+#### 🎓 Day 16 Retrospective: What I Learned About Engineering
+
+This day taught me **MORE than just input systems**. I learned:
+
+1. **When to Stop Engineering** - Attempted generic input abstraction, hit complexity wall, recognized it was premature. Documented decision instead of over-engineering.
+
+2. **The Value of "Future You"** - Wrote detailed TODO explaining: current approach, known limitations, trigger conditions for refactor. This is how professionals work!
+
+3. **Simple vs Perfect** - Casey's code is intentionally simple at Day 16. He'll refactor when NEEDS arise (Episode 150+). I learned to trust this process.
+
+4. **Code Organization Pays Off** - Extracting `_common/input.c` and `_common/backbuffer.c` eliminated 100+ lines of duplication. Single source of truth for both X11 and Raylib!
+
+5. **Platform Differences Matter** - X11 doesn't repeat KeyPress events like Windows WM_KEYDOWN. My implementation MUST preserve button state, not zero like Casey. This is CORRECT adaptation, not wrong!
+
+6. **Build Systems Are Important** - Matching Casey's MSVC flags taught me about dead code elimination, map files, and linker optimizations. These matter for production code!
+
+7. **Debugging Is Part of Design** - Platform-specific `__debugbreak__()` and `__builtin_trap()` improve debugging workflow. This is BETTER than Casey's `*(int*)0` crash!
+
+**Ready for Day 17!** 🚀 My foundation is solid, code is clean, and I deeply understand WHY every line exists.
+
 ## Misc
 
 ---
