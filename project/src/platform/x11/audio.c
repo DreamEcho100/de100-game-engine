@@ -139,7 +139,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/mman.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -443,11 +442,10 @@ void linux_init_sound(GameSoundOutput *sound_output, int32_t samples_per_second,
   int sample_buffer_bytes =
       g_linux_sound_output.sample_buffer_size * sound_output->bytes_per_sample;
 
-  g_linux_sound_output.sample_buffer =
-      (int16_t *)mmap(NULL, sample_buffer_bytes, PROT_READ | PROT_WRITE,
-                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  g_linux_sound_output.sample_buffer = platform_allocate_memory(
+      NULL, sample_buffer_bytes, PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE);
 
-  if (g_linux_sound_output.sample_buffer == MAP_FAILED) {
+  if (!g_linux_sound_output.sample_buffer.base) {
     fprintf(stderr, "❌ Sound: Cannot allocate sample backbuffer\n");
     SndPcmClose(g_linux_sound_output.handle);
     sound_output->is_initialized = false;
@@ -643,7 +641,7 @@ void linux_fill_sound_buffer(GameSoundOutput *sound_output) {
   // STEP 4: Generate samples (SAME for both modes)
   // ───────────────────────────────────────────────────────────
 
-  int16_t *sample_out = g_linux_sound_output.sample_buffer;
+  int16_t *sample_out = g_linux_sound_output.sample_buffer.base;
 
   for (long i = 0; i < frames_to_write; ++i) {
     // Sine wave generation
@@ -673,7 +671,7 @@ void linux_fill_sound_buffer(GameSoundOutput *sound_output) {
 
   long frames_written =
       SndPcmWritei(g_linux_sound_output.handle,
-                   g_linux_sound_output.sample_buffer, frames_to_write);
+                   g_linux_sound_output.sample_buffer.base, frames_to_write);
 
   if (frames_written < 0) {
     frames_written =
@@ -783,4 +781,25 @@ void linux_debug_audio_latency(GameSoundOutput *sound_output) {
          sound_output->pan_position, 100 - sound_output->pan_position,
          100 + sound_output->pan_position);
   printf("└─────────────────────────────────────────────────────────┘\n");
+}
+
+void linux_unload_alsa(GameSoundOutput *sound_output) {
+  printf("Unloading ALSA audio...\n");
+
+  // Free sample backbuffer
+  platform_free_memory(&g_linux_sound_output.sample_buffer);
+
+  // Close PCM device
+  if (g_linux_sound_output.handle) {
+    SndPcmClose(g_linux_sound_output.handle);
+    g_linux_sound_output.handle = NULL;
+  }
+
+  // Unload ALSA library
+  if (g_linux_sound_output.alsa_library) {
+    dlclose(g_linux_sound_output.alsa_library);
+    g_linux_sound_output.alsa_library = NULL;
+  }
+
+  printf("✅ ALSA audio unloaded.\n");
 }

@@ -6,6 +6,8 @@
 #include "../_common/backbuffer.h"
 #include "../_common/input.h"
 #include "audio.h"
+#include "inputs/joystick.h"
+#include "inputs/keyboard.h"
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -19,497 +21,8 @@
 #include <unistd.h>    // For sleep()
 #include <x86intrin.h> // for __rdtsc() (CPU cycle counter)
 
-typedef struct {
-  int fd;                // File descriptor for /dev/input/jsX
-  char device_name[128]; // For debugging
-} LinuxJoystickState;
-
-file_scoped_global_var LinuxJoystickState g_joysticks[MAX_JOYSTICK_COUNT] = {0};
-
-// ═══════════════════════════════════════════════════════════════
-// 🎮 JOYSTICK DYNAMIC LOADING (Casey's Pattern for Linux)
-// ═══════════════════════════════════════════════════════════════
-// Define function signature macro
-#define LINUX_JOYSTICK_READ(name) ssize_t name(int fd, struct js_event *event)
-
-// Create typedef
-typedef LINUX_JOYSTICK_READ(linux_joystick_read);
-
-// Stub implementation (no joystick available)
-LINUX_JOYSTICK_READ(LinuxJoystickReadStub) {
-  // Return -1 = error/no device (like ERROR_DEVICE_NOT_CONNECTED)
-  return -1;
-}
-
-// Global function pointer (initially stub)
-file_scoped_global_var linux_joystick_read *LinuxJoystickRead_ =
-    LinuxJoystickReadStub;
-
-// Redefine API name
-#define LinuxJoystickRead LinuxJoystickRead_
-
 // file_scoped_global_var GameOffscreenBuffer game_buffer;
 file_scoped_global_var XImage *g_buffer_info = NULL;
-
-// Real implementation (only used if joystick found)
-file_scoped_fn LINUX_JOYSTICK_READ(linux_joystick_read_impl) {
-  // This is what actually reads from /dev/input/js*
-  return read(fd, event, sizeof(*event));
-}
-
-// ═══════════════════════════════════════════════════════════════
-// 🎮 Initialize joystick (Casey's Win32LoadXInput equivalent)
-// ═══════════════════════════════════════════════════════════════
-// Dynamic loader
-file_scoped_fn void
-linux_init_joystick(GameControllerInput *controller_old_input,
-                    GameControllerInput *controller_new_input) {
-  printf("Searching for gamepad...\n");
-
-  const char *device_paths[] = {"/dev/input/js0", "/dev/input/js1",
-                                "/dev/input/js2", "/dev/input/js3"};
-
-  // Initialize ALL controllers FIRST
-  for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
-    if (i == KEYBOARD_CONTROLLER_INDEX)
-      continue;
-
-    controller_old_input[i].controller_index = i;
-    controller_old_input[i].is_connected = false;
-
-    controller_new_input[i].controller_index = i;
-    controller_new_input[i].is_connected = false;
-
-    int g_joysticks_index = i - 1; // Adjust for keyboard at index 0
-    if (g_joysticks_index >= 0 && g_joysticks_index < MAX_JOYSTICK_COUNT) {
-      g_joysticks[g_joysticks_index].fd = -1;
-      memset(g_joysticks[g_joysticks_index].device_name, 0,
-             sizeof(g_joysticks[g_joysticks_index].device_name));
-    }
-  }
-
-  // Mark keyboard (slot 0) as connected AFTER the loop
-  controller_old_input[KEYBOARD_CONTROLLER_INDEX].is_connected = true;
-  controller_old_input[KEYBOARD_CONTROLLER_INDEX].is_analog = false;
-
-  controller_new_input[KEYBOARD_CONTROLLER_INDEX].is_connected = true;
-  controller_new_input[KEYBOARD_CONTROLLER_INDEX].is_analog = false;
-
-  for (int i = MAX_KEYBOARD_COUNT; i < MAX_JOYSTICK_COUNT; i++) {
-    int fd = open(device_paths[i - MAX_KEYBOARD_COUNT], O_RDONLY | O_NONBLOCK);
-
-    if (fd >= 0) {
-      char name[128] = {0};
-      if (ioctl(fd, JSIOCGNAME(sizeof(name)), name) >= 0) {
-
-        printf("i: %d\n", i);
-        // Skip virtual devices
-        if (strstr(name, "virtual") || strstr(name, "keyd")) {
-          close(fd);
-          continue;
-        }
-
-        // Store controller index AND file descriptor separately
-        controller_old_input[i].controller_index = i;
-        controller_old_input[i].is_connected = true;
-        controller_old_input[i].is_analog = true; // Joysticks are analog
-
-        controller_new_input[i].controller_index = i;
-        controller_new_input[i].is_connected = true;
-        controller_new_input[i].is_analog = true; // Joysticks are analog
-
-        int g_joysticks_index =
-            i - MAX_KEYBOARD_COUNT; // Adjust for keyboard at index 0
-        if (g_joysticks_index >= 0 && g_joysticks_index < MAX_JOYSTICK_COUNT) {
-          g_joysticks[g_joysticks_index].fd = fd;
-          strncpy(g_joysticks[g_joysticks_index].device_name, name,
-                  sizeof(g_joysticks[g_joysticks_index].device_name) - 1);
-        }
-
-        // Create wrapper function that uses our fd
-        // (Linux doesn't have DLLs, but we can still use the pattern!)
-        LinuxJoystickRead_ = linux_joystick_read_impl; // Real implementation
-
-        printf("✅ Joystick connected: %s\n", name);
-        // return true;
-        continue; //
-      } else {
-        close(fd);
-      }
-    }
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// 🎮 Poll joystick state (Casey's XInputGetState equivalent)
-// ═══════════════════════════════════════════════════════════════
-
-file_scoped_fn void linux_poll_joystick(GameInput *old_input,
-                                        GameInput *new_input) {
-
-  for (int controller_index = 0; controller_index < MAX_CONTROLLER_COUNT;
-       controller_index++) {
-
-    // Get controller state
-    GameControllerInput *old_controller =
-        &old_input->controllers[controller_index];
-    GameControllerInput *new_controller =
-        &new_input->controllers[controller_index];
-
-    int g_joysticks_index = controller_index - 1;
-    if (g_joysticks_index < 0 || g_joysticks_index >= MAX_JOYSTICK_COUNT) {
-      // Skip keyboard (index 0)
-      continue;
-    }
-    LinuxJoystickState *joystick_state = &g_joysticks[g_joysticks_index];
-
-    // printf("controller_index: %d, new_controller->is_connected: %d\n",
-    //        controller_index, new_controller->is_connected);
-    // Use continue instead of return
-    if (!new_controller->is_connected || joystick_state->fd < 0) {
-      continue; // Skip this controller, check the next one
-    }
-
-    struct js_event event;
-
-    while (LinuxJoystickRead(joystick_state->fd, &event) == sizeof(event)) {
-
-      if (event.type & JS_EVENT_INIT) {
-        continue;
-      }
-
-      // NOTE: Ignore the joystick for now since I don't have them
-
-      // printf("JS_EVENT_BUTTON: %d, JS_EVENT_AXIS: %d\n", JS_EVENT_BUTTON,
-      //  JS_EVENT_AXIS);
-      // printf("event.type: %d, JS_EVENT_AXIS: %d\n", event.type,
-      // JS_EVENT_AXIS);
-      // ═══════════════════════════════════════════════════════════
-      // 🎮 BUTTON EVENTS
-      // ═══════════════════════════════════════════════════════════
-      if (event.type == JS_EVENT_BUTTON) {
-        bool is_pressed = (event.value != 0);
-
-        printf("event.number: %d\n", event.number);
-        printf("is_pressed: %d\n", is_pressed);
-
-        // ───────────────────────────────────────────────────────
-        // PS4/PS5 "Wireless Controller" Button Mapping
-        // ───────────────────────────────────────────────────────
-        // Button layout (PlayStation naming):
-        //   0 = X (cross)     - South button
-        //   1 = O (circle)    - East button
-        //   3 = □ (square)    - West button
-        //   2 = △ (triangle)  - North button
-        //   4 = L1 (left bumper)
-        //   5 = R1 (right bumper)
-        //   6 = L2 (left trigger button, not analog value!)
-        //   7 = R2 (right trigger button, not analog value!)
-        //   8 = Share (PS4) / Create (PS5)
-        //   9 = Options (PS4/PS5)
-        //  10 = L3 (left stick button)
-        //  11 = R3 (right stick button)
-        //  12 = PS button (PlayStation logo)
-        //  13 = Touchpad button (PS4/PS5)
-        // ───────────────────────────────────────────────────────
-
-        switch (event.number) {
-          // // Face buttons (cross, circle, square, triangle)
-          // case 0: // X (cross) - Map to A button
-          //   new_controller1->a_button = is_pressed;
-          //   if (is_pressed)
-          //     printf("Button X (cross) pressed\n");
-          //   break;
-
-          // case 1: // O (circle) - Map to B button
-          //   new_controller1->b_button = is_pressed;
-          //   if (is_pressed)
-          //     printf("Button O (circle) pressed\n");
-          //   break;
-
-          // case 3: // □ (square) - Map to X button
-          //   new_controller1->x_button = is_pressed;
-          //   if (is_pressed)
-          //     printf("Button □ (square) pressed\n");
-          //   break;
-
-          // case 2: // △ (triangle) - Map to Y button
-          //   new_controller1->y_button = is_pressed;
-          //   if (is_pressed)
-          //     printf("Button △ (triangle) pressed\n");
-          //   break;
-
-          // Shoulder buttons
-        case 4: // L1
-                // new_controller1->left_shoulder = is_pressed;
-                // if (is_pressed)
-                //   printf("Button L1 pressed\n");
-          process_game_button_state(is_pressed, &new_controller->left_shoulder);
-          break;
-
-        case 5: // R1
-          // new_controller1->right_shoulder = is_pressed;
-          // if (is_pressed)
-          //   printf("Button R1 pressed\n");
-          process_game_button_state(is_pressed,
-                                    &new_controller->right_shoulder);
-          break;
-
-          // // Trigger buttons (L2/R2 as digital buttons)
-          // // Note: Analog values are on axes 3 and 4
-          // case 6: // L2 button
-          //   if (is_pressed)
-          //     printf("Button L2 pressed\n");
-          //   break;
-
-          // case 7: // R2 button
-          //   if (is_pressed)
-          //     printf("Button R2 pressed\n");
-          //   break;
-
-          // // Menu buttons
-          // case 8: // Share/Create - Map to Back
-          //   new_controller1->back = is_pressed;
-          //   if (is_pressed)
-          //     printf("Button Share/Create pressed\n");
-          //   break;
-
-          // case 9: // Options - Map to Start
-          //   new_controller1->start = is_pressed;
-          //   if (is_pressed)
-          //     printf("Button Options pressed\n");
-          //   break;
-
-          // // Stick buttons
-          // case 11: // L3 (left stick click)
-          //   if (is_pressed)
-          //     printf("Button L3 (left stick) pressed\n");
-          //   break;
-
-          // case 12: // R3 (right stick click)
-          //   if (is_pressed)
-          //     printf("Button R3 (right stick) pressed\n");
-          //   break;
-
-          // // Special buttons
-          // case 10: // PS button
-          //   if (is_pressed)
-          //     printf("Button PS (logo) pressed\n");
-          //   break;
-
-          // case 13: // Touchpad button
-          //   if (is_pressed)
-          //     printf("Button Touchpad pressed\n");
-          //   break;
-
-          // default:
-          //   // Unknown button
-          //   if (is_pressed) {
-          //     printf("Unknown button %d pressed\n", event.number);
-          //   }
-          //   break;
-        }
-      }
-
-      // ═══════════════════════════════════════════════════════════
-      // 🎮 AXIS EVENTS (Analog Sticks + Triggers + D-Pad)
-      // ═══════════════════════════════════════════════════════════
-      else if (event.type == JS_EVENT_AXIS) {
-        new_controller->is_analog = true;
-        // printf("new_controller->is_analog: %d\n", new_controller->is_analog);
-
-        new_controller->start_x = old_controller->end_x;
-        new_controller->start_y = old_controller->end_y;
-
-        // ───────────────────────────────────────────────────────
-        // PS4/PS5 "Wireless Controller" Axis Mapping
-        // ───────────────────────────────────────────────────────
-        // Axes:
-        //   0 = Left stick X    (-32767 left, +32767 right)
-        //   1 = Left stick Y    (-32767 up,   +32767 down)
-        //   2 = Right stick X   (-32767 left, +32767 right)
-        //   3 = L2 trigger      (0 released, +32767 pressed)
-        //   4 = R2 trigger      (0 released, +32767 pressed)
-        //   5 = Right stick Y   (-32767 up,   +32767 down)
-        //   6 = D-pad X         (-32767 left, +32767 right)
-        //   7 = D-pad Y         (-32767 up,   +32767 down)
-        // ───────────────────────────────────────────────────────
-
-        switch (event.number) {
-        // ───────────────────────────────────────────────────────
-        // Left Stick (axes 0-1)
-        // ───────────────────────────────────────────────────────
-        case 0: {
-          // ═══════════════════════════════════════════════════
-          // 🔥 CRITICAL: Linux joystick normalization
-          // ═══════════════════════════════════════════════════
-          // Linux /dev/input/jsX range: -32767 to +32767
-          // This is SYMMETRIC (unlike XInput's asymmetric range)!
-          //
-          // SO WE USE SINGLE DIVISOR:
-          //   X = (real32)event.value / 32767.0f;
-          //
-          // Casey's XInput needs TWO divisors:
-          //   if(Pad->sThumbLX < 0) X = value / 32768.0f;
-          //   else X = value / 32767.0f;
-          //
-          // Because XInput has -32768 to +32767 (asymmetric)
-          // ═══════════════════════════════════════════════════
-
-          // new_controller1->left_stick_x = event.value;
-          real32 x = (real32)event.value / 32767.0f;
-
-          new_controller->end_x = x;
-          // new_controller1->min_x = fminf(new_controller1->min_x, x);
-          new_controller->min_x = x; // Day 13: just set to end_x
-          new_controller->max_x = x; // Day 14+: track actual min/max
-
-          break;
-        }
-        // ─────────────────────────────────────────────────────
-        // LEFT STICK Y (Axis 1)
-        // ─────────────────────────────────────────────────────
-        case 1: {
-          real32 y = (real32)event.value / 32767.0f;
-
-          // NOTE: Joystick Y is often inverted!
-          // Up = negative, Down = positive
-          // Game might want to flip this:
-          // y = -y;  // Uncomment if your game wants up = positive
-
-          new_controller->end_y = y;
-          new_controller->min_y = y;
-          new_controller->max_y = y;
-
-          break;
-        }
-
-          // // ───────────────────────────────────────────────────────
-          // // Right Stick (axes 2, 5) ← NOTE: Y is axis 5, not 3!
-          // // ───────────────────────────────────────────────────────
-          // // TODO(Day 14+): Add right stick support if needed
-          // case 3: // L2 trigger X
-          //   printf("Right Stick X\n");
-          //   // Optional: Store trigger pressure if you need it
-          //   new_controller1->right_stick_x = event.value;
-          //   break;
-          // case 4: // R2 trigger Y
-          //   printf("Right Stick Y\n");
-          //   new_controller1->right_stick_y = event.value;
-          //   break;
-
-          // // ───────────────────────────────────────────────────────
-          // // Triggers (analog, 0 to +32767)
-          // // ───────────────────────────────────────────────────────
-          // case 2:
-          //   new_controller1->left_trigger = event.value;
-          //   printf("L2 trigger\n");
-          //   break;
-          // case 5: // ← Right stick Y is axis 5!
-          //   new_controller1->right_trigger = event.value;
-          //   printf("R2 trigger\n");
-          //   break;
-
-          // ─────────────────────────────────────────────────────
-          // RIGHT STICK (Axes 2-5 depending on controller)
-          // ─────────────────────────────────────────────────────
-          // TODO(Day 14+): Add right stick support if needed
-
-          // ═══════════════════════════════════════════════════════════
-          // 🎮 D-PAD (Axes 6-7 on PlayStation controllers)
-          // ═══════════════════════════════════════════════════════════
-          // D-pad is DIGITAL (4 directions) but reported as ANALOG axis!
-          // We must set BOTH button states AND analog values.
-          //
-          // Range: -32767 (left/up) to +32767 (right/down)
-          // Threshold: Use ±16384 (half of max) for digital detection
-          // ═══════════════════════════════════════════════════════════
-
-        case 6: { // D-pad X (left/right)
-
-          // ✅ FIX: Set analog values for game layer!
-          new_controller->start_x = old_controller->end_x;
-          new_controller->start_y = old_controller->end_y;
-
-          if (event.value < -16384) {
-            // D-pad LEFT pressed
-            process_game_button_state(true, &new_controller->left);
-            process_game_button_state(false, &new_controller->right);
-
-            // ✅ Set analog value for left (-1.0)
-            new_controller->end_x = -1.0f;
-
-          } else if (event.value > 16384) {
-            // D-pad RIGHT pressed
-            process_game_button_state(true, &new_controller->right);
-            process_game_button_state(false, &new_controller->left);
-
-            // ✅ Set analog value for right (+1.0)
-            new_controller->end_x = +1.0f;
-
-          } else {
-            // D-pad X RELEASED (centered)
-            process_game_button_state(false, &new_controller->left);
-            process_game_button_state(false, &new_controller->right);
-
-            // ✅ Set analog value to zero
-            new_controller->end_x = 0.0f;
-          }
-
-          // Update min/max for Day 13 (just mirror end value)
-          new_controller->min_x = new_controller->max_x = new_controller->end_x;
-
-          break;
-        }
-
-        case 7: { // D-pad Y (up/down)
-
-          // ✅ FIX: Set analog values for game layer!
-          new_controller->start_x = old_controller->end_x;
-          new_controller->start_y = old_controller->end_y;
-
-          if (event.value < -16384) {
-            // D-pad UP pressed
-            process_game_button_state(true, &new_controller->up);
-            process_game_button_state(false, &new_controller->down);
-
-            // ✅ Set analog value for up (+1.0)
-            // NOTE: You might need to invert this depending on your coordinate
-            // system
-            new_controller->end_y = -1.0f;
-
-          } else if (event.value > 16384) {
-            // D-pad DOWN pressed
-            process_game_button_state(true, &new_controller->down);
-            process_game_button_state(false, &new_controller->up);
-
-            // ✅ Set analog value for down (-1.0)
-            new_controller->end_y = 1.0f;
-
-          } else {
-            // D-pad Y RELEASED (centered)
-            process_game_button_state(false, &new_controller->up);
-            process_game_button_state(false, &new_controller->down);
-
-            // ✅ Set analog value to zero
-            new_controller->end_y = 0.0f;
-          }
-
-          // Update min/max for Day 13 (just mirror end value)
-          new_controller->min_y = new_controller->max_y = new_controller->end_y;
-
-          break;
-        }
-
-        default:
-          //   // printf("D-pad number: %d, value: %d\n", event.number,
-          //   event.value);
-          break;
-        }
-      }
-    }
-  }
-}
 
 /**
  * RESIZE BACK BUFFER
@@ -846,74 +359,7 @@ handle_event(GameOffscreenBuffer *backbuffer, XImage **backbuffer_info,
    * Casey's WM_KEYDOWN equivalent
    */
   case KeyPress: {
-    KeySym key = XLookupKeysym(&event->xkey, 0);
-    // printf("pressed\n");
-
-    GameControllerInput *new_controller1 =
-        &new_game_input->controllers[KEYBOARD_CONTROLLER_INDEX];
-
-    switch (key) {
-    case XK_F1: {
-      printf("F1 pressed - showing audio debug\n");
-      linux_debug_audio_latency(sound_output);
-      break;
-    }
-    case (XK_w):
-    case (XK_W):
-    case (XK_Up): {
-      // W/Up = Move up = positive Y
-      new_controller1->end_y = +1.0f;
-      new_controller1->min_y = new_controller1->max_y = new_controller1->end_y;
-      new_controller1->is_analog = false;
-
-      // Also set button state for backward compatibility
-      process_game_button_state(true, &new_controller1->up);
-      break;
-    }
-    case (XK_a):
-    case (XK_A):
-    case (XK_Left): {
-      // A/Left = Move left = negative X
-      new_controller1->end_x = -1.0f;
-      new_controller1->min_x = new_controller1->max_x = new_controller1->end_x;
-      new_controller1->is_analog = false;
-
-      process_game_button_state(true, &new_controller1->left);
-      break;
-    }
-    case (XK_s):
-    case (XK_S):
-    case (XK_Down): {
-      // S/Down = Move down = negative Y
-      new_controller1->end_y = -1.0f;
-      new_controller1->min_y = new_controller1->max_y = new_controller1->end_y;
-      new_controller1->is_analog = false;
-
-      process_game_button_state(true, &new_controller1->down);
-      break;
-    }
-    case (XK_d):
-    case (XK_D):
-    case (XK_Right): {
-      // D/Right = Move right = positive X
-      new_controller1->end_x = +1.0f;
-      new_controller1->min_x = new_controller1->max_x = new_controller1->end_x;
-      new_controller1->is_analog = false;
-
-      process_game_button_state(true, &new_controller1->right);
-      break;
-    }
-    case (XK_space): {
-      printf("SPACE pressed\n");
-      break;
-    }
-    case (XK_Escape): {
-      printf("ESCAPE pressed - exiting\n");
-      is_game_running = false;
-      break;
-    }
-    }
-
+    handleEventKeyPress(event, new_game_input, sound_output);
     break;
   }
 
@@ -923,59 +369,7 @@ handle_event(GameOffscreenBuffer *backbuffer, XImage **backbuffer_info,
    * Casey's WM_KEYUP equivalent
    */
   case KeyRelease: {
-    KeySym key = XLookupKeysym(&event->xkey, 0);
-
-    GameControllerInput *new_controller1 =
-        &new_game_input->controllers[KEYBOARD_CONTROLLER_INDEX];
-
-    switch (key) {
-    case (XK_w):
-    case (XK_W):
-    case (XK_Up): {
-      new_controller1->end_y = 0.0f;
-      new_controller1->min_y = new_controller1->max_y = 0.0f;
-      new_controller1->is_analog = false;
-      process_game_button_state(false, &new_controller1->up);
-      break;
-    }
-    case (XK_a):
-    case (XK_A):
-    case (XK_Left): {
-      new_controller1->end_x = 0.0f;
-      new_controller1->min_x = new_controller1->max_x = 0.0f;
-      new_controller1->is_analog = false;
-      process_game_button_state(false, &new_controller1->left);
-      break;
-    }
-    case (XK_s):
-    case (XK_S):
-    case (XK_Down): {
-      new_controller1->end_y = 0.0f;
-      new_controller1->min_y = new_controller1->max_y = 0.0f;
-      new_controller1->is_analog = false;
-      process_game_button_state(false, &new_controller1->down);
-      break;
-    }
-    case (XK_d):
-    case (XK_D):
-    case (XK_Right): {
-      new_controller1->end_x = 0.0f;
-      new_controller1->min_x = new_controller1->max_x = 0.0f;
-      new_controller1->is_analog = false;
-      process_game_button_state(false, &new_controller1->right);
-      break;
-    }
-    case (XK_space): {
-      printf("SPACE released\n");
-      break;
-    }
-    case (XK_Escape): {
-      printf("ESCAPE released - exiting\n");
-      is_game_running = false;
-      break;
-    }
-    }
-
+    handleEventKeyRelease(event, new_game_input);
     break;
   }
 
@@ -1368,17 +762,7 @@ int platform_main() {
       // ═══════════════════════════════════════════════════════════
       static int frame_count = 0;
       if (frame_count++ % 60 == 0) { // Print once per second (60 FPS)
-        printf("\n🎮 Controller States:\n");
-        for (int i = 0; i < MAX_CONTROLLER_COUNT; i++) {
-          GameControllerInput *c = &old_game_input->controllers[i];
-          LinuxJoystickState *joystick_state = NULL;
-          if (i > 0 && i - 1 < MAX_JOYSTICK_COUNT) {
-            joystick_state = &g_joysticks[i - 1];
-          }
-          printf("  [%d] connected=%d analog=%d fd=%d end_x=%.2f end_y=%.2f\n",
-                 i, c->is_connected, c->is_analog,
-                 joystick_state ? joystick_state->fd : -1, c->end_x, c->end_y);
-        }
+        debug_joystick_state(old_game_input);
       }
 
       // ═══════════════════════════════════════════════════════════
@@ -1425,6 +809,16 @@ int platform_main() {
       linux_fill_sound_buffer(&game_sound_output);
 
       // ═══════════════════════════════════════════════════════════
+      // SWAP INPUT BUFFERS (THE CRITICAL STEP!)
+      // ═══════════════════════════════════════════════════════════
+      // This is what makes double buffering work!
+      // ═══════════════════════════════════════════════════════════
+      // Swap pointers (preserves previous frame!)
+      GameInput *temp_game_input = new_game_input;
+      new_game_input = old_game_input;
+      old_game_input = temp_game_input;
+
+      // ═══════════════════════════════════════════════════════════
       // Timing
       // ═══════════════════════════════════════════════════════════
       clock_gettime(CLOCK_MONOTONIC, &end);
@@ -1444,134 +838,186 @@ int platform_main() {
 
       start = end;
       start_cycles = end_cycles;
-
-      // ═══════════════════════════════════════════════════════════
-      // SWAP INPUT BUFFERS (THE CRITICAL STEP!)
-      // ═══════════════════════════════════════════════════════════
-      // This is what makes double buffering work!
-      // ═══════════════════════════════════════════════════════════
-      // Swap pointers (preserves previous frame!)
-      GameInput *temp_game_input = new_game_input;
-      new_game_input = old_game_input;
-      old_game_input = temp_game_input;
     }
-  }
-  /**
-   * CLEANUP - CASEY'S "RESOURCE LIFETIMES IN WAVES" PHILOSOPHY
-   *
-   * ═══════════════════════════════════════════════════════════════════════
-   * IMPORTANT: Read Casey's Day 3 explanation about resource management!
-   * ═══════════════════════════════════════════════════════════════════════
-   *
-   * Casey's Rule: "Don't be myopic about individual resource cleanup.
-   *                Think in WAVES based on resource LIFETIME!"
-   *
-   * WAVE CLASSIFICATION FOR OUR RESOURCES:
-   *
-   * ┌────────────────────────────────────────────────────────────────┐
-   * │ WAVE 1: Process Lifetime (Lives entire program)               │
-   * │ ────────────────────────────────────────────                  │
-   * │ - Display (X11 connection)                                     │
-   * │ - Window                                                       │
-   * │                                                                │
-   * │ ✅ Casey says: DON'T manually clean these up!                  │
-   * │    The OS does it INSTANTLY when process exits (<1ms)          │
-   * │                                                                │
-   * │ ❌ Bad (OOP way): Manually clean each resource (17ms wasted)   │
-   * │    XDestroyImage(backBuffer);   // 2ms                         │
-   * │    XDestroyWindow(window);      // 5ms                         │
-   * │    XCloseDisplay(display);      // 10ms                        │
-   * │                                                                │
-   * │ ✅ Good (Casey's way): Just exit! (<1ms)                       │
-   * │    return 0;  // OS bulk-cleans ALL resources instantly!       │
-   * └────────────────────────────────────────────────────────────────┘
-   *
-   * ┌────────────────────────────────────────────────────────────────┐
-   * │ WAVE 2: State Lifetime (Changes during program)               │
-   * │ ────────────────────────────────────────────                  │
-   * │ - g_Buffer (per window size)                              │
-   * │                                                                │
-   * │ ✅ Casey says: Clean up WHEN STATE CHANGES (in batches)        │
-   * │    We DO clean this in resize_back_buffer() because:          │
-   * │    1. We're REPLACING it with a new backbuffer                     │
-   * │    2. This happens DURING program execution                    │
-   * │    3. If we don't free, we leak memory on every resize!        │
-   * │                                                                │
-   * │ This is CORRECT Wave 2 management! ✅                          │
-   * └────────────────────────────────────────────────────────────────┘
-   *
-   * REAL-WORLD IMPACT:
-   *
-   * Without manual cleanup (Casey's way):
-   * ┌─────────────────────────────────────────┐
-   * │ User clicks close button                │
-   * │ ↓                                       │
-   * │ return 0;  // Program exits             │
-   * │ ↓                                       │
-   * │ OS: "Process died, bulk cleanup!"       │
-   * │   - Frees ALL memory in one operation   │
-   * │   - Closes ALL X11 resources at once    │
-   * │   - Destroys ALL windows instantly      │
-   * │ ↓                                       │
-   * │ Window closes in <1ms ⚡                 │
-   * │ User: "Wow, instant close!" 😊          │
-   * └─────────────────────────────────────────┘
-   *
-   * With manual cleanup (OOP way):
-   * ┌─────────────────────────────────────────┐
-   * │ User clicks close button                │
-   * │ ↓                                       │
-   * │ XDestroyImage()... wait 2ms             │
-   * │ XDestroyWindow()... wait 5ms            │
-   * │ XCloseDisplay()... wait 10ms            │
-   * │ ↓                                       │
-   * │ Window closes in 17ms 🐌                │
-   * │ User: "Why is it laggy?" 😤             │
-   * └─────────────────────────────────────────┘
-   *
-   * CASEY'S QUOTE (Day 3, ~9:20):
-   * "If we actually put in code that closes our window before we exit,
-   *  we are WASTING THE USER'S TIME. When you exit, Windows will bulk
-   *  clean up all of our Windows, all of our handles, all of our memory -
-   *  everything gets cleaned up by Windows. If you've ever had one of
-   * those applications where you try to close it and it takes a while to
-   * close down... honestly, a big cause of that is this sort of thing."
-   *
-   * WEB DEV ANALOGY:
-   * JavaScript: const backbuffer = new Uint8Array(1000000);
-   *             // When function ends, GC cleans up automatically
-   *             // You don't manually delete it!
-   *
-   * C (Casey's way): void* backbuffer = malloc(1000000);
-   *                  // When PROCESS ends, OS cleans up automatically
-   *                  // You don't manually free it at exit!
-   *
-   * EXCEPTION - WHEN TO MANUALLY CLEAN:
-   * Only clean up resources that are NOT process-lifetime:
-   * - Switching levels → Free old level assets, load new ones
-   * - Resizing window → Free old backbuffer, allocate new one ✅ (we do
-   * this!)
-   * - Closing modal → Free modal resources, keep main window
-   *
-   * THE BOTTOM LINE:
-   * We COULD add cleanup here, but Casey teaches us it's:
-   * 1. ❌ Slower (17× slower!)
-   * 2. ❌ More code to maintain
-   * 3. ❌ More places for bugs
-   * 4. ❌ Wastes user's time
-   * 5. ✅ OS does it better and faster
-   *
-   * So we follow Casey's philosophy: Just exit cleanly!
-   */
-  printf("Goodbye!\n");
+/**
+ * CLEANUP - CASEY'S "RESOURCE LIFETIMES IN WAVES" PHILOSOPHY
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * IMPORTANT: Read Casey's Day 3 explanation about resource management!
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * Casey's Rule: "Don't be myopic about individual resource cleanup.
+ *                Think in WAVES based on resource LIFETIME!"
+ *
+ * WAVE CLASSIFICATION FOR OUR RESOURCES:
+ *
+ * ┌────────────────────────────────────────────────────────────────┐
+ * │ WAVE 1: Process Lifetime (Lives entire program)               │
+ * │ ────────────────────────────────────────────                  │
+ * │ - Display (X11 connection)                                     │
+ * │ - Window                                                       │
+ * │                                                                │
+ * │ ✅ Casey says: DON'T manually clean these up!                  │
+ * │    The OS does it INSTANTLY when process exits (<1ms)          │
+ * │                                                                │
+ * │ ❌ Bad (OOP way): Manually clean each resource (17ms wasted)   │
+ * │    XDestroyImage(backBuffer);   // 2ms                         │
+ * │    XDestroyWindow(window);      // 5ms                         │
+ * │    XCloseDisplay(display);      // 10ms                        │
+ * │                                                                │
+ * │ ✅ Good (Casey's way): Just exit! (<1ms)                       │
+ * │    return 0;  // OS bulk-cleans ALL resources instantly!       │
+ * └────────────────────────────────────────────────────────────────┘
+ *
+ * ┌────────────────────────────────────────────────────────────────┐
+ * │ WAVE 2: State Lifetime (Changes during program)               │
+ * │ ────────────────────────────────────────────                  │
+ * │ - g_Buffer (per window size)                              │
+ * │                                                                │
+ * │ ✅ Casey says: Clean up WHEN STATE CHANGES (in batches)        │
+ * │    We DO clean this in resize_back_buffer() because:          │
+ * │    1. We're REPLACING it with a new backbuffer                     │
+ * │    2. This happens DURING program execution                    │
+ * │    3. If we don't free, we leak memory on every resize!        │
+ * │                                                                │
+ * │ This is CORRECT Wave 2 management! ✅                          │
+ * └────────────────────────────────────────────────────────────────┘
+ *
+ * REAL-WORLD IMPACT:
+ *
+ * Without manual cleanup (Casey's way):
+ * ┌─────────────────────────────────────────┐
+ * │ User clicks close button                │
+ * │ ↓                                       │
+ * │ return 0;  // Program exits             │
+ * │ ↓                                       │
+ * │ OS: "Process died, bulk cleanup!"       │
+ * │   - Frees ALL memory in one operation   │
+ * │   - Closes ALL X11 resources at once    │
+ * │   - Destroys ALL windows instantly      │
+ * │ ↓                                       │
+ * │ Window closes in <1ms ⚡                 │
+ * │ User: "Wow, instant close!" 😊          │
+ * └─────────────────────────────────────────┘
+ *
+ * With manual cleanup (OOP way):
+ * ┌─────────────────────────────────────────┐
+ * │ User clicks close button                │
+ * │ ↓                                       │
+ * │ XDestroyImage()... wait 2ms             │
+ * │ XDestroyWindow()... wait 5ms            │
+ * │ XCloseDisplay()... wait 10ms            │
+ * │ ↓                                       │
+ * │ Window closes in 17ms 🐌                │
+ * │ User: "Why is it laggy?" 😤             │
+ * └─────────────────────────────────────────┘
+ *
+ * CASEY'S QUOTE (Day 3, ~9:20):
+ * "If we actually put in code that closes our window before we exit,
+ *  we are WASTING THE USER'S TIME. When you exit, Windows will bulk
+ *  clean up all of our Windows, all of our handles, all of our memory -
+ *  everything gets cleaned up by Windows. If you've ever had one of
+ * those applications where you try to close it and it takes a while to
+ * close down... honestly, a big cause of that is this sort of thing."
+ *
+ * WEB DEV ANALOGY:
+ * JavaScript: const backbuffer = new Uint8Array(1000000);
+ *             // When function ends, GC cleans up automatically
+ *             // You don't manually delete it!
+ *
+ * C (Casey's way): void* backbuffer = malloc(1000000);
+ *                  // When PROCESS ends, OS cleans up automatically
+ *                  // You don't manually free it at exit!
+ *
+ * EXCEPTION - WHEN TO MANUALLY CLEAN:
+ * Only clean up resources that are NOT process-lifetime:
+ * - Switching levels → Free old level assets, load new ones
+ * - Resizing window → Free old backbuffer, allocate new one ✅ (we do
+ * this!)
+ * - Closing modal → Free modal resources, keep main window
+ *
+ * THE BOTTOM LINE:
+ * We COULD add cleanup here, but Casey teaches us it's:
+ * 1. ❌ Slower (17× slower!)
+ * 2. ❌ More code to maintain
+ * 3. ❌ More places for bugs
+ * 4. ❌ Wastes user's time
+ * 5. ✅ OS does it better and faster
+ *
+ * So we follow Casey's philosophy: Just exit cleanly!
+ */
+#if HANDMADE_SANITIZE_WAVE_1_MEMORY
+    printf("[%.3fs] Exiting, freeing memory...\n", get_wall_clock() - t_start);
 
-  // ✅ NO MANUAL CLEANUP - OS handles it faster and better!
-  // The OS will:
-  // - Free g_PixelData (and all malloc'd memory)
-  // - Destroy g_Buffer (XImage)
-  // - Close window
-  // - Close display connection
-  // All in <1ms, automatically! ⚡
+    // Free joystick fds
+    printf("Closing joysticks...\n");
+    linux_close_joysticks();
+
+    // Free ALSA library
+    printf("Unloading ALSA library...\n");
+    linux_unload_alsa(&game_sound_output);
+
+    // // Free XImage (backbuffer)
+    // if (g_buffer_info) {
+    //   printf("Freeing XImage backbuffer...\n");
+    //   // Only call XDestroyImage if g_buffer_info->data is not NULL
+    //   // XDestroyImage will free both the image and its data, so don't double
+    //   // free
+    //   XDestroyImage(g_buffer_info);
+    //   g_buffer_info = NULL;
+    //   game_buffer.memory.base = NULL; // XDestroyImage already freed the
+    //   memory
+    // }
+
+    // Free backbuffer memory (only if not already freed by XDestroyImage)
+    if (game_buffer.memory.base) {
+      printf("Freeing backbuffer memory...\n");
+      platform_free_memory(&game_buffer.memory);
+      game_buffer.memory.base = NULL;
+    }
+    // Free Transient and Permanent storage
+    printf("Freeing game transient memory...\n");
+    platform_free_memory(&transient_storage);
+
+    printf("Freeing game permanent memory...\n");
+    platform_free_memory(&permanent_storage);
+
+    // Close graphics context
+    if (gc) {
+      printf("Freeing graphics context...\n");
+      XFreeGC(display, gc);
+    }
+
+    // Close colormap
+    if (colormap) {
+      printf("Freeing colormap...\n");
+      XFreeColormap(display, colormap);
+    }
+
+    // Destroy window
+    if (window) {
+      printf("Destroying window...\n");
+      XDestroyWindow(display, window);
+    }
+
+    // Close X11 display
+    if (display) {
+      printf("Closing X11 display...\n");
+      XCloseDisplay(display);
+    }
+
+    printf("[%.3fs] Memory freed\n", get_wall_clock() - t_start);
+#endif
+    printf("Goodbye!\n");
+
+    // ✅ NO MANUAL CLEANUP - OS handles it faster and better!
+    // The OS will:
+    // - Free g_PixelData (and all malloc'd memory)
+    // - Destroy g_Buffer (XImage)
+    // - Close window
+    // - Close display connection
+    // All in <1ms, automatically! ⚡
+  }
 
   return 0;
 }

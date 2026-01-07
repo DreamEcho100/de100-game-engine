@@ -176,6 +176,25 @@ void raylib_init_audio(GameSoundOutput *sound_output) {
   printf("   Buffer:       4096 frames (~85 ms)\n");
 }
 
+void raylib_shutdown_audio(GameSoundOutput *sound_output) {
+  if (!sound_output->is_initialized) {
+    return;
+  }
+
+  // Stop playback
+  StopAudioStream(g_linux_sound_output.stream);
+
+  // Unload audio stream
+  UnloadAudioStream(g_linux_sound_output.stream);
+
+  // Close audio device
+  CloseAudioDevice();
+
+  sound_output->is_initialized = false;
+
+  printf("✅ Audio: Shutdown complete\n");
+}
+
 // ═══════════════════════════════════════════════════════════════
 // 🎵 DAY 8: SOUND CONTROL FUNCTIONS
 // ═══════════════════════════════════════════════════════════════

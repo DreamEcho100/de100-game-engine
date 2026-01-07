@@ -21,6 +21,7 @@ typedef struct {
 
 extern RaylibSoundOutput g_linux_sound_output;
 void raylib_init_audio(GameSoundOutput *sound_output);
+void raylib_shutdown_audio(GameSoundOutput *sound_output);
 void raylib_debug_audio(GameSoundOutput *sound_output);
 void raylib_fill_sound_buffer(GameSoundOutput *sound_output);
 

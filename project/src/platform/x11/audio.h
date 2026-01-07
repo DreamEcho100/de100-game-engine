@@ -4,6 +4,7 @@
 
 #include "../../base.h"
 #include "../../game.h"
+#include "../_common/memory.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -176,7 +177,7 @@ typedef struct {
   uint32_t buffer_size;       // Secondary backbuffer size in bytes
 
   // Day 8: Audio sample backbuffer (Casey's secondary backbuffer equivalent)
-  int16_t *sample_buffer;
+  PlatformMemoryBlock sample_buffer;
   uint32_t sample_buffer_size;
   // int half_wave_period;
 
@@ -195,5 +196,6 @@ void linux_init_sound(GameSoundOutput *sound_output, int32_t samples_per_second,
 void linux_fill_sound_buffer(GameSoundOutput *sound_output);
 
 void linux_debug_audio_latency(GameSoundOutput *sound_output);
+void linux_unload_alsa(GameSoundOutput *sound_output);
 
 #endif // X11_AUDIO_H

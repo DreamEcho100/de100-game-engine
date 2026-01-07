@@ -1,16 +1,35 @@
 #!/bin/bash
+# filepath: build.sh
+
 set -e
 mkdir -p build
 
-BACKEND=$1
-if [ -z "$BACKEND" ]; then
-    BACKEND="x11"
-fi
+BACKEND="x11"
+HANDMADE_SANITIZE_WAVE_1_MEMORY="0"
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --backend=*)
+            BACKEND="${1#*=}"
+            BACKEND_SET=1
+            ;;
+        --HANDMADE_SANITIZE_WAVE_1_MEMORY=*)
+            HANDMADE_SANITIZE_WAVE_1_MEMORY="${1#*=}"
+            if [ -n "$HANDMADE_SANITIZE_WAVE_1_MEMORY" ]; then
+                HANDMADE_SANITIZE_WAVE_1_MEMORY=$HANDMADE_SANITIZE_WAVE_1_MEMORY
+            fi
+            ;;
+        *)
+            ;;
+    esac
+    shift
+done
 
 echo "Building with backend: $BACKEND"
 
-# ═══════════════════════════════════════════════════════════════
-# Debug build flags (NO OPTIMIZATION during development!)
+# # ═══════════════════════════════════════════════════════════════
+echo "Building with backend: $BACKEND -HANDMADE_SANITIZE_WAVE_1_MEMORY=$HANDMADE_SANITIZE_WAVE_1_MEMORY"
 # ═══════════════════════════════════════════════════════════════
 # Core flags (match -Od -Oi -FC -Z7)
 FLAGS="-Isrc"                    # Include path
@@ -36,7 +55,15 @@ FLAGS="$FLAGS -lm"
 
 # Platform defines (match -DHANDMADE_*)
 FLAGS="$FLAGS -DHANDMADE_INTERNAL=1"     # -DHANDMADE_INTERNAL=1
-FLAGS="$FLAGS -DHANDMADE_SLOW=1"         # -DHANDMADE_SLOW=1
+# FLAGS="$FLAGS -DHANDMADE_SLOW=1"         # -DHANDMADE_SLOW=1
+
+echo "HANDMADE_SANITIZE_WAVE_1_MEMORY: $HANDMADE_SANITIZE_WAVE_1_MEMORY"
+if [ "$HANDMADE_SANITIZE_WAVE_1_MEMORY" = "1" ]; then
+    FLAGS="$FLAGS -fsanitize=address,leak,undefined"
+    FLAGS="$FLAGS -fno-omit-frame-pointer"
+    FLAGS="$FLAGS -DHANDMADE_SANITIZE_WAVE_1_MEMORY"
+    echo "Enabled AddressSanitizer and UndefinedBehaviorSanitizer"
+fi
 
 # Source files
 SRC="src/main.c src/platform/_common/input.c src/platform/_common/backbuffer.c src/platform/_common/memory.c src/platform/_common/debug-file-io.c src/game.c"
@@ -44,10 +71,10 @@ SRC="src/main.c src/platform/_common/input.c src/platform/_common/backbuffer.c s
 # Backend-specific flags
 if [ "$BACKEND" = "x11" ]; then
     FLAGS="$FLAGS -DUSE_X11 -lX11 -Wno-unused-parameter"
-    SRC="$SRC src/platform/x11/backend.c src/platform/x11/audio.c"
+    SRC="$SRC src/platform/x11/backend.c src/platform/x11/audio.c src/platform/x11/inputs/joystick.c src/platform/x11/inputs/keyboard.c"
 elif [ "$BACKEND" = "raylib" ]; then
     FLAGS="$FLAGS -DUSE_RAYLIB -lraylib -lpthread"
-    SRC="$SRC src/platform/raylib/backend.c src/platform/raylib/audio.c"
+    SRC="$SRC src/platform/raylib/backend.c src/platform/raylib/audio.c src/platform/raylib/inputs/joystick.c src/platform/raylib/inputs/keyboard.c"
 else
     echo "Unknown backend: $BACKEND"
     exit 1
@@ -55,6 +82,7 @@ fi
 
 # Build
 echo "Compiling with flags: $FLAGS"
+echo "For $SRC"
 clang $SRC -o build/game $FLAGS
 
 # Success message
