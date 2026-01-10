@@ -5,6 +5,21 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// ═══════════════════════════════════════════════════════════════
+// 🎯 FRAME RATE CONFIGURATION (Day 18)
+// ═══════════════════════════════════════════════════════════════
+
+#ifndef HANDMADE_TARGET_FPS
+  #define HANDMADE_TARGET_FPS 60  // Default to 60 FPS
+#endif
+
+// Convenience macros for common targets
+#define FPS_30  30
+#define FPS_60  60
+#define FPS_120 120
+#define FPS_144 144
+#define FPS_UNLIMITED 0  // No frame limiting (for benchmarking)
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -46,13 +61,5 @@
 #define real64 double
 
 typedef int32_t bool32;
-
-/**
- * Platform-agnostic pixel composer function
- *
- * Platform sets this once, game just calls it
- */
-typedef uint32_t (*pixel_composer_fn)(uint8_t r, uint8_t g, uint8_t b,
-                                      uint8_t a);
 
 #endif // BASE_H

@@ -372,7 +372,7 @@ void linux_init_sound(GameSoundOutput *sound_output, int32_t samples_per_second,
   int err = SndPcmOpen(&g_linux_sound_output.handle,
                        "default",                     // Device
                        LINUX_SND_PCM_STREAM_PLAYBACK, // Output
-                       0);                            // Blocking mode
+                       SND_PCM_NONBLOCK);             // Blocking mode
 
   if (err < 0) {
     fprintf(stderr, "❌ Sound: Cannot open audio device: %s\n",
@@ -398,7 +398,7 @@ void linux_init_sound(GameSoundOutput *sound_output, int32_t samples_per_second,
   // Latency calculation:
   // Day 8: Use shorter latency for better responsiveness
   // Casey uses ~66ms (1/15 second), we'll use 50ms
-  unsigned int latency_us = 50000; // 50ms in microseconds
+  unsigned int latency_us = 50000; // 50ms
 
   err = SndPcmSetParams(g_linux_sound_output.handle,
                         LINUX_SND_PCM_FORMAT_S16_LE,         // 16-bit signed
@@ -584,17 +584,17 @@ void linux_fill_sound_buffer(GameSoundOutput *sound_output) {
     long frames_needed = target_queued - current_queued;
 
 // Optional debug logging
-#if 0
-        static int frame_count = 0;
-        if (frame_count++ % 60 == 0) {
-            float actual_ms = (float)delay_frames / 
-                             g_sound_output.samples_per_second * 1000.0f;
-            float target_ms = (float)target_queued / 
-                             g_sound_output.samples_per_second * 1000.0f;
-            printf("🔊 [Day 10] Latency: %.1fms (target: %.1fms), "
-                   "need %ld frames\n",
-                   actual_ms, target_ms, frames_needed);
-        }
+#if HANDMADE_INTERNAL
+    static int debug_counter = 0;
+    if (++debug_counter % 300 == 5) {
+      float actual_ms =
+          (float)delay_frames / sound_output->samples_per_second * 1000.0f;
+      float target_ms =
+          (float)target_queued / sound_output->samples_per_second * 1000.0f;
+      printf("🔊 [Day 10] Latency: %.1fms (target: %.1fms), "
+             "need %ld frames\n",
+             actual_ms, target_ms, frames_needed);
+    }
 #endif
 
     // Clamp to available space and backbuffer size
@@ -668,26 +668,32 @@ void linux_fill_sound_buffer(GameSoundOutput *sound_output) {
   // ───────────────────────────────────────────────────────────
   // STEP 5: Write to ALSA (SAME for both modes)
   // ───────────────────────────────────────────────────────────
-
   long frames_written =
       SndPcmWritei(g_linux_sound_output.handle,
                    g_linux_sound_output.sample_buffer.base, frames_to_write);
 
   if (frames_written < 0) {
+    if (frames_written == -EAGAIN || frames_written == -EWOULDBLOCK) {
+      // ✅ Device is busy in non-blocking mode - just skip this frame
+      return; // Don't block! Audio will catch up next frame
+    }
+
+    // Only recover for REAL errors (underrun, etc.)
     frames_written =
         SndPcmRecover(g_linux_sound_output.handle, (int)frames_written, 1);
     if (frames_written < 0) {
       fprintf(stderr, "❌ Sound: Write failed: %s\n",
               SndStrerror((int)frames_written));
+      return;
     }
   }
 
 // Optional verification
-#if 0
-    if (frames_written > 0 && frames_written != frames_to_write) {
-        printf("⚠️ Partial write: wanted %ld, wrote %ld\n",
-               frames_to_write, frames_written);
-    }
+#if HANDMADE_INTERNAL
+  if (frames_written > 0 && frames_written != frames_to_write) {
+    printf("⚠️ Partial write: wanted %ld, wrote %ld\n", frames_to_write,
+           frames_written);
+  }
 #endif
 }
 
@@ -800,6 +806,8 @@ void linux_unload_alsa(GameSoundOutput *sound_output) {
     dlclose(g_linux_sound_output.alsa_library);
     g_linux_sound_output.alsa_library = NULL;
   }
+  
+  sound_output->is_initialized = false;
 
   printf("✅ ALSA audio unloaded.\n");
 }

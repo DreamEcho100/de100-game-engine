@@ -41,22 +41,25 @@ void render_weird_gradient(GameOffscreenBuffer *buffer, GameState *game_state) {
 
   // The following is correct for X11
   for (int y = 0; y < buffer->height; ++y) {
-    uint32_t *pixels = (uint32_t *)row;
-    for (int x = 0; x < buffer->width; ++x) {
+    uint32_t *pixel = (uint32_t *)row;
+    int offset_x = game_state->gradient_state.offset_x;
+    int offset_y = game_state->gradient_state.offset_y;
 
-      *pixels++ =
-          buffer->compose_pixel(0, // Default red value (for both backends)
-                                (y + game_state->gradient_state.offset_y), //
-                                (x + game_state->gradient_state.offset_x),
-                                255 // Full opacity for Raylib
-          );
+    for (int x = 0; x < buffer->width; ++x) {
+      uint8_t blue = (uint8_t)(x + offset_x);
+      uint8_t green = (uint8_t)(y + offset_y);
+
+      // RGBA format - works for BOTH OpenGL X11 AND Raylib!
+      *pixel++ = (0xFF000000u |  // Alpha = 255
+                  (blue << 16) | // Blue
+                  (green << 8) | // Green
+                  0);
     }
     row += buffer->pitch;
   }
 }
 
-void testPixelAnimation(GameOffscreenBuffer *buffer, GameState *game_state,
-                        int pixelColor) {
+void testPixelAnimation(GameOffscreenBuffer *buffer, GameState *game_state) {
   // Test pixel animation
   uint32_t *pixels = (uint32_t *)buffer->memory.base;
   int total_pixels = buffer->width * buffer->height;
@@ -65,7 +68,7 @@ void testPixelAnimation(GameOffscreenBuffer *buffer, GameState *game_state,
                     game_state->pixel_state.offset_x;
 
   if (test_offset < total_pixels) {
-    pixels[test_offset] = pixelColor;
+    pixels[test_offset] = 0xFF0000FF;
   }
 
   if (game_state->pixel_state.offset_x + 1 < buffer->width - 1) {
@@ -159,9 +162,6 @@ void game_update_and_render(GameMemory *memory, GameInput *input,
     return;
   }
 
-  static int frame = 0;
-  frame++;
-
   // Find active controller
   GameControllerInput *active_controller = NULL;
 
@@ -191,8 +191,10 @@ void game_update_and_render(GameMemory *memory, GameInput *input,
   }
 
 #if HANDMADE_INTERNAL
-  if (frame % 60 == 0) {
-    printf("Frame %d: active_controller=%p\n", frame,
+  // Show stats every 60 frames
+  static int debug_counter = 0;
+  if (++debug_counter % 300 == 5) {
+    printf("Debug Counter %d: active_controller=%p\n", debug_counter,
            (void *)active_controller);
     if (active_controller) {
       printf("  is_analog=%d stick_avg_x=%.2f stick_avg_y=%.2f\n",
@@ -203,9 +205,9 @@ void game_update_and_render(GameMemory *memory, GameInput *input,
              active_controller->move_down.ended_down,
              active_controller->move_left.ended_down,
              active_controller->move_right.ended_down);
-      printf("Frame %d: is_analog=%d stick_avg_x=%.2f stick_avg_y=%.2f "
+      printf("Debug Counter %d: is_analog=%d stick_avg_x=%.2f stick_avg_y=%.2f "
              "up=%d down=%d left=%d right=%d\n",
-             frame, active_controller->is_analog,
+             debug_counter, active_controller->is_analog,
              active_controller->stick_avg_x, active_controller->stick_avg_y,
              active_controller->move_up.ended_down,
              active_controller->move_down.ended_down,
@@ -219,8 +221,7 @@ void game_update_and_render(GameMemory *memory, GameInput *input,
 
   render_weird_gradient(buffer, game_state);
 
-  int testPixelAnimationColor = buffer->compose_pixel(255, 0, 0, 255);
-  testPixelAnimation(buffer, game_state, testPixelAnimationColor);
+  testPixelAnimation(buffer, game_state);
 }
 
 // #ifdef PLATFORM_X11

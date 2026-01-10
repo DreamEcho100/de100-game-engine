@@ -53,6 +53,7 @@ typedef enum {
 // ALSA Function Signatures (Casey's macro pattern)
 // ───────────────────────────────────────────────────────────────
 
+#define SND_PCM_NONBLOCK 0x00000001
 // snd_pcm_open - Opens a PCM device
 #define ALSA_SND_PCM_OPEN(name)                                                \
   int name(snd_pcm_t **pcm, const char *device, int stream, int mode)

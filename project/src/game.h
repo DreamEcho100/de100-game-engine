@@ -68,7 +68,6 @@ typedef struct {
   int height;
   int pitch;
   int bytes_per_pixel;
-  pixel_composer_fn compose_pixel;
 } GameOffscreenBuffer;
 
 typedef struct {

@@ -70,7 +70,7 @@ SRC="src/main.c src/platform/_common/input.c src/platform/_common/backbuffer.c s
 
 # Backend-specific flags
 if [ "$BACKEND" = "x11" ]; then
-    FLAGS="$FLAGS -DUSE_X11 -lX11 -Wno-unused-parameter"
+    FLAGS="$FLAGS -DUSE_X11 -lX11 -lXrandr -lGL -lGLX"
     SRC="$SRC src/platform/x11/backend.c src/platform/x11/audio.c src/platform/x11/inputs/joystick.c src/platform/x11/inputs/keyboard.c"
 elif [ "$BACKEND" = "raylib" ]; then
     FLAGS="$FLAGS -DUSE_RAYLIB -lraylib -lpthread"

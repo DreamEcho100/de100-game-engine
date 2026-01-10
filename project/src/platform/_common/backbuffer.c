@@ -2,8 +2,7 @@
 #include <stdio.h>
 
 INIT_BACKBUFFER_STATUS init_backbuffer(GameOffscreenBuffer *buffer, int width,
-                                       int height, int bytes_per_pixel,
-                                       pixel_composer_fn composer) {
+                                       int height, int bytes_per_pixel) {
   buffer->memory.base = NULL;
   buffer->width = width;
   buffer->height = height;
@@ -21,9 +20,6 @@ INIT_BACKBUFFER_STATUS init_backbuffer(GameOffscreenBuffer *buffer, int width,
     return INIT_BACKBUFFER_STATUS_MMAP_FAILED;
   }
   buffer->memory = memory_block;
-
-  // Set pixel composer function for Raylib (R8G8B8A8)
-  buffer->compose_pixel = composer;
 
   return INIT_BACKBUFFER_STATUS_SUCCESS;
 }

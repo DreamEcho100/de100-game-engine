@@ -26,13 +26,6 @@ file_scoped_global_var OffscreenBufferMeta game_buffer_meta = {0};
 file_scoped_global_var struct timespec g_frame_start;
 file_scoped_global_var struct timespec g_frame_end;
 
-// Raylib pixel composer (R8G8B8A8 format)
-file_scoped_fn uint32_t compose_pixel_rgba(uint8_t r, uint8_t g, uint8_t b,
-                                           uint8_t a) {
-  return ((uint32_t)a << 24) | ((uint32_t)b << 16) | ((uint32_t)g << 8) |
-         (uint32_t)r;
-}
-
 /********************************************************************
  RESIZE BACKBUFFER
  - Free old CPU memory
@@ -313,8 +306,7 @@ int platform_main() {
     // ═══════════════════════════════════════════════════════════
     raylib_init_audio(&game_sound_output);
 
-    int init_backbuffer_status =
-        init_backbuffer(&game_buffer, 1280, 720, 4, compose_pixel_rgba);
+    int init_backbuffer_status = init_backbuffer(&game_buffer, 1280, 720, 4);
     if (init_backbuffer_status != 0) {
       fprintf(stderr, "Failed to initialize backbuffer\n");
       return init_backbuffer_status;
@@ -342,10 +334,13 @@ int platform_main() {
       // ═══════════════════════════════════════════════════════════
       // 🐛 DEBUG: Print controller states (TEMPORARY!)
       // ═══════════════════════════════════════════════════════════
-      static int frame_count = 0;
-      if (frame_count++ % 60 == 0) { // Print once per second (60 FPS)
+#if HANDMADE_INTERNAL
+      // Show stats every 60 frames
+      static int debug_counter = 0;
+      if (++debug_counter % 300 == 5) {
         debug_joystick_state(old_game_input);
       }
+#endif
 
       prepare_input_frame(old_game_input, new_game_input);
 
