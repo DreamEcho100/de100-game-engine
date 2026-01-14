@@ -93,6 +93,7 @@ typedef struct {
   int tone_hz;         // Frequency of tone to generate
   int16_t tone_volume; // Volume of tone to generate
   int pan_position;    // -100 (left) to +100 (right)
+  int32_t game_update_hz; 
 } GameSoundOutput;
 
 /**

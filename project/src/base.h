@@ -22,7 +22,11 @@
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
-#endif
+#endif // M_PI
+
+#ifndef M_double_PI
+#define M_double_PI (2.f * M_PI)
+#endif // M_double_PI
 
 #ifndef ArraySize
 #define ArraySize(Array) (sizeof(Array) / sizeof((Array)[0]))
@@ -53,6 +57,46 @@
 #define MEGABYTES(value) (KILOBYTES(value) * 1024LL)
 #define GIGABYTES(value) (MEGABYTES(value) * 1024LL)
 #define TERABYTES(value) (GIGABYTES(value) * 1024LL)
+
+// ═══════════════════════════════════════════════════════════════
+// 🎯 FRAME RATE CONFIGURATION (Day 18)
+// ═══════════════════════════════════════════════════════════════
+
+// Note: not needed since we have an adaptive FPS system
+// #ifndef HANDMADE_TARGET_FPS
+//   #define HANDMADE_TARGET_FPS 60  // Default to 60 FPS
+// #endif
+
+// Convenience macros for common targets
+#define FPS_30  30
+#define FPS_60  60
+#define FPS_120 120
+#define FPS_144 144
+#define FPS_UNLIMITED 0  // No frame limiting (for benchmarking)
+
+// ═══════════════════════════════════════════════════════════════
+// 🔊 AUDIO LATENCY CONFIGURATION (Day 19)
+// ═══════════════════════════════════════════════════════════════
+// Casey's Day 19 change: Audio latency tied to frame rate!
+//
+// WHAT THIS MEANS:
+// - At 30 FPS, 3 frames = 100ms latency
+// - At 60 FPS, 3 frames = 50ms latency
+// - At 120 FPS, 3 frames = 25ms latency
+//
+// WHY 3 FRAMES?
+// - 1 frame: Too tight, might underrun (clicks/pops)
+// - 2 frames: Still risky on slower machines
+// - 3 frames: Safe buffer for most systems
+// - 4+ frames: Too much input lag
+//
+// Casey's rule: Start with 3, adjust if needed
+// ═══════════════════════════════════════════════════════════════
+
+#ifndef FRAMES_OF_AUDIO_LATENCY
+  // 3 causes noticeable ticks/pops/clicks, so we reduce to 2
+  #define FRAMES_OF_AUDIO_LATENCY 2 // Default to 2 frames of latency
+#endif
 
 #define file_scoped_fn static
 #define local_persist_var static

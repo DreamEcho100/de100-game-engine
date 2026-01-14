@@ -182,16 +182,54 @@ typedef struct {
   uint32_t sample_buffer_size;
   // int half_wave_period;
 
+  // DAY 19: Latency now calculated from frame rate
+  int32_t latency_sample_count;  // Samples of latency (= frames * samples_per_frame)
+  int32_t latency_microseconds;   // ALSA wants microseconds, so we store both
+
 } LinuxSoundOutput;
 
 extern LinuxSoundOutput g_linux_sound_output;
+
+#if HANDMADE_INTERNAL
+// ═══════════════════════════════════════════════════════════════
+// 📊 DAY 19: DEBUG AUDIO CURSOR TRACKING
+// ═══════════════════════════════════════════════════════════════
+// Casey's Day 19 addition: Track audio buffer state per frame
+//
+// Windows has PlayCursor/WriteCursor (byte positions in ring buffer)
+// Linux/ALSA has:
+// - snd_pcm_delay(): Frames until current sample is played
+// - snd_pcm_avail(): Frames available to write
+//
+// We'll store both to visualize audio buffer state
+// ═══════════════════════════════════════════════════════════════
+
+typedef struct {
+  snd_pcm_sframes_t delay_frames;  // How many frames queued for playback
+  snd_pcm_sframes_t avail_frames;  // How many frames we can write
+
+  // Derived values (for easier visualization):
+  int64_t play_cursor_sample;   // Virtual "play cursor" position
+  int64_t write_cursor_sample;  // Virtual "write cursor" position
+} LinuxDebugAudioMarker;
+
+#define MAX_DEBUG_AUDIO_MARKERS 30
+extern LinuxDebugAudioMarker g_debug_audio_markers[MAX_DEBUG_AUDIO_MARKERS];
+extern int g_debug_marker_index;
+
+void linux_debug_sync_display(GameOffscreenBuffer *buffer,
+                                             GameSoundOutput *sound_output,
+                                             LinuxDebugAudioMarker *markers,
+                                             int marker_count);
+
+#endif // HANDMADE_INTERNAL
 
 // ═══════════════════════════════════════════════════════════════
 // 🔊 Function Declarations
 // ═══════════════════════════════════════════════════════════════
 
 void linux_load_alsa(void);
-void linux_init_sound(GameSoundOutput *sound_output, int32_t samples_per_second, int32_t buffer_size_bytes);
+bool linux_init_sound(GameSoundOutput *sound_output, int32_t samples_per_second, int32_t buffer_size_bytes, int32_t game_update_hz);
 
 // Day 8: Fill backbuffer with square wave and write to ALSA
 void linux_fill_sound_buffer(GameSoundOutput *sound_output);

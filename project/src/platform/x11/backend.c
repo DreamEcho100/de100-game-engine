@@ -91,6 +91,7 @@ file_scoped_global_var FrameStats g_frame_stats = {0};
 // ═══════════════════════════════════════════════════════════════
 file_scoped_fn bool init_opengl(Display *display, Window window, int width,
                                 int height) {
+
   // Ask X11 for an OpenGL-capable visual (pixel format)
   int visual_attribs[] = {
       GLX_RGBA,           // We want RGBA color mode
@@ -162,7 +163,7 @@ file_scoped_fn void update_window_opengl(GameOffscreenBuffer *backbuffer) {
   if (!backbuffer->memory.base)
     return;
 
-  // Step 1: Upload our CPU-rendered pixels to GPU texture
+  // Upload our CPU-rendered pixels to GPU texture
   glBindTexture(GL_TEXTURE_2D, g_gl.texture_id);
   glTexImage2D(GL_TEXTURE_2D,
                0,       // Mipmap level (0 = base image)
@@ -174,10 +175,10 @@ file_scoped_fn void update_window_opengl(GameOffscreenBuffer *backbuffer) {
                backbuffer->memory.base // Pointer to our pixel data
   );
 
-  // Step 2: Clear screen to black
+  // Clear screen to black
   glClear(GL_COLOR_BUFFER_BIT);
 
-  // Step 3: Draw fullscreen quad with our texture
+  // Draw fullscreen quad with our texture
   // This is like a <canvas> element showing an <img>
   glBegin(GL_QUADS);
   glTexCoord2f(0.0f, 0.0f);
@@ -190,7 +191,7 @@ file_scoped_fn void update_window_opengl(GameOffscreenBuffer *backbuffer) {
   glVertex2f(0, backbuffer->height); // Bottom-left
   glEnd();
 
-  // Step 4: Swap buffers (VSync happens here!)
+  // Swap buffers (VSync happens here!)
   // Front buffer = what user sees
   // Back buffer = what we just drew
   // This swaps them (and waits for monitor refresh if VSync enabled)
@@ -209,7 +210,7 @@ int get_monitor_refresh_rate(Display *display) {
 
   if (!screen_config) {
     printf("⚠️  XRandR not available, defaulting to 60Hz\n");
-    return 60;
+    return FPS_60;
   }
 
   short refresh_rate = XRRConfigCurrentRate(screen_config);
@@ -398,19 +399,6 @@ int platform_main() {
   printf("[%.3fs] Joystick initialized\n", get_wall_clock() - t_start);
 
   // ═══════════════════════════════════════════════════════════════
-  // 🔊 INITIALIZE AUDIO (Casey's Day 7 pattern)
-  // ═══════════════════════════════════════════════════════════════
-  printf("[%.3fs] Loading ALSA library...\n", get_wall_clock() - t_start);
-  linux_load_alsa(); // Dynamically load libasound.so
-  printf("[%.3fs] ALSA library loaded\n", get_wall_clock() - t_start);
-
-  int samples_per_second = 48000;
-  int bytes_per_sample = sizeof(int16_t) * 2; // 16-bit stereo
-  int secondary_buffer_size = samples_per_second * bytes_per_sample;
-  linux_init_sound(&game_sound_output, samples_per_second,
-                   secondary_buffer_size);
-
-  // ═══════════════════════════════════════════════════════════════
   // 🖥️ CREATE X11 WINDOW + OPENGL CONTEXT
   // ═══════════════════════════════════════════════════════════════
 
@@ -477,6 +465,28 @@ int platform_main() {
   printf("Miss threshold:  %.1f%%\n", adaptive.miss_threshold * 100.0f);
   printf("═══════════════════════════════════════════════════════════\n\n");
 
+  // ═══════════════════════════════════════════════════════════════
+  // 🔊 INITIALIZE AUDIO (Casey's Day 7 pattern)
+  // ═══════════════════════════════════════════════════════════════
+  printf("[%.3fs] Loading ALSA library...\n", get_wall_clock() - t_start);
+  linux_load_alsa(); // Dynamically load libasound.so
+  printf("[%.3fs] ALSA library loaded\n", get_wall_clock() - t_start);
+
+  int samples_per_second = 48000;
+  int bytes_per_sample = sizeof(int16_t) * 2; // 16-bit stereo
+  // Casey's pattern: Run game at half monitor refresh rate
+  // (60Hz monitor → 30 FPS game, 120Hz → 60 FPS game)
+  game_sound_output.game_update_hz = 30;
+  int secondary_buffer_size = samples_per_second * bytes_per_sample;
+  if (!linux_init_sound(&game_sound_output, samples_per_second,
+                        secondary_buffer_size,
+                        game_sound_output.game_update_hz)) {
+    fprintf(stderr, "[PLATFORM] Failed to initialize audio\n");
+    // Continue without audio (graceful degradation)
+  } else {
+    printf("[PLATFORM] ✅ Audio initialized successfully\n");
+  }
+
   // Enable window close button
   Atom wmDelete = XInternAtom(display, "WM_DELETE_WINDOW", False);
   XSetWMProtocols(display, window, &wmDelete, 1);
@@ -488,6 +498,16 @@ int platform_main() {
   if (!init_opengl(display, window, width, height)) {
     return 1;
   }
+
+#if HANDMADE_INTERNAL
+  // Draw test line at x=100
+  for (int y = 0; y < game_buffer.height; y++) {
+    uint32_t *pixel =
+        (uint32_t *)game_buffer.memory.base + (y * game_buffer.width + 100);
+    *pixel = 0x00FF00FF; // Bright green
+  }
+  printf("[DEBUG] Drew test line at x=100\n");
+#endif
 
   // ═══════════════════════════════════════════════════════════════
   // 🖼️ CREATE BACKBUFFER (Our CPU rendering target)
@@ -522,12 +542,12 @@ int platform_main() {
     uint64_t frame_start_cycles = __rdtsc(); // CPU cycles (for profiling)
 
     // ─────────────────────────────────────────────────────────────
-    // !: PREPARE INPUT
+    // PREPARE INPUT
     // ─────────────────────────────────────────────────────────────
     prepare_input_frame(old_game_input, new_game_input);
 
     // ─────────────────────────────────────────────────────────────
-    // !: PROCESS X11 EVENTS
+    // PROCESS X11 EVENTS
     // ─────────────────────────────────────────────────────────────
     XEvent event;
     while (XPending(display) > 0) {
@@ -537,16 +557,29 @@ int platform_main() {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // !: POLL JOYSTICK
+    // POLL JOYSTICK
     // ─────────────────────────────────────────────────────────────
     linux_poll_joystick(new_game_input);
 
     // ─────────────────────────────────────────────────────────────
-    // !: UPDATE GAME + RENDER (Skip if window inactive)
+    // UPDATE GAME + RENDER (Skip if window inactive)
     // ─────────────────────────────────────────────────────────────
     if (game_buffer.memory.base && g_window_is_active) { // ✅ Check focus!
       game_update_and_render(&game_memory, new_game_input, &game_buffer,
                              &game_sound_output);
+
+      // ═══════════════════════════════════════════════════════════════
+      // 📊 DAY 19: DRAW AUDIO DEBUG OVERLAY
+      // ═══════════════════════════════════════════════════════════════
+      // Casey does this AFTER GameUpdateAndRender but BEFORE display
+      // We do the same
+      // ═══════════════════════════════════════════════════════════════
+
+#if HANDMADE_INTERNAL
+      linux_debug_sync_display(&game_buffer, &game_sound_output,
+                               g_debug_audio_markers, MAX_DEBUG_AUDIO_MARKERS);
+#endif
+
       update_window_opengl(&game_buffer);
 
       // Wait for GPU to finish (synchronize CPU/GPU timing)
@@ -559,7 +592,7 @@ int platform_main() {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // !: MEASURE WORK TIME
+    // MEASURE WORK TIME
     // ─────────────────────────────────────────────────────────────
     struct timespec work_end_time;
     clock_gettime(CLOCK_MONOTONIC, &work_end_time);
@@ -568,7 +601,7 @@ int platform_main() {
         (work_end_time.tv_nsec - frame_start_time.tv_nsec) / 1000000000.0f;
 
     // ─────────────────────────────────────────────────────────────
-    // !: ADAPTIVE SLEEP (Casey's Day 18 pattern)
+    // ADAPTIVE SLEEP (Casey's Day 18 pattern)
     // ─────────────────────────────────────────────────────────────
     // Sleep for remaining frame time to hit target FPS
     // Two-phase sleep:
@@ -605,12 +638,13 @@ int platform_main() {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // !: FILL AUDIO BUFFER (After sleep!)
+    // FILL AUDIO BUFFER (After sleep!)
     // ─────────────────────────────────────────────────────────────
+    game_sound_output.game_update_hz = adaptive.target_fps / 2; // Store it
     linux_fill_sound_buffer(&game_sound_output);
 
     // ─────────────────────────────────────────────────────────────
-    // !: MEASURE TOTAL FRAME TIME
+    // MEASURE TOTAL FRAME TIME
     // ─────────────────────────────────────────────────────────────
     struct timespec frame_final_time;
     clock_gettime(CLOCK_MONOTONIC, &frame_final_time);
@@ -627,7 +661,7 @@ int platform_main() {
     real32 mcpf = (frame_final_cycles - frame_start_cycles) / 1000000.0f;
 
     // ─────────────────────────────────────────────────────────────
-    // !: REPORT MISSED FRAMES (Only serious misses >5ms)
+    // REPORT MISSED FRAMES (Only serious misses >5ms)
     // ─────────────────────────────────────────────────────────────
     if (frame_time_ms > (target_frame_time_ms + 5.0f) && g_window_is_active) {
       printf("⚠️  MISSED FRAME! %.2fms (target: %.2fms, over by: %.2fms)\n",
@@ -653,7 +687,7 @@ int platform_main() {
 #endif
 
     // ─────────────────────────────────────────────────────────────
-    // !: ADAPTIVE FPS EVALUATION
+    // ADAPTIVE FPS EVALUATION
     // ─────────────────────────────────────────────────────────────
     // Only runs every 300 frames (~5 seconds)
     // Adjusts target FPS based on performance
@@ -674,28 +708,24 @@ int platform_main() {
         int old_target = adaptive.target_fps;
 
         if (adaptive.target_fps == adaptive.monitor_hz) {
-          // adaptive.target_fps = adaptive.monitor_hz == 120
-          //                           ? (adaptive.monitor_hz == 60 ? 30 : 60)
-          //                           : 60;
+          // adaptive.target_fps = adaptive.monitor_hz == FPS_120
+          //                           ? (adaptive.monitor_hz == FPS_60 ? FPS_30
+          //                           : FPS_60) : FPS_60;
           switch (adaptive.monitor_hz) {
-          case 120:
-            adaptive.target_fps = 60;
+          case FPS_120:
+            adaptive.target_fps = FPS_60;
             break;
-          case 60:
-            adaptive.target_fps = 30;
+          case FPS_60:
+            adaptive.target_fps = FPS_30;
             break;
           default:
-            adaptive.target_fps = 60;
+            adaptive.target_fps = FPS_60;
             break;
           }
-        } else if (adaptive.target_fps == 120)
-          adaptive.target_fps = 60;
-        else if (adaptive.target_fps == 60)
-          adaptive.target_fps = 30;
-        else if (adaptive.target_fps == 30)
-          adaptive.target_fps = 20;
-        else if (adaptive.target_fps == 20)
-          adaptive.target_fps = 15;
+        } else if (adaptive.target_fps == FPS_120)
+          adaptive.target_fps = FPS_60;
+        else if (adaptive.target_fps == FPS_60)
+          adaptive.target_fps = FPS_30;
 
         if (adaptive.target_fps != old_target) {
           target_seconds_per_frame = 1.0f / (real32)adaptive.target_fps;
@@ -709,17 +739,11 @@ int platform_main() {
                adaptive.target_fps < adaptive.monitor_hz) {
         int old_target = adaptive.target_fps;
 
-        if (adaptive.target_fps == 15)
-          adaptive.target_fps = 20;
-        else if (adaptive.target_fps == 20)
-          adaptive.target_fps = 30;
-        else if (adaptive.target_fps == 30)
-          adaptive.target_fps = 60;
-        else if (adaptive.target_fps == 60)
-          adaptive.target_fps = 100;
-        else if (adaptive.target_fps == 100)
-          adaptive.target_fps = 120;
-        else if (adaptive.target_fps == 120)
+        if (adaptive.target_fps == FPS_30)
+          adaptive.target_fps = FPS_60;
+        else if (adaptive.target_fps == FPS_60)
+          adaptive.target_fps = FPS_120;
+        else if (adaptive.target_fps == FPS_120)
           adaptive.target_fps = adaptive.monitor_hz;
 
         if (adaptive.target_fps != old_target) {
@@ -759,7 +783,7 @@ int platform_main() {
 #endif
 
     // ─────────────────────────────────────────────────────────────
-    // !: SWAP INPUT BUFFERS
+    // SWAP INPUT BUFFERS
     // ─────────────────────────────────────────────────────────────
     // Swap pointers (old becomes new, new becomes old)
     // This preserves button press/release state across frames
