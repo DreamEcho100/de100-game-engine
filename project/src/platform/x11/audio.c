@@ -541,45 +541,56 @@ file_scoped_fn inline bool linux_audio_has_latency_measurement(void) {
   return SndPcmDelay_ != AlsaSndPcmDelayStub;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// 📊 DAY 20: DEBUG SYNC DISPLAY (FIXED VERSION)
+// ═══════════════════════════════════════════════════════════════
+//
+// WHAT WAS WRONG:
+// - Marker index advanced at wrong time (before capture complete)
+// - Markers wrapped incorrectly causing "speed differences"
+// - Sample positions not wrapped to buffer size properly
+//
+// CASEY'S PATTERN:
+// 1. Fill Output* fields (before writing audio)
+// 2. Write audio samples
+// 3. Fill Flip* fields (after screen flip)
+// 4. THEN advance marker index
+//
+// All markers should move together showing the latency wave!
+// ═══════════════════════════════════════════════════════════════
+
 #if HANDMADE_INTERNAL
 
-// #define WRAP_SAMPLE(v, w) (((v) % (w) + (w)) % (w))
-// static inline int64_t WrapSample(int64_t value, int64_t window) {
-//   int64_t result = value % window;
-//   if (result < 0)
-//     result += window;
-//   return result;
-// }
+// Helper: Convert wrapped sample position to screen X coordinate
+file_scoped_fn int sample_to_screen_x(int64_t sample_position,
+                                      int64_t buffer_size_samples,
+                                      int screen_width, int pad_x) {
+  // ═══════════════════════════════════════════════════════════
+  // IMPORTANT: sample_position is ALREADY WRAPPED (0 to buffer_size-1)
+  // Don't wrap again!
+  // ═══════════════════════════════════════════════════════════
+  int64_t wrapped = sample_position % buffer_size_samples;
+  if (wrapped < 0) {
+    wrapped += buffer_size_samples;
+  }
 
-// ═══════════════════════════════════════════════════════════════
-// 📊 DAY 20: DEBUG SYNC DISPLAY (Complete Rewrite)
-// ═══════════════════════════════════════════════════════════════
-//
-// This function draws vertical lines showing audio buffer state.
-//
-// COORDINATE SYSTEM:
-// - X axis = position in audio buffer (0 to buffer_size)
-// - Y axis = different "tiers" of information
-//
-// TIERS (from top to bottom):
-// 1. All frames: Flip cursors (white = play, red = write)
-// 2. Current frame: Output cursors (before writing)
-// 3. Current frame: Write region (where we wrote)
-// 4. Current frame: Expected flip position (yellow)
-//
-// COLOR LEGEND:
-// - White (0xFFFFFFFF): Play cursor positions
-// - Red (0xFFFF0000): Write cursor positions
-// - Yellow (0xFFFFFF00): Expected/predicted positions
-// - Magenta (0xFFFF00FF): Play window (safety margin visualization)
-//
-// ═══════════════════════════════════════════════════════════════
+  // ✅ Check the WRAPPED position instead
+  if (wrapped < 0 || wrapped >= buffer_size_samples) {
+    return -1; // Should never happen after wrapping, but safety check
+  }
 
-// Helper: Draw a vertical line with bounds checking
+  // Scale to screen coordinates
+  int drawable_width = screen_width - 2 * pad_x;
+  real32 scale = (real32)drawable_width / (real32)buffer_size_samples;
+  int x = pad_x + (int)(scale * (real32)sample_position);
+
+  return x;
+}
+
+// Helper: Draw vertical line with bounds checking
 file_scoped_fn void debug_draw_vertical_line(GameOffscreenBuffer *buffer, int x,
                                              int top, int bottom,
                                              uint32_t color) {
-  // Bounds checking (prevents crashes!)
   if (x < 0 || x >= buffer->width)
     return;
   if (top < 0)
@@ -589,125 +600,141 @@ file_scoped_fn void debug_draw_vertical_line(GameOffscreenBuffer *buffer, int x,
   if (top >= bottom)
     return;
 
-  // Calculate starting pixel address
   uint8_t *pixel = (uint8_t *)buffer->memory.base + top * buffer->pitch +
                    x * buffer->bytes_per_pixel;
 
-  // Draw vertical line
   for (int y = top; y < bottom; y++) {
     *(uint32_t *)pixel = color;
     pixel += buffer->pitch;
   }
 }
 
-// Helper: Convert sample position to screen X coordinate
-file_scoped_fn int sample_to_screen_x(int64_t sample_position,
-                                      int64_t buffer_size_samples,
-                                      int screen_width, int pad_x) {
-  // Wrap sample position to buffer size
-  // This handles the ring buffer nature of audio
-  int64_t wrapped = sample_position % buffer_size_samples;
-  if (wrapped < 0)
-    wrapped += buffer_size_samples;
-
-  // Scale to screen coordinates
-  int drawable_width = screen_width - 2 * pad_x;
-  real32 scale = (real32)drawable_width / (real32)buffer_size_samples;
-  int x = pad_x + (int)(scale * (real32)wrapped);
-
-  return x;
-}
-
 void linux_debug_sync_display(GameOffscreenBuffer *buffer,
                               GameSoundOutput *sound_output,
                               LinuxDebugAudioMarker *markers, int marker_count,
                               int current_marker_index) {
-  // ═══════════════════════════════════════════════════════════════
-  // LAYOUT CONSTANTS
-  // ═══════════════════════════════════════════════════════════════
+  static int debug_frame = 0;
+  debug_frame++;
 
   int pad_x = 16;
   int pad_y = 16;
   int line_height = 64;
 
-  // We visualize the ALSA buffer, not 1 second of audio
-  // This matches Casey's approach with DirectSound's SecondaryBufferSize
   int64_t buffer_size_samples = g_linux_sound_output.latency_sample_count;
-  printf("[VIZ] buffer_size_samples=%ld, screen_width=%d\n",
-         buffer_size_samples, buffer->width);
-
-  // If buffer size is invalid, use 1 second as fallback
   if (buffer_size_samples <= 0) {
     buffer_size_samples = sound_output->samples_per_second;
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // COLOR DEFINITIONS
-  // ═══════════════════════════════════════════════════════════════
-
   uint32_t play_color = 0xFFFFFFFF;          // White
-  uint32_t write_color = 0xFFFF0000;         // Red
+  uint32_t write_color = 0xFFFF00FF;         // Red
   uint32_t expected_flip_color = 0xFFFFFF00; // Yellow
-  uint32_t play_window_color = 0xFFFF00FF;   // Magenta
+  uint32_t play_window_color = 0xFFFF0000;   // Magenta
 
-  // ═══════════════════════════════════════════════════════════════
-  // DRAW ALL MARKERS
-  // ═══════════════════════════════════════════════════════════════
+  int tier1_top = pad_y;
+  int tier1_bottom = pad_y + line_height;
+
+  // Debug: Print what we're about to draw (first 5 frames only)
+  if (debug_frame <= 5) {
+    printf("\n=== DRAW DEBUG Frame %d ===\n", debug_frame);
+    printf("buffer_size_samples = %ld\n", buffer_size_samples);
+    printf("screen_width = %d, pad_x = %d\n", buffer->width, pad_x);
+    printf("drawable_width = %d\n", buffer->width - 2 * pad_x);
+    printf("scale = %.6f pixels/sample\n",
+           (float)(buffer->width - 2 * pad_x) / buffer_size_samples);
+  }
 
   for (int marker_idx = 0; marker_idx < marker_count; marker_idx++) {
     LinuxDebugAudioMarker *marker = &markers[marker_idx];
 
-    // Skip uninitialized markers
     if (marker->flip_play_cursor < 0) {
       continue;
     }
 
     // ═══════════════════════════════════════════════════════════
-    // TIER 1: FLIP CURSORS (All Frames)
+    // CRITICAL: These are ALREADY WRAPPED in the marker!
+    // Don't wrap them again!
     // ═══════════════════════════════════════════════════════════
-    // This shows where the play/write cursors were at each frame flip.
-    // You should see them marching steadily across the screen.
+    int64_t flip_play = marker->flip_play_cursor;   // Already wrapped
+    int64_t flip_write = marker->flip_write_cursor; // Already wrapped
 
-    int tier1_top = pad_y;
-    int tier1_bottom = pad_y + line_height;
+    // Convert DIRECTLY to screen X (no wrapping needed)
+    int flip_play_x = sample_to_screen_x(flip_play, buffer_size_samples,
+                                         buffer->width, pad_x);
+    int flip_write_x = sample_to_screen_x(flip_write, buffer_size_samples,
+                                          buffer->width, pad_x);
 
-    int flip_play_x = sample_to_screen_x(
-        marker->flip_play_cursor, buffer_size_samples, buffer->width, pad_x);
-    int flip_write_x = sample_to_screen_x(
-        marker->flip_write_cursor, buffer_size_samples, buffer->width, pad_x);
-
-    // Skip if invalid coordinates
+    // Bounds check
     if (flip_play_x < 0 || flip_write_x < 0) {
       continue;
     }
 
+    // Draw tier 1 for ALL markers
     debug_draw_vertical_line(buffer, flip_play_x, tier1_top, tier1_bottom,
                              play_color);
     debug_draw_vertical_line(buffer, flip_write_x, tier1_top, tier1_bottom,
                              write_color);
 
-    // // Draw play window (480 samples after play cursor, like Casey)
-    // int play_window_samples = 480;
-    // Use ALSA's actual period size instead of hardcoded 480
-    snd_pcm_uframes_t period_size = 0;
-    snd_pcm_uframes_t buffer_size = 0;
-    SndPcmGetParams(g_linux_sound_output.handle, &buffer_size, &period_size);
+    // Play window (480 samples ahead)
+    int64_t play_window = (flip_play + 480) % buffer_size_samples;
+    int play_window_x = sample_to_screen_x(play_window, buffer_size_samples,
+                                           buffer->width, pad_x);
+    if (play_window_x >= 0) {
+      debug_draw_vertical_line(buffer, play_window_x, tier1_top, tier1_bottom,
+                               play_window_color);
+    }
 
-    int play_window_samples = (int)period_size; // Use actual ALSA period!
-    int play_window_x =
-        sample_to_screen_x(marker->flip_play_cursor + play_window_samples,
-                           buffer_size_samples, buffer->width, pad_x);
-    debug_draw_vertical_line(buffer, play_window_x, tier1_top, tier1_bottom,
-                             play_window_color);
+    // int play_window_x = sample_to_screen_x(play_window, buffer_size_samples,
+    //                                        buffer->width, pad_x);
+    // Debug: Print first 3 markers
+    if (debug_frame <= 5 && marker_idx < 3) {
+      printf("Marker[%d]:\n", marker_idx);
+      printf("  flip_play=%ld → x=%d\n", flip_play, flip_play_x);
+      printf("  flip_write=%ld → x=%d\n", flip_write, flip_write_x);
+    }
 
-    // ═══════════════════════════════════════════════════════════
-    // TIERS 2-4: CURRENT FRAME ONLY (Detailed View)
-    // ═══════════════════════════════════════════════════════════
+    int64_t play_window_pos = marker->flip_play_cursor + 480;
+
+    // Only draw if it doesn't wrap
+    if (play_window_pos < buffer_size_samples) {
+      int play_window_x = sample_to_screen_x(
+          play_window_pos, buffer_size_samples, buffer->width, pad_x);
+      if (play_window_x >= 0) {
+        debug_draw_vertical_line(buffer, play_window_x, tier1_top, tier1_bottom,
+                                 play_window_color);
+      }
+
+      if (debug_frame <= 5 && marker_idx < 3) {
+        printf("  play_window=%ld → x=%d (offset=%d)\n", play_window,
+               play_window_x, play_window_x - flip_play_x);
+      }
+
+      if (play_window_x < 0) {
+        continue;
+      }
+    }
+
+    // Bounds check
+    if (flip_play_x < 0 || flip_write_x < 0) {
+      continue;
+    }
+
+    // Draw tier 1 for ALL markers
+    debug_draw_vertical_line(buffer, flip_play_x, tier1_top, tier1_bottom,
+                             play_color);
+    // debug_draw_vertical_line(buffer, play_window_x, tier1_top, tier1_bottom,
+    //                          play_window_color);
+    debug_draw_vertical_line(buffer, flip_write_x, tier1_top, tier1_bottom,
+                             write_color);
+
+    // ═══════════════════════════════════════════════════════
+    // TIER 2-4: CURRENT FRAME ONLY (Detailed View)
+    // ═══════════════════════════════════════════════════════
+    // Only draw these for the most recent marker
 
     if (marker_idx == current_marker_index) {
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────
       // TIER 2: OUTPUT CURSORS (Before Writing)
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────
 
       int tier2_top = tier1_bottom + pad_y;
       int tier2_bottom = tier2_top + line_height;
@@ -715,6 +742,7 @@ void linux_debug_sync_display(GameOffscreenBuffer *buffer,
       int output_play_x =
           sample_to_screen_x(marker->output_play_cursor, buffer_size_samples,
                              buffer->width, pad_x);
+
       int output_write_x =
           sample_to_screen_x(marker->output_write_cursor, buffer_size_samples,
                              buffer->width, pad_x);
@@ -724,15 +752,16 @@ void linux_debug_sync_display(GameOffscreenBuffer *buffer,
       debug_draw_vertical_line(buffer, output_write_x, tier2_top, tier2_bottom,
                                write_color);
 
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────
       // TIER 3: WRITE REGION (Where We Actually Wrote)
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────
 
       int tier3_top = tier2_bottom + pad_y;
       int tier3_bottom = tier3_top + line_height;
 
       int write_start_x = sample_to_screen_x(
           marker->output_location, buffer_size_samples, buffer->width, pad_x);
+
       int write_end_x = sample_to_screen_x(
           marker->output_location + marker->output_sample_count,
           buffer_size_samples, buffer->width, pad_x);
@@ -742,52 +771,39 @@ void linux_debug_sync_display(GameOffscreenBuffer *buffer,
       debug_draw_vertical_line(buffer, write_end_x, tier3_top, tier3_bottom,
                                write_color);
 
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────
       // TIER 4: EXPECTED FLIP POSITION (Prediction)
-      // ─────────────────────────────────────────────────────────
-      // This tall yellow line shows where we PREDICTED the play
-      // cursor would be at frame flip. Compare to actual flip
-      // cursor in Tier 1 to see prediction accuracy.
+      // ─────────────────────────────────────────────────────
+      // Tall yellow line showing where we PREDICTED play cursor
 
       int expected_x =
           sample_to_screen_x(marker->expected_flip_play_cursor,
                              buffer_size_samples, buffer->width, pad_x);
 
-      // Draw from tier 2 top to tier 3 bottom (spans multiple tiers)
+      // Spans from tier 2 to tier 3
       debug_draw_vertical_line(buffer, expected_x, tier2_top, tier3_bottom,
                                expected_flip_color);
     }
+
+    if (debug_frame <= 5) {
+      printf("=========================\n\n");
+    }
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // DEBUG: Draw buffer boundary markers
-  // ═══════════════════════════════════════════════════════════════
-  // These help you see where the buffer wraps around
-
-  // Left edge (buffer position 0)
-  debug_draw_vertical_line(buffer, pad_x, pad_y, pad_y + 10,
-                           0xFF00FF00); // Green
-
-  // Right edge (buffer position = buffer_size)
-  int right_edge = buffer->width - pad_x;
-  debug_draw_vertical_line(buffer, right_edge, pad_y, pad_y + 10,
-                           0xFF00FF00); // Green
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 📸 DAY 20: CAPTURE FLIP STATE
+// 📸 CAPTURE FLIP STATE - FIXED VERSION
 // ═══════════════════════════════════════════════════════════════
 //
-// This function is called AFTER glXSwapBuffers() (screen flip).
-// It captures the ACTUAL audio cursor positions at flip time.
+// KEY FIX: This function should be called AFTER glXSwapBuffers()
+// and BEFORE advancing the marker index!
 //
-// By comparing these to our predictions (expected_flip_play_cursor),
-// we can see if our audio timing is correct.
-//
-// IMPORTANT: This is where we advance the marker index!
-// Each frame gets ONE marker, filled in two stages:
-// 1. Output* fields (before audio write)
-// 2. Flip* fields (after screen flip) ← We are here
+// Sequence in main loop should be:
+// 1. linux_fill_sound_buffer()      → Fills Output* fields
+// 2. game_update_and_render()        → Generates frame
+// 3. linux_debug_sync_display()      → Draws visualization
+// 4. glXSwapBuffers()                → FLIP!
+// 5. linux_debug_capture_flip_state() → Fills Flip* fields + advances index
 //
 // ═══════════════════════════════════════════════════════════════
 
@@ -796,56 +812,57 @@ void linux_debug_capture_flip_state(GameSoundOutput *sound_output) {
     return;
   }
 
-  // Query ALSA state at flip time
   snd_pcm_sframes_t delay_frames = 0;
   int err = SndPcmDelay(g_linux_sound_output.handle, &delay_frames);
 
   if (err >= 0) {
-    // Calculate virtual cursors at flip time
-    int64_t flip_play_cursor =
-        sound_output->running_sample_index - delay_frames;
-    int64_t flip_write_cursor =
-        sound_output->running_sample_index + sound_output->safety_sample_count;
+    int64_t buffer_size = g_linux_sound_output.latency_sample_count;
 
-    // Store in the CURRENT marker (same one we filled Output* fields in)
+    // Calculate absolute positions
+    int64_t flip_play_absolute =
+        sound_output->running_sample_index - delay_frames;
+    int64_t flip_write_absolute = sound_output->running_sample_index;
+
+    // Wrap to buffer size
+    int64_t flip_play_wrapped = flip_play_absolute % buffer_size;
+    if (flip_play_wrapped < 0) {
+      flip_play_wrapped += buffer_size;
+    }
+
+    int64_t flip_write_wrapped = flip_write_absolute % buffer_size;
+    if (flip_write_wrapped < 0) {
+      flip_write_wrapped += buffer_size;
+    }
+
+    // Store WRAPPED values
     LinuxDebugAudioMarker *marker =
         &g_debug_audio_markers[g_debug_marker_index];
-    marker->flip_play_cursor = flip_play_cursor;
-    marker->flip_write_cursor = flip_write_cursor;
+    marker->flip_play_cursor = flip_play_wrapped;
+    marker->flip_write_cursor = flip_write_wrapped;
 
-    // Debug: Compare prediction vs reality
+    // Debug logging
     static int comparison_count = 0;
     if (++comparison_count <= 10 || comparison_count % 300 == 0) {
-      int64_t prediction_error =
-          flip_play_cursor - marker->expected_flip_play_cursor;
-      printf(
-          "[FLIP #%d] Expected=%ld, Actual=%ld, Error=%ld samples (%.2fms)\n",
-          comparison_count, marker->expected_flip_play_cursor, flip_play_cursor,
-          prediction_error,
-          (float)prediction_error / sound_output->samples_per_second * 1000.0f);
+      printf("[FLIP #%d]\n", comparison_count);
+      printf("  Absolute: play=%ld, write=%ld\n", flip_play_absolute,
+             flip_write_absolute);
+      printf("  Wrapped:  play=%ld, write=%ld\n", flip_play_wrapped,
+             flip_write_wrapped);
+      printf("  Delay: %ld samples (%.1fms)\n", (long)delay_frames,
+             (float)delay_frames / sound_output->samples_per_second * 1000.0f);
     }
   } else {
-    // Query failed, mark as invalid
     LinuxDebugAudioMarker *marker =
         &g_debug_audio_markers[g_debug_marker_index];
     marker->flip_play_cursor = -1;
     marker->flip_write_cursor = -1;
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // NOW we advance to the next marker!
-  // This ensures Output* and Flip* are in the SAME marker.
-  // ═══════════════════════════════════════════════════════════════
-
   g_debug_marker_index = (g_debug_marker_index + 1) % MAX_DEBUG_AUDIO_MARKERS;
-
-  static int advance_count = 0;
-  printf("[MARKER ADVANCE #%d] index now = %d\n", ++advance_count,
-         g_debug_marker_index);
 }
 
 #endif // HANDMADE_INTERNAL
-
+       //
 // ═══════════════════════════════════════════════════════════════
 // 🔊 DAY 20: FILL SOUND BUFFER (Complete Rewrite)
 // ═══════════════════════════════════════════════════════════════
@@ -1062,18 +1079,29 @@ void linux_fill_sound_buffer(GameSoundOutput *sound_output) {
   {
     LinuxDebugAudioMarker *marker =
         &g_debug_audio_markers[g_debug_marker_index];
+    int64_t buffer_size = g_linux_sound_output.latency_sample_count;
 
-    // Output state (BEFORE writing)
-    marker->output_play_cursor = play_cursor;
-    marker->output_write_cursor = safe_write_cursor;
-    marker->output_location = write_cursor; // Where we're about to write
+    // Wrap both cursors independently
+    int64_t output_play_wrapped = play_cursor % buffer_size;
+    if (output_play_wrapped < 0) {
+      output_play_wrapped += buffer_size;
+    }
+
+    int64_t output_write_wrapped = write_cursor % buffer_size;
+    if (output_write_wrapped < 0) {
+      output_write_wrapped += buffer_size;
+    }
+
+    int64_t output_location_wrapped = write_cursor % buffer_size;
+    if (output_location_wrapped < 0) {
+      output_location_wrapped += buffer_size;
+    }
+
+    marker->output_play_cursor = output_play_wrapped;
+    marker->output_write_cursor = output_write_wrapped;
+    marker->output_location = output_location_wrapped;
     marker->output_sample_count = samples_to_write;
-
-    // Prediction: where will play cursor be at frame flip?
     marker->expected_flip_play_cursor = expected_frame_boundary;
-
-    // Initialize flip cursors to invalid values
-    // They'll be filled in by linux_debug_capture_flip_state()
     marker->flip_play_cursor = -1;
     marker->flip_write_cursor = -1;
   }
