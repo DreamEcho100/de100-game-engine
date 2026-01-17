@@ -26,6 +26,10 @@
 #include "../_common/backbuffer.h"
 #include "../_common/input.h"
 
+#if HANDMADE_INTERNAL
+#include "../_common/debug.h"
+#endif
+
 // ═══════════════════════════════════════════════════════════════
 // 🎮 OPENGL STATE
 // ═══════════════════════════════════════════════════════════════
@@ -162,7 +166,7 @@ file_scoped_fn void update_window_opengl(GameOffscreenBuffer *backbuffer) {
   if (!backbuffer->memory.base)
     return;
 
-  // Step 1: Upload our CPU-rendered pixels to GPU texture
+  // Upload our CPU-rendered pixels to GPU texture
   glBindTexture(GL_TEXTURE_2D, g_gl.texture_id);
   glTexImage2D(GL_TEXTURE_2D,
                0,       // Mipmap level (0 = base image)
@@ -174,10 +178,10 @@ file_scoped_fn void update_window_opengl(GameOffscreenBuffer *backbuffer) {
                backbuffer->memory.base // Pointer to our pixel data
   );
 
-  // Step 2: Clear screen to black
+  // Clear screen to black
   glClear(GL_COLOR_BUFFER_BIT);
 
-  // Step 3: Draw fullscreen quad with our texture
+  // Draw fullscreen quad with our texture
   // This is like a <canvas> element showing an <img>
   glBegin(GL_QUADS);
   glTexCoord2f(0.0f, 0.0f);
@@ -190,7 +194,7 @@ file_scoped_fn void update_window_opengl(GameOffscreenBuffer *backbuffer) {
   glVertex2f(0, backbuffer->height); // Bottom-left
   glEnd();
 
-  // Step 4: Swap buffers (VSync happens here!)
+  // Swap buffers (VSync happens here!)
   // Front buffer = what user sees
   // Back buffer = what we just drew
   // This swaps them (and waits for monitor refresh if VSync enabled)
@@ -209,7 +213,7 @@ int get_monitor_refresh_rate(Display *display) {
 
   if (!screen_config) {
     printf("⚠️  XRandR not available, defaulting to 60Hz\n");
-    return 60;
+    return FPS_60;
   }
 
   short refresh_rate = XRRConfigCurrentRate(screen_config);
@@ -275,11 +279,11 @@ inline file_scoped_fn void handle_event(GameOffscreenBuffer *backbuffer,
 
   case FocusIn: {
     printf("Window gained focus\n");
-    g_window_is_active = true; // ✅ Window is active again
+    g_window_is_active = true; // Window is active again
     break;
   }
 
-  case FocusOut: { // ✅ ADD THIS CASE
+  case FocusOut: { // ADD THIS CASE
     printf("Window lost focus\n");
     g_window_is_active = false; // Window in background
     break;
@@ -334,9 +338,9 @@ int platform_main() {
   printf("[%.3fs] Allocating permanent storage (%lu MB)...\n",
          get_wall_clock() - t_start, permanent_storage_size / (1024 * 1024));
 
-  PlatformMemoryBlock permanent_storage = platform_allocate_memory(
-      base_address, permanent_storage_size,
-      PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE | PLATFORM_MEMORY_ZEROED);
+  PlatformMemoryBlock permanent_storage =
+      platform_allocate_memory(base_address, permanent_storage_size,
+                               PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE);
 
   if (!permanent_storage.base) {
     fprintf(stderr, "❌ Could not allocate permanent storage\n");
@@ -351,9 +355,9 @@ int platform_main() {
   void *transient_base =
       (uint8_t *)permanent_storage.base + permanent_storage.size;
 
-  PlatformMemoryBlock transient_storage = platform_allocate_memory(
-      transient_base, transient_storage_size,
-      PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE | PLATFORM_MEMORY_ZEROED);
+  PlatformMemoryBlock transient_storage =
+      platform_allocate_memory(transient_base, transient_storage_size,
+                               PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE);
 
   if (!transient_storage.base) {
     fprintf(stderr, "❌ Could not allocate transient storage\n");
@@ -460,12 +464,16 @@ int platform_main() {
       .monitor_hz = monitor_refresh_hz,
       .frames_sampled = 0,
       .frames_missed = 0,
-      .sample_window = 300,      // Evaluate every 5 seconds (at 60fps)
-      .miss_threshold = 0.05f,   // If >5% frames miss → reduce FPS
-      .recover_threshold = 0.01f // If <1% frames miss → try higher FPS
+      .sample_window = 600,       // Evaluate every 10 seconds (at 60fps)
+      .miss_threshold = 0.03f,    // If >5% frames miss → reduce FPS
+      .recover_threshold = 0.005f // If <0.5% frames miss → try higher FPS
   };
 
   real32 target_seconds_per_frame = 1.0f / (real32)adaptive.target_fps;
+#if HANDMADE_INTERNAL
+  g_frame_log_counter = 0;
+  g_debug_fps = adaptive.target_fps;
+#endif
 
   printf("═══════════════════════════════════════════════════════════\n");
   printf("🎮 ADAPTIVE FRAME RATE CONTROL\n");
@@ -489,6 +497,16 @@ int platform_main() {
     return 1;
   }
 
+#if HANDMADE_INTERNAL
+  // Draw test line at x=100
+  for (int y = 0; y < game_buffer.height; y++) {
+    uint32_t *pixel =
+        (uint32_t *)game_buffer.memory.base + (y * game_buffer.width + 100);
+    *pixel = 0x00FF00FF; // Bright green
+  }
+  printf("[DEBUG] Drew test line at x=100\n");
+#endif
+
   // ═══════════════════════════════════════════════════════════════
   // 🖼️ CREATE BACKBUFFER (Our CPU rendering target)
   // ═══════════════════════════════════════════════════════════════
@@ -497,8 +515,7 @@ int platform_main() {
 
   int buffer_size = width * height * 4;
   game_buffer.memory = platform_allocate_memory(
-      NULL, buffer_size,
-      PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE | PLATFORM_MEMORY_ZEROED);
+      NULL, buffer_size, PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE);
   game_buffer.width = width;
   game_buffer.height = height;
   game_buffer.pitch = width * 4;
@@ -517,17 +534,38 @@ int platform_main() {
   // ═══════════════════════════════════════════════════════════════
 
   while (is_game_running) {
+#if HANDMADE_INTERNAL
+    if (FRAME_LOG_EVERY_FIVE_SECONDS_CHECK) {
+      // DEBUG: Track RSI changes in main loop
+      static int64_t loop_last_rsi = 0;
+      static int loop_count = 0;
+      loop_count++;
+
+      if (loop_count <= 10 ||
+          game_sound_output.running_sample_index != loop_last_rsi) {
+        // Only print first 10 frames for debugging
+        if (loop_count <= 10) {
+          printf(
+              "[LOOP #%d] RSI=%ld (changed by %ld)\n", loop_count,
+              (long)game_sound_output.running_sample_index,
+              (long)(game_sound_output.running_sample_index - loop_last_rsi));
+        }
+        loop_last_rsi = game_sound_output.running_sample_index;
+      }
+    }
+#endif
+
     struct timespec frame_start_time;
     clock_gettime(CLOCK_MONOTONIC, &frame_start_time);
     uint64_t frame_start_cycles = __rdtsc(); // CPU cycles (for profiling)
 
     // ─────────────────────────────────────────────────────────────
-    // !: PREPARE INPUT
+    // PREPARE INPUT
     // ─────────────────────────────────────────────────────────────
     prepare_input_frame(old_game_input, new_game_input);
 
     // ─────────────────────────────────────────────────────────────
-    // !: PROCESS X11 EVENTS
+    // PROCESS X11 EVENTS
     // ─────────────────────────────────────────────────────────────
     XEvent event;
     while (XPending(display) > 0) {
@@ -537,29 +575,39 @@ int platform_main() {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // !: POLL JOYSTICK
+    // POLL JOYSTICK
     // ─────────────────────────────────────────────────────────────
     linux_poll_joystick(new_game_input);
 
     // ─────────────────────────────────────────────────────────────
-    // !: UPDATE GAME + RENDER (Skip if window inactive)
+    // UPDATE GAME + RENDER (Skip if window inactive)
     // ─────────────────────────────────────────────────────────────
-    if (game_buffer.memory.base && g_window_is_active) { // ✅ Check focus!
+    // ─────────────────────────────────────────────────────────────
+    // UPDATE GAME + RENDER
+    // ─────────────────────────────────────────────────────────────
+    if (game_buffer.memory.base && g_window_is_active) {
+
+      // Step 1: Update game logic and render graphics
       game_update_and_render(&game_memory, new_game_input, &game_buffer,
                              &game_sound_output);
+
+      // Step 2: Fill audio buffer (captures Output* debug state)
+      game_sound_output.game_update_hz = adaptive.target_fps;
+      linux_fill_sound_buffer(&game_sound_output);
+
+      // Step 4: Display frame (FLIP!)
       update_window_opengl(&game_buffer);
 
       // Wait for GPU to finish (synchronize CPU/GPU timing)
       XSync(display, False);
     } else if (!g_window_is_active) {
-      // ✅ Window in background: sleep longer to save CPU
-      struct timespec sleep_spec = {0,
-                                    100000000}; // 100ms (10 FPS when inactive)
+      // Window in background: sleep to save CPU
+      struct timespec sleep_spec = {0, 16000000}; // 16ms
       nanosleep(&sleep_spec, NULL);
     }
 
     // ─────────────────────────────────────────────────────────────
-    // !: MEASURE WORK TIME
+    // MEASURE WORK TIME
     // ─────────────────────────────────────────────────────────────
     struct timespec work_end_time;
     clock_gettime(CLOCK_MONOTONIC, &work_end_time);
@@ -568,7 +616,7 @@ int platform_main() {
         (work_end_time.tv_nsec - frame_start_time.tv_nsec) / 1000000000.0f;
 
     // ─────────────────────────────────────────────────────────────
-    // !: ADAPTIVE SLEEP (Casey's Day 18 pattern)
+    // ADAPTIVE SLEEP (Casey's Day 18 pattern)
     // ─────────────────────────────────────────────────────────────
     // Sleep for remaining frame time to hit target FPS
     // Two-phase sleep:
@@ -604,13 +652,14 @@ int platform_main() {
       }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // !: FILL AUDIO BUFFER (After sleep!)
-    // ─────────────────────────────────────────────────────────────
-    linux_fill_sound_buffer(&game_sound_output);
+    // // ─────────────────────────────────────────────────────────────
+    // // FILL AUDIO BUFFER (After sleep!)
+    // // ─────────────────────────────────────────────────────────────
+    // game_sound_output.game_update_hz = adaptive.target_fps;
+    // linux_fill_sound_buffer(&game_sound_output);
 
     // ─────────────────────────────────────────────────────────────
-    // !: MEASURE TOTAL FRAME TIME
+    // MEASURE TOTAL FRAME TIME
     // ─────────────────────────────────────────────────────────────
     struct timespec frame_final_time;
     clock_gettime(CLOCK_MONOTONIC, &frame_final_time);
@@ -627,7 +676,7 @@ int platform_main() {
     real32 mcpf = (frame_final_cycles - frame_start_cycles) / 1000000.0f;
 
     // ─────────────────────────────────────────────────────────────
-    // !: REPORT MISSED FRAMES (Only serious misses >5ms)
+    // REPORT MISSED FRAMES (Only serious misses >5ms)
     // ─────────────────────────────────────────────────────────────
     if (frame_time_ms > (target_frame_time_ms + 5.0f) && g_window_is_active) {
       printf("⚠️  MISSED FRAME! %.2fms (target: %.2fms, over by: %.2fms)\n",
@@ -653,19 +702,33 @@ int platform_main() {
 #endif
 
     // ─────────────────────────────────────────────────────────────
-    // !: ADAPTIVE FPS EVALUATION
+    // ADAPTIVE FPS EVALUATION
     // ─────────────────────────────────────────────────────────────
     // Only runs every 300 frames (~5 seconds)
     // Adjusts target FPS based on performance
     // ─────────────────────────────────────────────────────────────
 
     adaptive.frames_sampled++;
+#if HANDMADE_INTERNAL
+    g_frame_log_counter++;
+#endif
+
     if (frame_time_ms > (target_frame_time_ms + 2.0f) && g_window_is_active) {
       adaptive.frames_missed++;
     }
 
     // Time to evaluate? (Every 300 frames = 5 seconds at 60fps)
     if (adaptive.frames_sampled >= adaptive.sample_window) {
+#if HANDMADE_INTERNAL
+      if (FRAME_LOG_EVERY_ONE_SECONDS_CHECK ||
+          (g_frame_stats.frame_count % adaptive.sample_window == 0)) {
+        printf("[AUDIO] SndPcmPrepare called at frame %d\n",
+               g_frame_stats.frame_count);
+        printf("[ADAPTIVE] Evaluating at frame %d, RSI=%ld\n",
+               g_frame_stats.frame_count,
+               (long)game_sound_output.running_sample_index);
+      }
+#endif
       real32 miss_rate =
           (real32)adaptive.frames_missed / (real32)adaptive.frames_sampled;
 
@@ -674,34 +737,59 @@ int platform_main() {
         int old_target = adaptive.target_fps;
 
         if (adaptive.target_fps == adaptive.monitor_hz) {
-          // adaptive.target_fps = adaptive.monitor_hz == 120
-          //                           ? (adaptive.monitor_hz == 60 ? 30 : 60)
-          //                           : 60;
           switch (adaptive.monitor_hz) {
-          case 120:
-            adaptive.target_fps = 60;
+          case FPS_120:
+            adaptive.target_fps = FPS_90;
             break;
-          case 60:
-            adaptive.target_fps = 30;
+          case FPS_90:
+            adaptive.target_fps = FPS_60;
+            break;
+          case FPS_60:
+            adaptive.target_fps = FPS_45;
+            break;
+          case FPS_45:
+            adaptive.target_fps = FPS_30;
             break;
           default:
-            adaptive.target_fps = 60;
+            adaptive.target_fps = FPS_30;
             break;
           }
-        } else if (adaptive.target_fps == 120)
-          adaptive.target_fps = 60;
-        else if (adaptive.target_fps == 60)
-          adaptive.target_fps = 30;
-        else if (adaptive.target_fps == 30)
-          adaptive.target_fps = 20;
-        else if (adaptive.target_fps == 20)
-          adaptive.target_fps = 15;
+        } else {
+          switch (adaptive.target_fps) {
+          case FPS_120:
+            adaptive.target_fps = FPS_90;
+            break;
+          case FPS_90:
+            adaptive.target_fps = FPS_60;
+            break;
+          case FPS_60:
+            adaptive.target_fps = FPS_45;
+            break;
+          case FPS_45:
+            adaptive.target_fps = FPS_30;
+            break;
+          default:
+            adaptive.target_fps = FPS_30;
+            break;
+          }
+        }
+
+        if (adaptive.target_fps <= 0) {
+          fprintf(stderr, "❌ BUG: adaptive.target_fps=%d after reduction!\n",
+                  adaptive.target_fps);
+          adaptive.target_fps = FPS_30; // Emergency fallback
+        }
 
         if (adaptive.target_fps != old_target) {
           target_seconds_per_frame = 1.0f / (real32)adaptive.target_fps;
-          printf("\n⚠️  ADAPTIVE FPS: REDUCING TARGET %d → %d FPS (miss rate: "
-                 "%.1f%%)\n\n",
-                 old_target, adaptive.target_fps, miss_rate * 100.0f);
+          game_sound_output.game_update_hz = adaptive.target_fps;
+
+#if HANDMADE_INTERNAL
+          g_debug_fps = adaptive.target_fps;
+#endif
+
+          printf("\n⚠️  ADAPTIVE FPS: REDUCING TARGET %d → %d FPS\n", old_target,
+                 adaptive.target_fps);
         }
       }
       // Performance recovered? Try higher FPS
@@ -709,22 +797,32 @@ int platform_main() {
                adaptive.target_fps < adaptive.monitor_hz) {
         int old_target = adaptive.target_fps;
 
-        if (adaptive.target_fps == 15)
-          adaptive.target_fps = 20;
-        else if (adaptive.target_fps == 20)
-          adaptive.target_fps = 30;
-        else if (adaptive.target_fps == 30)
-          adaptive.target_fps = 60;
-        else if (adaptive.target_fps == 60)
-          adaptive.target_fps = 100;
-        else if (adaptive.target_fps == 100)
-          adaptive.target_fps = 120;
-        else if (adaptive.target_fps == 120)
+        switch (adaptive.target_fps) {
+        case FPS_30:
+          adaptive.target_fps = FPS_45;
+          break;
+        case FPS_45:
+          adaptive.target_fps = FPS_60;
+          break;
+        case FPS_60:
+          adaptive.target_fps = FPS_90;
+          break;
+        case FPS_90:
+          adaptive.target_fps = FPS_120;
+          break;
+        default:
           adaptive.target_fps = adaptive.monitor_hz;
+          break;
+        }
 
         if (adaptive.target_fps != old_target) {
           target_seconds_per_frame = 1.0f / (real32)adaptive.target_fps;
-          printf("\n✅ ADAPTIVE FPS: INCREASING TARGET %d → %d FPS (miss rate: "
+          game_sound_output.game_update_hz = adaptive.target_fps;
+#if HANDMADE_INTERNAL
+          g_debug_fps = adaptive.target_fps;
+#endif
+          printf("\n✅ ADAPTIVE FPS: INCREASING TARGET %d → %d FPS (miss "
+                 "rate: "
                  "%.1f%%)\n\n",
                  old_target, adaptive.target_fps, miss_rate * 100.0f);
         }
@@ -737,19 +835,19 @@ int platform_main() {
 
 #if HANDMADE_INTERNAL
     // Print stats every 5 seconds (300 frames at 60fps)
-    static int debug_counter = 0;
-    if (++debug_counter % 300 == 5) {
-      printf(
-          "[X11] %.2fms/f, %.2ff/s, %.2fmc/f (work: %.2fms, sleep: %.2fms)\n",
-          total_frame_time * 1000.0f, fps, mcpf, work_seconds * 1000.0f,
-          sleep_time * 1000.0f);
+    if (FRAME_LOG_EVERY_FIVE_SECONDS_CHECK) {
+      printf("[X11] %.2fms/f, %.2ff/s, %.2fmc/f (work: %.2fms, sleep: "
+             "%.2fms)\n",
+             total_frame_time * 1000.0f, fps, mcpf, work_seconds * 1000.0f,
+             sleep_time * 1000.0f);
 
       real32 current_miss_rate =
           adaptive.frames_sampled > 0
               ? (real32)adaptive.frames_missed / (real32)adaptive.frames_sampled
               : 0.0f;
 
-      printf("[Adaptive] Target: %d FPS | Sampled: %u/%u | Misses: %u (%.1f%%) "
+      printf("[Adaptive] Target: %d FPS | Sampled: %u/%u | Misses: %u "
+             "(%.1f%%) "
              "| Next eval in: %u frames\n",
              adaptive.target_fps, adaptive.frames_sampled,
              adaptive.sample_window, adaptive.frames_missed,
@@ -759,7 +857,7 @@ int platform_main() {
 #endif
 
     // ─────────────────────────────────────────────────────────────
-    // !: SWAP INPUT BUFFERS
+    // SWAP INPUT BUFFERS
     // ─────────────────────────────────────────────────────────────
     // Swap pointers (old becomes new, new becomes old)
     // This preserves button press/release state across frames
