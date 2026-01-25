@@ -71,7 +71,7 @@ typedef struct {
   uint32_t cooldown_frames;          // Don't change FPS for N frames
 } AdaptiveFPS;
 
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
 // ═══════════════════════════════════════════════════════════════
 // 📊 FRAME TIME STATISTICS (Debug Build Only)
 // ═══════════════════════════════════════════════════════════════
@@ -329,86 +329,46 @@ int platform_main() {
   real64 t_start = get_wall_clock();
   printf("[%.3fs] Starting platform_main\n", get_wall_clock() - t_start);
 
-  // ═══════════════════════════════════════════════════════════════
-  // 💾 ALLOCATE GAME MEMORY (Casey's Day 4 pattern)
-  // ═══════════════════════════════════════════════════════════════
-  // Two memory pools:
-  // 1. Permanent (64MB) - game state, assets, never freed
-  // 2. Transient (4GB) - per-frame scratch memory, level data
-  // ═══════════════════════════════════════════════════════════════
+  // ─────────────────────────────────────────────────────────────────────
+  // LOAD GAME CODE
+  // ─────────────────────────────────────────────────────────────────────
 
-#if HANDMADE_INTERNAL
-  // Debug: Reserve address space at 2TB mark (makes debugging easier)
-  void *base_address = (void *)TERABYTES(2);
-#else
-  void *base_address = NULL; // Release: Let OS choose address
-#endif
+  char *main_game_so_path = "build/libgame.so";
+  char main_game_temp_so_path[512];
+  snprintf(main_game_temp_so_path, sizeof(main_game_temp_so_path),
+           "build/libgame_temp.so");
+  char *pre_main_game_so_path = "build/lib-init-game.so";
+  char pre_main_game_temp_so_path[512];
+  snprintf(pre_main_game_temp_so_path, sizeof(pre_main_game_temp_so_path),
+           "build/lib-init-game_temp.so");
 
-  uint64_t permanent_storage_size = MEGABYTES(64);
-  uint64_t transient_storage_size = GIGABYTES(1);
+  LoadGameCodeConfig config = {0};
+  config.main_main_game_lib_name = main_game_so_path;
+  config.temp_main_game_lib_name = main_game_temp_so_path;
+  config.pre_main_game_lib_path = pre_main_game_so_path;
+  config.temp_pre_main_game_lib_path = pre_main_game_temp_so_path;
 
-  printf("[%.3fs] Allocating permanent storage (%lu MB)...\n",
-         get_wall_clock() - t_start, permanent_storage_size / (1024 * 1024));
-
-  PlatformMemoryBlock permanent_storage = platform_allocate_memory(
-      base_address, permanent_storage_size,
-      PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE | PLATFORM_MEMORY_ZEROED);
-
-  if (!platform_memory_is_valid(permanent_storage)) {
-    fprintf(stderr, "❌ Could not allocate permanent storage\n");
-    fprintf(stderr, "   Error: %s\n", permanent_storage.error_message);
-    fprintf(stderr, "   Code: %s\n",
-            platform_memory_strerror(permanent_storage.error_code));
-    return 1;
+  GameCode game = {0};
+  load_game_code(&game, &config, GAME_CODE_CATEGORY_ANY);
+  if (game.is_valid) {
+    printf("✅ Game code loaded successfully\n");
+    // NOTE: do on a separate thread
+    de100_file_delete(config.temp_main_game_lib_name);     // Clean up temp file
+    de100_file_delete(config.temp_pre_main_game_lib_path); // Clean up temp file
+  } else {
+    printf("❌ Failed to load game code, using stubs\n");
   }
 
-  printf("[%.3fs] Allocating transient storage (%lu GB)...\n",
-         get_wall_clock() - t_start,
-         transient_storage_size / (1024 * 1024 * 1024));
-
-  // Place transient storage right after permanent (contiguous memory)
-  void *transient_base =
-      (uint8_t *)permanent_storage.base + permanent_storage.size;
-
-  PlatformMemoryBlock transient_storage = platform_allocate_memory(
-      transient_base, transient_storage_size,
-      PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE | PLATFORM_MEMORY_ZEROED);
-
-  if (!platform_memory_is_valid(transient_storage)) {
-    fprintf(stderr, "❌ Could not allocate transient storage\n");
-    fprintf(stderr, "   Error: %s\n", transient_storage.error_message);
-    fprintf(stderr, "   Code: %s\n",
-            platform_memory_strerror(transient_storage.error_code));
-    return 1;
-  }
-
-  // Package memory blocks for game code
   GameMemory game_memory = {0};
-  game_memory.permanent_storage = permanent_storage;
-  game_memory.transient_storage = transient_storage;
-  game_memory.permanent_storage_size = permanent_storage.size;
-  game_memory.transient_storage_size = transient_storage.size;
-
-  printf("✅ Game memory allocated:\n");
-  printf("   Permanent: %lu MB at %p\n",
-         game_memory.permanent_storage.size / (1024 * 1024),
-         game_memory.permanent_storage.base);
-  printf("   Transient: %lu GB at %p\n",
-         game_memory.transient_storage.size / (1024 * 1024 * 1024),
-         game_memory.transient_storage.base);
-
-  // ═══════════════════════════════════════════════════════════════
-  // 🎮 INITIALIZE INPUT (Casey's Day 6 pattern)
-  // ═══════════════════════════════════════════════════════════════
-  // Double-buffered input: new_input (current) and old_input (previous)
-  // We swap pointers each frame to preserve button press/release state
-  // ═══════════════════════════════════════════════════════════════
-
-  static GameInput game_inputs[2] = {0};
+  GameInput game_inputs[2] = {0};
+  GameOffscreenBuffer game_buffer = {0};
   GameInput *new_game_input = &game_inputs[0];
   GameInput *old_game_input = &game_inputs[1];
+  GameAudioOutputBuffer game_audio_output = {0};
 
-  GameOffscreenBuffer game_buffer = {0};
+  game.startup(&game_memory, new_game_input, old_game_input, &game_buffer,
+               &game_audio_output);
+  game.init(&game_memory, new_game_input, &game_buffer);
 
   // ═══════════════════════════════════════════════════════════════
   // 🎮 INITIALIZE JOYSTICK (Before main loop!)
@@ -483,7 +443,7 @@ int platform_main() {
 
   real32 target_seconds_per_frame = 1.0f / (real32)adaptive.target_fps;
   g_fps = adaptive.target_fps;
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
   g_reload_check_interval = g_fps * 2;
 #endif
 
@@ -497,7 +457,6 @@ int platform_main() {
   printf("Miss threshold:  %.1f%%\n", adaptive.miss_threshold * 100.0f);
   printf("═══════════════════════════════════════════════════════════\n\n");
 
-  GameAudioOutputBuffer game_audio_output = {0};
   PlatformAudioConfig platform_audio_config = {0};
   int samples_per_second = 48000;
   int bytes_per_sample = sizeof(int16_t) * 2; // 16-bit stereo
@@ -521,7 +480,7 @@ int platform_main() {
     return 1;
   }
 
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
   // Draw test line at x=100
   for (int y = 0; y < game_buffer.height; y++) {
     uint32_t *pixel =
@@ -563,44 +522,19 @@ int platform_main() {
   int sample_buffer_size =
       max_samples_per_call * platform_audio_config.bytes_per_sample;
 
-  PlatformMemoryBlock sound_samples_block = platform_allocate_memory(
+  PlatformMemoryBlock audio_samples_block = platform_allocate_memory(
       NULL, sample_buffer_size,
       PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE | PLATFORM_MEMORY_ZEROED);
 
-  if (!platform_memory_is_valid(sound_samples_block)) {
+  if (!platform_memory_is_valid(audio_samples_block)) {
     fprintf(stderr, "❌ Failed to allocate sound sample buffer\n");
-    fprintf(stderr, "   Error: %s\n", sound_samples_block.error_message);
+    fprintf(stderr, "   Error: %s\n", audio_samples_block.error_message);
     fprintf(stderr, "   Code: %s\n",
-            platform_memory_strerror(sound_samples_block.error_code));
+            platform_memory_strerror(audio_samples_block.error_code));
     return 1;
   }
 
   printf("✅ Sound sample buffer allocated: %d bytes\n", sample_buffer_size);
-
-  // ─────────────────────────────────────────────────────────────────────
-  // LOAD GAME CODE
-  // ─────────────────────────────────────────────────────────────────────
-
-  char *game_so_path = "build/libgame.so";
-  // char unique_temp_name[512];
-  // snprintf(unique_temp_name, sizeof(unique_temp_name),
-  //          "%s.%d", temp_lib_name, g_game_code_load_counter++);
-
-  // printf("   Unique temp: %s\n", unique_temp_name);
-  // char *game_temp_so_path = "build/libgame_temp.so";
-  // Use a unique file name
-  char game_temp_so_path[512];
-  snprintf(game_temp_so_path, sizeof(game_temp_so_path),
-           "build/libgame_temp.%d.so", g_frame_counter);
-
-  GameCode game = load_game_code(game_so_path, game_temp_so_path);
-  if (game.is_valid) {
-    printf("✅ Game code loaded successfully\n");
-    // NOTE: do on a separate thread
-    de100_file_delete(game_temp_so_path); // Clean up temp file
-  } else {
-    printf("❌ Failed to load game code, using stubs\n");
-  }
 
   g_reload_check_interval = adaptive.target_fps * 2; // Check every 2 seconds
   // const uint32_t RELOAD_CHECK_INTERVAL = 120;
@@ -617,7 +551,7 @@ int platform_main() {
   // ═══════════════════════════════════════════════════════════════
   if (game_buffer.memory.base) {
     while (is_game_running) {
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
       if (FRAME_LOG_EVERY_TEN_SECONDS_CHECK) { // Every 30 seconds at 60fps
         printf("[HEALTH CHECK] frame=%u, RSI=%lld, marker_idx=%d\n",
                g_frame_counter,
@@ -625,7 +559,7 @@ int platform_main() {
                g_debug_marker_index);
       }
 #endif
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
       if (g_frame_counter <= 10 || FRAME_LOG_EVERY_FIVE_SECONDS_CHECK) {
         // DEBUG: Track RSI changes in main loop
         static int64_t loop_last_rsi = 0;
@@ -657,7 +591,8 @@ int platform_main() {
           printf("🔄 Hot reload requested by user!\n");
         }
         g_reload_check_counter = 0;
-        if (game_code_needs_reload(&game, game_so_path)) {
+        if (main_game_code_needs_reload(&game,
+                                        config.main_main_game_lib_name)) {
           printf("🔄 Hot reload triggered! at g_frame_counter: %d\n",
                  g_frame_counter);
           printf("[HOT RELOAD] Before: update_and_render=%p "
@@ -668,14 +603,14 @@ int platform_main() {
           unload_game_code(&game);
           char game_temp_so_path[512];
           snprintf(game_temp_so_path, sizeof(game_temp_so_path),
-                   "build/libgame_temp.%d.so", g_fps);
+                   "build/libgame_temp.so");
 
           printf("[HOT RELOAD] After:  update_and_render=%p "
                  "get_audio_samples=%p\n",
                  (void *)game.update_and_render,
                  (void *)game.get_audio_samples);
 
-          game = load_game_code(game_so_path, game_temp_so_path);
+          load_game_code(&game, &config, GAME_CODE_CATEGORY_MAIN);
 
           if (game.is_valid) {
             printf("✅ Hot reload successful!\n");
@@ -690,7 +625,9 @@ int platform_main() {
 
       struct timespec frame_start_time;
       clock_gettime(CLOCK_MONOTONIC, &frame_start_time);
+#if DE100_ENGINE_INTERNAL
       uint64_t frame_start_cycles = __rdtsc(); // CPU cycles (for profiling)
+#endif
 
       // ─────────────────────────────────────────────────────────────
       // PREPARE INPUT
@@ -730,13 +667,13 @@ int platform_main() {
             samples_to_generate = max_samples;
           }
 
-          GameAudioOutputBuffer sound_buffer = {
+          GameAudioOutputBuffer audio_buffer = {
               .samples_per_second = game_audio_output.samples_per_second,
               .sample_count = samples_to_generate,
-              .samples_block = sound_samples_block};
+              .samples_block = audio_samples_block};
 
-          game.get_audio_samples(&game_memory, &sound_buffer);
-          linux_send_samples_to_alsa(&platform_audio_config, &sound_buffer);
+          game.get_audio_samples(&game_memory, &audio_buffer);
+          linux_send_samples_to_alsa(&platform_audio_config, &audio_buffer);
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -761,7 +698,7 @@ int platform_main() {
         nanosleep(&sleep_spec, NULL);
       }
 
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
       // ═══════════════════════════════════════════════════════════════
       // DRAW DEBUG VISUALIZATION (ALWAYS, even when paused!)
       // ═══════════════════════════════════════════════════════════════
@@ -781,7 +718,7 @@ int platform_main() {
       update_window_opengl(&game_buffer);
       XSync(display, False);
 
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
       // ═══════════════════════════════════════════════════════════════
       // CAPTURE FLIP STATE (after display)
       // ═══════════════════════════════════════════════════════════════
@@ -839,7 +776,9 @@ int platform_main() {
       // ─────────────────────────────────────────────────────────────
       struct timespec frame_final_time;
       clock_gettime(CLOCK_MONOTONIC, &frame_final_time);
+#if DE100_ENGINE_INTERNAL
       uint64_t frame_final_cycles = __rdtsc();
+#endif
 
       real32 total_frame_time =
           (frame_final_time.tv_sec - frame_start_time.tv_sec) +
@@ -847,9 +786,11 @@ int platform_main() {
 
       real32 frame_time_ms = total_frame_time * 1000.0f;
       real32 target_frame_time_ms = target_seconds_per_frame * 1000.0f;
+#if DE100_ENGINE_INTERNAL
       real32 sleep_time = total_frame_time - work_seconds;
       real32 fps = 1.0f / total_frame_time;
       real32 mcpf = (frame_final_cycles - frame_start_cycles) / 1000000.0f;
+#endif
 
       // ─────────────────────────────────────────────────────────────
       // REPORT MISSED FRAMES (Only serious misses >5ms)
@@ -860,7 +801,7 @@ int platform_main() {
                frame_time_ms - target_frame_time_ms);
       }
 
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
       // Update debug statistics
       g_frame_stats.frame_count++;
       if (frame_time_ms < g_frame_stats.min_frame_time_ms ||
@@ -890,7 +831,7 @@ int platform_main() {
 
       adaptive.frames_sampled++;
       adaptive.frames_since_last_change++;
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
       g_frame_counter++;
 #endif
 
@@ -968,7 +909,7 @@ int platform_main() {
             consecutive_good_frames = 0;
 
             g_fps = adaptive.target_fps;
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
             g_reload_check_interval = g_fps * 2;
             printf("🚀 QUICK RECOVERY: %d → %d Hz (avg: %.1fms, headroom: "
                    "%.1fms)\n",
@@ -989,7 +930,7 @@ int platform_main() {
         real32 miss_rate =
             (real32)adaptive.frames_missed / (real32)adaptive.frames_sampled;
 
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
         printf("\n[ADAPTIVE] Sample: %u frames, %u missed (%.1f%%), target: %d "
                "FPS\n",
                adaptive.frames_sampled, adaptive.frames_missed,
@@ -1026,7 +967,7 @@ int platform_main() {
             adaptive.frames_since_last_change = 0;
 
             g_fps = adaptive.target_fps;
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
             g_reload_check_interval = g_fps * 2;
 #endif
             printf("⚠️  ADAPTIVE: %d → %d Hz (miss rate: %.1f%%)\n", old_target,
@@ -1070,7 +1011,7 @@ int platform_main() {
             adaptive.frames_since_last_change = 0;
 
             g_fps = adaptive.target_fps;
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
             g_reload_check_interval = g_fps * 2;
 #endif
             printf("✅ ADAPTIVE: %d → %d Hz (miss rate: %.1f%%)\n", old_target,
@@ -1090,7 +1031,7 @@ int platform_main() {
         adaptive.frames_missed = 0;
       }
 
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
       // Print stats every 5 seconds (300 frames at 60fps)
       if (FRAME_LOG_EVERY_FIVE_SECONDS_CHECK) {
         printf("[X11] %.2fms/f, %.2ff/s, %.2fmc/f (work: %.2fms, sleep: "
@@ -1131,11 +1072,11 @@ int platform_main() {
   // By default, we DON'T manually clean up process-lifetime resources
   // The OS does it faster when the process exits (<1ms vs 17ms)
   //
-  // Only clean up if HANDMADE_SANITIZE_WAVE_1_MEMORY is enabled
+  // Only clean up if DE100_ENGINE_SANITIZE_WAVE_1_MEMORY is enabled
   // (useful for memory leak detection tools like Valgrind)
   // ═══════════════════════════════════════════════════════════════
 
-#if HANDMADE_SANITIZE_WAVE_1_MEMORY
+#if DE100_ENGINE_SANITIZE_WAVE_1_MEMORY
   printf("[%.3fs] Exiting, freeing memory...\n", get_wall_clock() - t_start);
 
   linux_close_joysticks();
@@ -1157,7 +1098,7 @@ int platform_main() {
   printf("[%.3fs] Memory freed\n", get_wall_clock() - t_start);
 #endif
 
-#if HANDMADE_INTERNAL
+#if DE100_ENGINE_INTERNAL
   // Print final statistics
   printf("\n═══════════════════════════════════════════════════════════\n");
   printf("📊 FRAME TIME STATISTICS\n");

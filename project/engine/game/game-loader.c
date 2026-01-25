@@ -1,178 +1,359 @@
 // project/engine/game/game-loader.c
 
-#include "game-loader.h"
-#include "../_common/dll.h"
-#include "../_common/file.h"
 #include <stdio.h>
 #include <string.h>
 
-#if defined(__linux__) || defined(__APPLE__)
-#include <dlfcn.h>
-#endif
+#include "../_common/dll.h"
+#include "../_common/file.h"
+#include "../_common/memory.h"
+#include "game-loader.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTION - Initialize stub game code
 // ═══════════════════════════════════════════════════════════════════════════
 
-static GameCode create_stub_game_code(void) {
+static GameCode create_stub_main_game_code(void) {
   GameCode result = {0};
   result.update_and_render = game_update_and_render_stub;
   result.get_audio_samples = game_get_audio_samples_stub;
+  result.startup = game_startup_stub;
+  result.init = game_init_stub;
   result.is_valid = false;
   result.last_write_time = 0;
   result.game_code_lib.dll_handle = NULL;
-  result.game_code_lib.last_error = DE100_DLL_SUCCESS;
-  memset(result.game_code_lib.error_message, 0,
-         sizeof(result.game_code_lib.error_message));
+  result.game_code_lib.last_error = DE100_ENGINE_DLL_SUCCESS;
+
+  platform_memset(result.game_code_lib.error_message, 0, 512);
+
+  return result;
+}
+
+static GameCode create_stub_pre_main_game_code(void) {
+  GameCode result = {0};
+  result.startup = game_startup_stub;
+  result.init = game_init_stub;
+  result.is_valid = false;
+  result.last_write_time = 0;
+  result.game_code_lib.dll_handle = NULL;
+  result.game_code_lib.last_error = DE100_ENGINE_DLL_SUCCESS;
+
+  platform_memset(result.game_code_lib.error_message, 0, 512);
+
   return result;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LOAD GAME CODE
 // ═══════════════════════════════════════════════════════════════════════════
-GameCode load_game_code(const char *source_lib_name,
-                        const char *temp_lib_name) {
-  GameCode result = create_stub_game_code();
+void load_game_code(GameCode *game_code, LoadGameCodeConfig *config,
+                    GAME_CODE_CATEGORIES category) {
+  GameCode result = create_stub_main_game_code();
 
-  // ─────────────────────────────────────────────────────────────────────
-  // Validate input parameters
-  // ─────────────────────────────────────────────────────────────────────
+  if (category == GAME_CODE_CATEGORY_ANY ||
+      category == GAME_CODE_CATEGORY_MAIN) {
+    const char *source_lib_name = config->main_main_game_lib_name;
+    const char *temp_lib_name = config->temp_main_game_lib_name;
 
-  if (!source_lib_name) {
-    fprintf(stderr, "❌ load_game_code: NULL source_lib_name\n");
-    return result;
-  }
+    // ─────────────────────────────────────────────────────────────────────
+    // Validate input parameters
+    // ─────────────────────────────────────────────────────────────────────
 
-  if (!temp_lib_name) {
-    fprintf(stderr, "❌ load_game_code: NULL temp_lib_name\n");
-    return result;
-  }
+    if (!source_lib_name) {
+      fprintf(stderr, "❌ load_game_code: NULL source_lib_name\n");
+      *game_code = result;
+      return;
+    }
 
-  printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-  printf("🔧 Loading game code\n");
-  printf("   Source: %s\n", source_lib_name);
-  printf("   Temp:   %s\n", temp_lib_name);
-  printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    if (!temp_lib_name) {
+      fprintf(stderr, "❌ load_game_code: NULL temp_lib_name\n");
+      *game_code = result;
+      return;
+    }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // STEP 1: Get modification time of source file
-  // ─────────────────────────────────────────────────────────────────────
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    printf("🔧 Loading game code\n");
+    printf("   Source: %s\n", source_lib_name);
+    printf("   Temp:   %s\n", temp_lib_name);
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-  de100_file_time_result_t mod_time = de100_file_get_mod_time(source_lib_name);
+    // ─────────────────────────────────────────────────────────────────────
+    // STEP 1: Get modification time of source file
+    // ─────────────────────────────────────────────────────────────────────
 
-  if (!mod_time.success) {
-    fprintf(stderr, "❌ Failed to get modification time\n");
-    fprintf(stderr, "   File: %s\n", source_lib_name);
-    fprintf(stderr, "   Error: %s\n", mod_time.error_message);
-    fprintf(stderr, "   Code: %s\n", de100_file_strerror(mod_time.error_code));
-    fprintf(stderr, "⚠️  Using stub functions\n");
-    return result;
-  }
+    de100_file_time_result_t mod_time =
+        de100_file_get_mod_time(source_lib_name);
 
-  result.last_write_time = mod_time.value;
-  printf("📅 Source file last modified: %ld\n", (long)result.last_write_time);
+    if (!mod_time.success) {
+      fprintf(stderr, "❌ Failed to get modification time\n");
+      fprintf(stderr, "   File: %s\n", source_lib_name);
+      fprintf(stderr, "   Error: %s\n", mod_time.error_message);
+      fprintf(stderr, "   Code: %s\n",
+              de100_file_strerror(mod_time.error_code));
+      fprintf(stderr, "⚠️  Using stub functions\n");
+      *game_code = result;
+      return;
+    }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // STEP 2: Copy library file
-  // ─────────────────────────────────────────────────────────────────────
+    result.last_write_time = mod_time.value;
+    printf("📅 Source file last modified: %ld\n", (long)result.last_write_time);
 
-  printf("📦 Copying library...\n");
-  printf("   %s → %s\n", source_lib_name, temp_lib_name);
+    // ─────────────────────────────────────────────────────────────────────
+    // STEP 2: Copy library file
+    // ─────────────────────────────────────────────────────────────────────
 
-  de100_file_result_t copy_result =
-      de100_file_copy(source_lib_name, temp_lib_name);
+    printf("📦 Copying library...\n");
+    printf("   %s → %s\n", source_lib_name, temp_lib_name);
 
-  if (!copy_result.success) {
-    fprintf(stderr, "❌ Failed to copy game library\n");
-    fprintf(stderr, "   Source: %s\n", source_lib_name);
-    fprintf(stderr, "   Dest: %s\n", temp_lib_name);
-    fprintf(stderr, "   Error: %s\n", copy_result.error_message);
-    fprintf(stderr, "   Code: %s\n",
-            de100_file_strerror(copy_result.error_code));
-    fprintf(stderr, "⚠️  Using stub functions\n");
-    return result;
-  }
+    de100_file_result_t copy_result =
+        de100_file_copy(source_lib_name, temp_lib_name);
 
-  printf("✅ Library copied successfully\n");
+    if (!copy_result.success) {
+      fprintf(stderr, "❌ Failed to copy game library\n");
+      fprintf(stderr, "   Source: %s\n", source_lib_name);
+      fprintf(stderr, "   Dest: %s\n", temp_lib_name);
+      fprintf(stderr, "   Error: %s\n", copy_result.error_message);
+      fprintf(stderr, "   Code: %s\n",
+              de100_file_strerror(copy_result.error_code));
+      fprintf(stderr, "⚠️  Using stub functions\n");
+      *game_code = result;
+      return;
+    }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // STEP 3: Load the library with de100_dlopen
-  // ─────────────────────────────────────────────────────────────────────
+    printf("✅ Library copied successfully\n");
 
-  printf("📂 Loading library: %s\n",
-         temp_lib_name); // Changed back to temp_lib_name
+    // ─────────────────────────────────────────────────────────────────────
+    // STEP 3: Load the library with de100_dlopen
+    // ─────────────────────────────────────────────────────────────────────
+
+    printf("📂 Loading library: %s\n",
+           temp_lib_name); // Changed back to temp_lib_name
 
 #if defined(__linux__) || defined(__APPLE__)
-  result.game_code_lib = de100_dlopen(
-      temp_lib_name, RTLD_NOW | RTLD_LOCAL); // Changed back to temp_lib_name
+    result.game_code_lib = de100_dlopen(
+        temp_lib_name, RTLD_NOW | RTLD_LOCAL); // Changed back to temp_lib_name
 #else
-  result.game_code_lib =
-      de100_dlopen(temp_lib_name, 0); // Changed back to temp_lib_name
+    result.game_code_lib =
+        de100_dlopen(temp_lib_name, 0); // Changed back to temp_lib_name
 #endif
 
-  if (!de100_dlvalid(result.game_code_lib)) {
-    fprintf(stderr, "❌ Failed to load library\n");
-    fprintf(stderr, "   Library: %s\n",
-            temp_lib_name); // Changed back to temp_lib_name
-    fprintf(stderr, "   Error: %s\n", result.game_code_lib.error_message);
-    fprintf(stderr, "   Code: %s\n",
-            de100_dlstrerror(result.game_code_lib.last_error));
-    fprintf(stderr, "⚠️  Using stub functions\n");
+    if (!de100_dlvalid(result.game_code_lib)) {
+      fprintf(stderr, "❌ Failed to load library\n");
+      fprintf(stderr, "   Library: %s\n",
+              temp_lib_name); // Changed back to temp_lib_name
+      fprintf(stderr, "   Error: %s\n", result.game_code_lib.error_message);
+      fprintf(stderr, "   Code: %s\n",
+              de100_dlstrerror(result.game_code_lib.last_error));
+      fprintf(stderr, "⚠️  Using stub functions\n");
 
-    // Reset to stub state
-    result = create_stub_game_code();
-    return result;
+      // Reset to stub state
+      result = create_stub_main_game_code();
+      *game_code = result;
+      return;
+    }
+
+    printf("✅ Library loaded successfully\n");
+
+    // ─────────────────────────────────────────────────────────────────────
+    // STEP 4: Load function symbols
+    // ─────────────────────────────────────────────────────────────────────
+
+    printf("🔍 Loading symbols...\n");
+
+    // Load UpdateAndRender
+    result.update_and_render = (game_update_and_render_t *)de100_dlsym(
+        &result.game_code_lib, "game_update_and_render");
+
+    if (!result.update_and_render) {
+      fprintf(stderr, "❌ Failed to load symbol 'game_update_and_render'\n");
+      fprintf(stderr, "   Library: %s\n",
+              temp_lib_name); // Changed back to temp_lib_name
+      fprintf(stderr, "   Error: %s\n", result.game_code_lib.error_message);
+      fprintf(stderr, "   Code: %s\n",
+              de100_dlstrerror(result.game_code_lib.last_error));
+      fprintf(stderr, "⚠️  Using stub functions\n");
+
+      // Cleanup and return stub
+      de100_dlclose(&result.game_code_lib);
+      result = create_stub_main_game_code();
+      *game_code = result;
+      return;
+    }
+
+    printf("   ✓ game_update_and_render: %p\n",
+           (void *)result.update_and_render);
+
+    // Load GetSoundSamples
+    result.get_audio_samples = (game_get_audio_samples_t *)de100_dlsym(
+        &result.game_code_lib, "game_get_audio_samples");
+
+    if (!result.get_audio_samples) {
+      fprintf(stderr, "❌ Failed to load symbol 'game_get_audio_samples'\n");
+      fprintf(stderr, "   Library: %s\n",
+              temp_lib_name); // Changed back to temp_lib_name
+      fprintf(stderr, "   Error: %s\n", result.game_code_lib.error_message);
+      fprintf(stderr, "   Code: %s\n",
+              de100_dlstrerror(result.game_code_lib.last_error));
+      fprintf(stderr, "⚠️  Using stub functions\n");
+
+      // Cleanup and return stub
+      de100_dlclose(&result.game_code_lib);
+      result = create_stub_main_game_code();
+      *game_code = result;
+      return;
+    }
+
+    printf("   ✓ game_get_audio_samples: %p\n",
+           (void *)result.get_audio_samples);
   }
 
-  printf("✅ Library loaded successfully\n");
+  if (category == GAME_CODE_CATEGORY_ANY ||
+      category == GAME_CODE_CATEGORY_PRE_MAIN) {
+    const char *source_lib_name = config->pre_main_game_lib_path;
+    const char *temp_lib_name = config->temp_pre_main_game_lib_path;
 
-  // ─────────────────────────────────────────────────────────────────────
-  // STEP 4: Load function symbols
-  // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
+    // Validate input parameters
+    // ─────────────────────────────────────────────────────────────────────
 
-  printf("🔍 Loading symbols...\n");
+    if (!source_lib_name) {
+      fprintf(stderr, "❌ load_game_code: NULL source_lib_name\n");
+      *game_code = result;
+      return;
+    }
 
-  // Load UpdateAndRender
-  result.update_and_render = (game_update_and_render_t *)de100_dlsym(
-      &result.game_code_lib, "game_update_and_render");
+    if (!temp_lib_name) {
+      fprintf(stderr, "❌ load_game_code: NULL temp_lib_name\n");
+      *game_code = result;
+      return;
+    }
 
-  if (!result.update_and_render) {
-    fprintf(stderr, "❌ Failed to load symbol 'game_update_and_render'\n");
-    fprintf(stderr, "   Library: %s\n",
-            temp_lib_name); // Changed back to temp_lib_name
-    fprintf(stderr, "   Error: %s\n", result.game_code_lib.error_message);
-    fprintf(stderr, "   Code: %s\n",
-            de100_dlstrerror(result.game_code_lib.last_error));
-    fprintf(stderr, "⚠️  Using stub functions\n");
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    printf("🔧 Loading game code\n");
+    printf("   Source: %s\n", source_lib_name);
+    printf("   Temp:   %s\n", temp_lib_name);
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-    // Cleanup and return stub
-    de100_dlclose(&result.game_code_lib);
-    result = create_stub_game_code();
-    return result;
+    // ─────────────────────────────────────────────────────────────────────
+    // STEP 1: Get modification time of source file
+    // ─────────────────────────────────────────────────────────────────────
+
+    de100_file_time_result_t mod_time =
+        de100_file_get_mod_time(source_lib_name);
+
+    if (!mod_time.success) {
+      fprintf(stderr, "❌ Failed to get modification time\n");
+      fprintf(stderr, "   File: %s\n", source_lib_name);
+      fprintf(stderr, "   Error: %s\n", mod_time.error_message);
+      fprintf(stderr, "   Code: %s\n",
+              de100_file_strerror(mod_time.error_code));
+      fprintf(stderr, "⚠️  Using stub functions\n");
+      *game_code = result;
+      return;
+    }
+
+    result.last_write_time = mod_time.value;
+    printf("📅 Source file last modified: %ld\n", (long)result.last_write_time);
+
+    // ─────────────────────────────────────────────────────────────────────
+    // STEP 2: Copy library file
+    // ─────────────────────────────────────────────────────────────────────
+
+    printf("📦 Copying library...\n");
+    printf("   %s → %s\n", source_lib_name, temp_lib_name);
+
+    de100_file_result_t copy_result =
+        de100_file_copy(source_lib_name, temp_lib_name);
+
+    if (!copy_result.success) {
+      fprintf(stderr, "❌ Failed to copy game library\n");
+      fprintf(stderr, "   Source: %s\n", source_lib_name);
+      fprintf(stderr, "   Dest: %s\n", temp_lib_name);
+      fprintf(stderr, "   Error: %s\n", copy_result.error_message);
+      fprintf(stderr, "   Code: %s\n",
+              de100_file_strerror(copy_result.error_code));
+      fprintf(stderr, "⚠️  Using stub functions\n");
+      *game_code = result;
+      return;
+    }
+
+    printf("✅ Library copied successfully\n");
+
+    // ─────────────────────────────────────────────────────────────────────
+    // STEP 3: Load the library with de100_dlopen
+    // ─────────────────────────────────────────────────────────────────────
+
+    printf("📂 Loading library: %s\n",
+           temp_lib_name); // Changed back to temp_lib_name
+
+#if defined(__linux__) || defined(__APPLE__)
+    result.game_code_lib = de100_dlopen(
+        temp_lib_name, RTLD_NOW | RTLD_LOCAL); // Changed back to temp_lib_name
+#else
+    result.game_code_lib =
+        de100_dlopen(temp_lib_name, 0); // Changed back to temp_lib_name
+#endif
+
+    if (!de100_dlvalid(result.game_code_lib)) {
+      fprintf(stderr, "❌ Failed to load library\n");
+      fprintf(stderr, "   Library: %s\n",
+              temp_lib_name); // Changed back to temp_lib_name
+      fprintf(stderr, "   Error: %s\n", result.game_code_lib.error_message);
+      fprintf(stderr, "   Code: %s\n",
+              de100_dlstrerror(result.game_code_lib.last_error));
+      fprintf(stderr, "⚠️  Using stub functions\n");
+
+      // Reset to stub state
+      result = create_stub_main_game_code();
+      *game_code = result;
+      return;
+    }
+
+    printf("✅ Library loaded successfully\n");
+
+    // Load Startup
+    result.startup =
+        (game_startup_t *)de100_dlsym(&result.game_code_lib, "game_startup");
+
+    if (!result.startup) {
+      fprintf(stderr, "❌ Failed to load symbol 'game_startup'\n");
+      fprintf(stderr, "   Library: %s\n",
+              temp_lib_name); // Changed back to temp_lib_name
+      fprintf(stderr, "   Error: %s\n", result.game_code_lib.error_message);
+      fprintf(stderr, "   Code: %s\n",
+              de100_dlstrerror(result.game_code_lib.last_error));
+      fprintf(stderr, "⚠️  Using stub functions\n");
+
+      // Cleanup and return stub
+      de100_dlclose(&result.game_code_lib);
+      result = create_stub_pre_main_game_code();
+      *game_code = result;
+      return;
+    }
+
+    printf("   ✓ game_update_and_render: %p\n",
+           (void *)result.update_and_render);
+
+    // Load GetSoundSamples
+    result.init =
+        (game_init_t *)de100_dlsym(&result.game_code_lib, "game_init");
+
+    if (!result.init) {
+      fprintf(stderr, "❌ Failed to load symbol 'game_init'\n");
+      fprintf(stderr, "   Library: %s\n",
+              temp_lib_name); // Changed back to temp_lib_name
+      fprintf(stderr, "   Error: %s\n", result.game_code_lib.error_message);
+      fprintf(stderr, "   Code: %s\n",
+              de100_dlstrerror(result.game_code_lib.last_error));
+      fprintf(stderr, "⚠️  Using stub functions\n");
+
+      // Cleanup and return stub
+      de100_dlclose(&result.game_code_lib);
+      result = create_stub_main_game_code();
+      *game_code = result;
+      return;
+    }
+    printf("   ✓ game_init: %p\n", (void *)result.init);
   }
-
-  printf("   ✓ game_update_and_render: %p\n", (void *)result.update_and_render);
-
-  // Load GetSoundSamples
-  result.get_audio_samples = (game_get_audio_samples_t *)de100_dlsym(
-      &result.game_code_lib, "game_get_audio_samples");
-
-  if (!result.get_audio_samples) {
-    fprintf(stderr, "❌ Failed to load symbol 'game_get_audio_samples'\n");
-    fprintf(stderr, "   Library: %s\n",
-            temp_lib_name); // Changed back to temp_lib_name
-    fprintf(stderr, "   Error: %s\n", result.game_code_lib.error_message);
-    fprintf(stderr, "   Code: %s\n",
-            de100_dlstrerror(result.game_code_lib.last_error));
-    fprintf(stderr, "⚠️  Using stub functions\n");
-
-    // Cleanup and return stub
-    de100_dlclose(&result.game_code_lib);
-    result = create_stub_game_code();
-    return result;
-  }
-
-  printf("   ✓ game_get_audio_samples: %p\n", (void *)result.get_audio_samples);
 
   // ─────────────────────────────────────────────────────────────────────
   // Success!
@@ -183,7 +364,8 @@ GameCode load_game_code(const char *source_lib_name,
   printf("✅ Game code loaded successfully!\n");
   printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-  return result;
+  *game_code = result;
+  return;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -213,7 +395,7 @@ void unload_game_code(GameCode *game_code) {
   // Close the library
   enum de100_dll_status_code result = de100_dlclose(&game_code->game_code_lib);
 
-  if (result != DE100_DLL_SUCCESS) {
+  if (result != DE100_ENGINE_DLL_SUCCESS) {
     fprintf(stderr, "⚠️  Failed to unload library\n");
     fprintf(stderr, "   Error: %s\n", game_code->game_code_lib.error_message);
     fprintf(stderr, "   Code: %s\n", de100_dlstrerror(result));
@@ -235,16 +417,16 @@ void unload_game_code(GameCode *game_code) {
 // CHECK IF RELOAD NEEDED
 // ═══════════════════════════════════════════════════════════════════════════
 
-bool32 game_code_needs_reload(const GameCode *game_code,
-                              const char *source_lib_name) {
+bool32 main_game_code_needs_reload(const GameCode *game_code,
+                                   const char *source_lib_name) {
   // Validate inputs
   if (!game_code) {
-    fprintf(stderr, "⚠️  game_code_needs_reload: NULL game_code pointer\n");
+    fprintf(stderr, "⚠️  main_game_code_needs_reload: NULL game_code pointer\n");
     return false;
   }
 
   if (!source_lib_name) {
-    fprintf(stderr, "⚠️  game_code_needs_reload: NULL source_lib_name\n");
+    fprintf(stderr, "⚠️  main_game_code_needs_reload: NULL source_lib_name\n");
     return false;
   }
 
@@ -290,9 +472,28 @@ GAME_UPDATE_AND_RENDER(game_update_and_render_stub) {
   // This is called when game code fails to load
 }
 
-GAME_GET_SOUND_SAMPLES(game_get_audio_samples_stub) {
+GAME_GET_AUDIO_SAMPLES(game_get_audio_samples_stub) {
   (void)memory;
-  (void)sound_buffer;
+  (void)audio_buffer;
+  // Stub implementation - does nothing
+  // This is called when game code fails to load
+}
+
+GAME_STARTUP(game_startup_stub) {
+  (void)memory;
+  (void)new_game_input;
+  (void)old_game_input;
+  (void)buffer;
+  (void)audio_buffer;
+  // Stub implementation - does nothing
+  // This is called when game code fails to load
+  return 0;
+}
+
+GAME_INIT(game_init_stub) {
+  (void)memory;
+  (void)input;
+  (void)buffer;
   // Stub implementation - does nothing
   // This is called when game code fails to load
 }
