@@ -362,8 +362,7 @@ void unload_game_code(GameCode *game_code) {
 // CHECK IF RELOAD NEEDED
 // ═══════════════════════════════════════════════════════════════════════════
 
-bool32 game_main_code_needs_reload(const GameCode *game_code,
-                                   char *source_lib_name) {
+bool32 game_main_code_needs_reload(GameCode *game_code, char *source_lib_name) {
   // Validate inputs
   if (!game_code) {
     fprintf(stderr, "⚠️  game_main_code_needs_reload: NULL game_code pointer\n");
@@ -414,6 +413,51 @@ bool32 game_main_code_needs_reload(const GameCode *game_code,
   }
 
   return false;
+}
+
+void handle_game_reload_check(GameCode *game_code,
+                              LoadGameCodeConfig *load_game_code_config) {
+
+  // ═══════════════════════════════════════════════════════════
+  // 🔄 HOT RELOAD CHECK (Casey's Day 21/22 pattern)
+  // ═══════════════════════════════════════════════════════════
+  // Check periodically if game code has been recompiled
+  // This allows changing game logic without restarting!
+  // ═══════════════════════════════════════════════════════════
+  if (g_reload_requested ||
+      game_main_code_needs_reload(game_code,
+                                  load_game_code_config->game_main_lib_path)) {
+    if (g_reload_requested) {
+      g_reload_requested = false;
+      printf("🔄 Hot reload requested by user!\n");
+    }
+
+    printf("🔄 Hot reload triggered! at g_frame_counter: %d\n",
+           g_frame_counter);
+    printf("[HOT RELOAD] Before: update_and_render=%p "
+           "get_audio_samples=%p\n",
+           (void *)game_code->update_and_render,
+           (void *)game_code->get_audio_samples);
+
+    unload_game_code(game_code);
+
+    printf("[HOT RELOAD] After:  update_and_render=%p "
+           "get_audio_samples=%p\n",
+           (void *)game_code->update_and_render,
+           (void *)game_code->get_audio_samples);
+
+    load_game_code(game_code, load_game_code_config, GAME_CODE_CATEGORY_MAIN);
+
+    if (game_code->is_valid) {
+      printf("✅ Hot reload successful!\n");
+
+      // NOTE: do on a separate thread
+      de100_file_delete(
+          load_game_code_config->game_main_lib_tmp_path); // Clean up temp file
+    } else {
+      printf("⚠️  Hot reload failed, using stubs\n");
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -7,7 +7,6 @@
 #include "../_common/time.h"
 #include "config.h"
 
-
 #ifndef DE100_SHARED_LIB_PREFIX
 #if defined(_WIN32)
 #define DE100_SHARED_LIB_PREFIX ""
@@ -104,8 +103,7 @@
 
 // Can be used for very early, one-time setup (e.g., static data, global
 // resources, or things that must happen before memory allocation)
-#define GAME_STARTUP(name)                                                     \
-  int name(GameConfig *game_config)
+#define GAME_STARTUP(name) int name(GameConfig *game_config)
 typedef GAME_STARTUP(game_startup_t);
 
 // Can be used for per-session or per-level initialization, possibly with access
@@ -202,8 +200,10 @@ void unload_game_code(GameCode *game_code);
  * Safe to call with NULL pointers (returns false with warning).
  * Returns false if file doesn't exist or can't be accessed.
  */
-bool32 game_main_code_needs_reload(const GameCode *game_code,
-                                   char *source_lib_name);
+bool32 game_main_code_needs_reload(GameCode *game_code, char *source_lib_name);
+
+void handle_game_reload_check(GameCode *game_code,
+                              LoadGameCodeConfig *load_game_code_config);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STUB FUNCTIONS

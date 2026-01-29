@@ -171,6 +171,8 @@ DE100_SRC_GAME=(
 
 DE100_SRC_PLATFORM_COMMON=(
     "$DE100_ENGINE_DIR/platform/_common/startup.c"
+    "$DE100_ENGINE_DIR/platform/_common/adaptive-fps.c"
+    "$DE100_ENGINE_DIR/platform/_common/frame-timing.c"
 )
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -184,6 +186,13 @@ DE100_BACKEND=""
 
 de100_set_backend() {
     local backend="$1"
+    local DE100_INTERNAL="$2"
+
+    if [[ "$DE100_INTERNAL" == "1" ]]; then
+        DE100_SRC_PLATFORM_COMMON+=(
+            "$DE100_ENGINE_DIR/platform/_common/frame-stats.c"
+        )
+    fi
 
     # Auto-select if not specified
     if [[ -z "$backend" || "$backend" == "auto" ]]; then

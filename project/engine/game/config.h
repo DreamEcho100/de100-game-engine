@@ -90,6 +90,8 @@ typedef struct {
   /** Desired simulation timestep in seconds per frame */
   float target_seconds_per_frame;
 
+  char window_title[64];
+
 } GameConfig;
 
 /**

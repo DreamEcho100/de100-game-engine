@@ -1,5 +1,6 @@
 
 #include "./startup.h"
+#include "../../_common/file.h"
 #include "../../_common/time.h"
 #include "../../game/audio.h"
 #include "../../game/backbuffer.h"
@@ -8,16 +9,46 @@
 #include "../../game/input.h"
 #include "../../game/memory.h"
 
-int platform_game_startup(GameConfig *game_config, GameMemory *memory,
-                          GameInput *old_game_input, GameInput *new_game_input,
-                          GameBackBuffer *buffer,
+int platform_game_startup(LoadGameCodeConfig *load_game_code_config,
+                          GameCode *game, GameConfig *game_config,
+                          GameMemory *memory, GameInput *old_game_input,
+                          GameInput *new_game_input, GameBackBuffer *buffer,
                           GameAudioOutputBuffer *audio_buffer) {
-  (void)memory;
   (void)new_game_input;
   (void)old_game_input;
-  (void)buffer;
   (void)audio_buffer;
 
+  g_initial_game_time = get_wall_clock();
+  printf("[%.3fs] Starting platform_main\n",
+         get_wall_clock() - g_initial_game_time);
+
+  load_game_code_config->game_main_lib_path = DE100_GAME_MAIN_SHARED_LIB_PATH;
+  load_game_code_config->game_main_lib_tmp_path =
+      DE100_GAME_MAIN_TMP_SHARED_LIB_PATH;
+  load_game_code_config->game_startup_lib_path =
+      DE100_GAME_STARTUP_SHARED_LIB_PATH;
+  load_game_code_config->game_startup_lib_tmp_path =
+      DE100_GAME_STARTUP_TMP_SHARED_LIB_PATH;
+  load_game_code_config->game_init_lib_path = DE100_GAME_INIT_SHARED_LIB_PATH;
+  load_game_code_config->game_init_lib_tmp_path =
+      DE100_GAME_INIT_TMP_SHARED_LIB_PATH;
+
+  load_game_code(game, load_game_code_config, GAME_CODE_CATEGORY_ANY);
+  // exit(1);
+  if (game->is_valid) {
+    printf("✅ Game code loaded successfully\n");
+    // NOTE: do on a separate thread
+    de100_file_delete(
+        load_game_code_config->game_main_lib_tmp_path); // Clean up temp file
+    de100_file_delete(
+        load_game_code_config->game_startup_lib_tmp_path); // Clean up temp file
+    de100_file_delete(
+        load_game_code_config->game_init_lib_tmp_path); // Clean up temp file
+  } else {
+    printf("❌ Failed to load game code, using stubs\n");
+  }
+
+  game->startup(game_config);
   g_fps = game_config->refresh_rate_hz;
 
   // ═══════════════════════════════════════════════════════════════
@@ -120,7 +151,6 @@ int platform_game_startup(GameConfig *game_config, GameMemory *memory,
   }
   old_game_input = (GameInput *)old_game_input_block.base;
 
-  // buffer = {0};
   PlatformMemoryBlock buffer_block = platform_allocate_memory(
       NULL, sizeof(GameBackBuffer),
       PLATFORM_MEMORY_READ | PLATFORM_MEMORY_WRITE | PLATFORM_MEMORY_ZEROED);
@@ -131,7 +161,7 @@ int platform_game_startup(GameConfig *game_config, GameMemory *memory,
             platform_memory_strerror(buffer_block.error_code));
     return 1;
   }
-  buffer = (GameBackBuffer *)buffer_block.base;
+  buffer->memory = (PlatformMemoryBlock)buffer_block;
 
   PlatformMemoryBlock audio_output_block = platform_allocate_memory(
       NULL, sizeof(GameAudioOutputBuffer),
@@ -146,6 +176,32 @@ int platform_game_startup(GameConfig *game_config, GameMemory *memory,
   audio_buffer = (GameAudioOutputBuffer *)audio_output_block.base;
 
   printf("Success game startup\n");
+
+  return 0;
+}
+
+int free_platform_game_startup(LoadGameCodeConfig *load_game_code_config,
+                               GameCode *game, GameConfig *game_config,
+                               GameMemory *memory, GameInput *old_game_input,
+                               GameInput *new_game_input,
+                               GameBackBuffer *buffer,
+                               GameAudioOutputBuffer *audio_buffer) {
+  (void)game;
+  (void)game_config;
+  (void)new_game_input;
+  (void)old_game_input;
+  (void)audio_buffer;
+
+  de100_file_delete(load_game_code_config->game_main_lib_tmp_path);
+  de100_file_delete(load_game_code_config->game_startup_lib_tmp_path);
+  de100_file_delete(load_game_code_config->game_init_lib_tmp_path);
+  platform_free_memory(&buffer->memory);
+  platform_free_memory(&memory->transient_storage);
+  platform_free_memory(&memory->permanent_storage);
+
+  // platform_free_memory(new_game_input);
+  // platform_free_memory(old_game_input);
+  // platform_free_memory(audio_buffer);
 
   return 0;
 }

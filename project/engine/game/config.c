@@ -1,4 +1,5 @@
 #include "./config.h"
+#include <string.h>
 
 GameConfig get_default_game_config() {
   GameConfig config = {0};
@@ -28,6 +29,9 @@ GameConfig get_default_game_config() {
   config.prefer_borderless = false;
   config.prefer_resizable = true;
   config.prefer_adaptive_fps = false;
+
+  strncpy(config.window_title, "DE100", sizeof(config.window_title) - 1);
+  config.window_title[sizeof(config.window_title) - 1] = '\0';
 
   /* =========================
      INPUT

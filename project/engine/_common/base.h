@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+// #define DE100_INTERNAL 0
+
 /* ========================= DEBUG BREAK ========================= */
 
 #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__) ||       \

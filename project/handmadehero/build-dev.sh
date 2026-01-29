@@ -51,19 +51,19 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --backend=*)
             BACKEND="${1#*=}"
-            ;;
+        ;;
         --sanitize|--DE100_SANITIZE_WAVE_1_MEMORY=1)
             ENABLE_SANITIZERS=true
-            ;;
+        ;;
         --build-game)
             BUILD_GAME=true
-            ;;
+        ;;
         --build-platform)
             BUILD_PLATFORM=true
-            ;;
+        ;;
         -r|--run)
             RUN_AFTER_BUILD=true
-            ;;
+        ;;
         --help|-h)
             echo "Usage: $0 [options]"
             echo ""
@@ -81,12 +81,12 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --sanitize -r      # Build with sanitizers and run"
             echo "  $0 --build-game -r    # Build game libs and run"
             exit 0
-            ;;
+        ;;
         *)
             echo "Unknown option: $1"
             echo "Use --help for usage information"
             exit 1
-            ;;
+        ;;
     esac
     shift
 done
@@ -103,8 +103,10 @@ fi
 
 mkdir -p "$BUILD_DIR" "$OUT_DIR"
 
+DE100_INTERNAL=1
+
 # Set backend
-de100_set_backend "$BACKEND" || exit 1
+de100_set_backend "$BACKEND" $DE100_INTERNAL || exit 1
 
 # ───────────────────────────────────────────────────────────────────────────────
 # COMPILER FLAGS
@@ -115,7 +117,7 @@ COMMON_FLAGS="$DE100_BASE_FLAGS"
 COMMON_FLAGS="$COMMON_FLAGS -I$SCRIPT_DIR/src"
 COMMON_FLAGS="$COMMON_FLAGS -g -O0"
 COMMON_FLAGS="$COMMON_FLAGS -Wall -Wextra -Werror"
-COMMON_FLAGS="$COMMON_FLAGS -DDE100_INTERNAL=1 -DDE100_SLOW=1"
+COMMON_FLAGS="$COMMON_FLAGS -DDE100_INTERNAL=$DE100_INTERNAL -DDE100_SLOW=1"
 
 # Sanitizer flags
 SANITIZE_FLAGS=""
@@ -125,10 +127,10 @@ if [[ "$ENABLE_SANITIZERS" == true ]]; then
             SANITIZE_FLAGS="-fsanitize=address,leak,undefined -fno-omit-frame-pointer"
             SANITIZE_FLAGS="$SANITIZE_FLAGS -DDE100_SANITIZE_WAVE_1_MEMORY=1"
             echo "Sanitizers: ENABLED"
-            ;;
+        ;;
         windows)
             echo "Warning: Sanitizers have limited support on Windows, skipping"
-            ;;
+        ;;
     esac
 fi
 
@@ -149,29 +151,29 @@ build_game_lib() {
     local name="$1"
     local source="$2"
     local output="$3"
-
+    
     echo "Building: $name"
-
+    
     rm -f "$output"
-
+    
     $DE100_CC "$source" -o "$output" \
-        $COMMON_FLAGS \
-        $SANITIZE_FLAGS \
-        $DE100_SHARED_FLAGS \
-        -lm
-
+    $COMMON_FLAGS \
+    $SANITIZE_FLAGS \
+    $DE100_SHARED_FLAGS \
+    -lm
+    
     if [[ -f "$output" ]]; then
         touch "$output"  # Force update modification time
         echo "  -> $output"
-
+        
         # Show exported symbols on supported platforms
         case "$DE100_OS" in
             linux|freebsd)
                 echo "  Symbols: $(nm -D "$output" 2>/dev/null | grep -c ' T ' || echo 0) exported"
-                ;;
+            ;;
             macos)
                 echo "  Symbols: $(nm "$output" 2>/dev/null | grep -c ' T ' || echo 0) exported"
-                ;;
+            ;;
         esac
     else
         echo "Error: Failed to build $name"
@@ -183,7 +185,7 @@ if [[ "$BUILD_GAME" == true ]]; then
     echo ""
     echo "═══ Building Game Libraries ═══"
     echo ""
-
+    
     build_game_lib "lib-main"    "$SCRIPT_DIR/src/main.c"    "$MAIN_LIB_PATH"
     build_game_lib "lib-startup" "$SCRIPT_DIR/src/startup.c" "$STARTUP_LIB_PATH"
     build_game_lib "lib-init"    "$SCRIPT_DIR/src/init.c"    "$INIT_LIB_PATH"
@@ -197,10 +199,10 @@ if [[ "$BUILD_PLATFORM" == true ]]; then
     echo ""
     echo "═══ Building Platform Executable ═══"
     echo ""
-
+    
     # Library path defines for C code
     LIB_DEFINES=$(de100_get_lib_defines "$BUILD_DIR" "$GAME_MAIN_LIB" "$GAME_STARTUP_LIB" "$GAME_INIT_LIB")
-
+    
     # Platform-specific linker flags
     PLATFORM_LINK_FLAGS="$DE100_LINKER_FLAGS"
     case "$DE100_OS" in
@@ -208,27 +210,27 @@ if [[ "$BUILD_PLATFORM" == true ]]; then
             PLATFORM_LINK_FLAGS="$PLATFORM_LINK_FLAGS -rdynamic"
             PLATFORM_LINK_FLAGS="$PLATFORM_LINK_FLAGS -Wl,-Map=$BUILD_DIR/game.map"
             PLATFORM_LINK_FLAGS="$PLATFORM_LINK_FLAGS -Wl,-rpath,$BUILD_DIR"
-            ;;
+        ;;
         macos)
             PLATFORM_LINK_FLAGS="$PLATFORM_LINK_FLAGS -Wl,-rpath,@executable_path"
-            ;;
+        ;;
     esac
-
+    
     # Get all source files
     PLATFORM_SOURCES=$(de100_get_platform_sources)
-
+    
     echo "Compiling platform..."
     echo "  Sources: $(echo $PLATFORM_SOURCES | wc -w) files"
-
+    
     $DE100_CC $PLATFORM_SOURCES -o "$PLATFORM_EXE_PATH" \
-        $COMMON_FLAGS \
-        $SANITIZE_FLAGS \
-        $LIB_DEFINES \
-        $PLATFORM_LINK_FLAGS \
-        -L"$BUILD_DIR" \
-        -lm \
-        $DE100_BACKEND_LIBS
-
+    $COMMON_FLAGS \
+    $SANITIZE_FLAGS \
+    $LIB_DEFINES \
+    $PLATFORM_LINK_FLAGS \
+    -L"$BUILD_DIR" \
+    -lm \
+    $DE100_BACKEND_LIBS
+    
     if [[ -f "$PLATFORM_EXE_PATH" ]]; then
         echo "  -> $PLATFORM_EXE_PATH"
         [[ -f "$BUILD_DIR/game.map" ]] && echo "  -> $BUILD_DIR/game.map"

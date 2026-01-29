@@ -1,4 +1,5 @@
-#include "startup.h"
+#include "../../engine/game/game-loader.h"
+#include <string.h>
 
 #if DE100_INTERNAL
 #include "../../engine/_common/debug-file-io.h"
@@ -29,6 +30,10 @@ GAME_STARTUP(game_startup) {
   game_config->refresh_rate_hz = FPS_60;
   game_config->target_seconds_per_frame =
       1.0f / (real32)game_config->refresh_rate_hz;
+
+  strncpy(game_config->window_title, "DE100",
+          sizeof(game_config->window_title) - 1);
+  game_config->window_title[sizeof(game_config->window_title) - 1] = '\0';
 
   return 0;
 }

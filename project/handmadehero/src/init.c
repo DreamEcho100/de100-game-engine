@@ -1,9 +1,10 @@
-#include "init.h"
-#include "main.h"
-#include <fcntl.h>
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
+
+#include "../../engine/game/game-loader.h"
+#include "main.h"
 
 #if DE100_INTERNAL
 #include "../../engine/_common/debug-file-io.h"
