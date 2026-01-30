@@ -16,16 +16,16 @@
 //   - Hot reload file checks
 //
 // This module uses the common APIs:
-//   - file.h: file_exists(), file_get_size(), file_strerror()
-//   - memory.h: memory_alloc(), memory_free(), memory_error_str()
+//   - file.h: de100_file_exists(), de100_file_get_size(), de100_file_strerror()
+//   - memory.h: de100_memory_alloc(), de100_memory_free(), de100_memory_error_str()
 //
 // For production file I/O, use the proper asset loading system.
 //
 // Casey's Day 15 pattern:
-//   DebugFileReadResult file = debug_platform_read_entire_file(__FILE__);
+//   De100DebugDe100FileReadResult file = de100_debug_platform_read_entire_file(__FILE__);
 //   if (file.size > 0) {
-//       debug_platform_write_entire_file("test.out", file.size, file.memory.base);
-//       debug_platform_free_file_memory(&file.memory);
+//       de100_debug_platform_write_entire_file("test.out", file.size, file.memory.base);
+//       de100_debug_platform_free_de100_file_memory(&file.memory);
 //   }
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -41,29 +41,29 @@ typedef enum {
     DEBUG_FILE_ERROR_NOT_FOUND,
     DEBUG_FILE_ERROR_EMPTY_FILE,
     DEBUG_FILE_ERROR_TOO_LARGE,
-    DEBUG_FILE_ERROR_MEMORY_ALLOC,
+    DEBUG_FILE_ERROR_De100_MEMORY_ALLOC,
     DEBUG_FILE_ERROR_READ_FAILED,
     DEBUG_FILE_ERROR_WRITE_FAILED,
     DEBUG_FILE_ERROR_NULL_DATA,
     DEBUG_FILE_ERROR_OPEN_FAILED,
     
     DEBUG_FILE_ERROR_COUNT
-} DebugFileErrorCode;
+} De100DebugDe100FileErrorCode;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // RESULT STRUCTURES
 // ═══════════════════════════════════════════════════════════════════════════
 
 typedef struct {
-    MemoryBlock memory;          // Memory block containing file data
+    De100MemoryBlock memory;          // Memory block containing file data
     uint32 size;                 // Size of file in bytes (0 on failure)
-    DebugFileErrorCode error_code;
-} DebugFileReadResult;
+    De100DebugDe100FileErrorCode error_code;
+} De100DebugDe100FileReadResult;
 
 typedef struct {
     bool32 success;
-    DebugFileErrorCode error_code;
-} DebugFileWriteResult;
+    De100DebugDe100FileErrorCode error_code;
+} De100DebugFileWriteResult;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // API FUNCTIONS
@@ -72,32 +72,32 @@ typedef struct {
 /**
  * Read an entire file into memory.
  *
- * Uses file_get_size() to determine size, then allocates via memory_alloc().
+ * Uses de100_file_get_size() to determine size, then allocates via de100_memory_alloc().
  *
  * @param filename Path to the file to read
  * @return Result with memory block and size, or size=0 on failure
  *
- * The returned memory must be freed with debug_platform_free_file_memory().
+ * The returned memory must be freed with de100_debug_platform_free_de100_file_memory().
  *
  * Example:
- *   DebugFileReadResult file = debug_platform_read_entire_file("test.txt");
- *   if (file.size > 0 && memory_is_valid(file.memory)) {
+ *   De100DebugDe100FileReadResult file = de100_debug_platform_read_entire_file("test.txt");
+ *   if (file.size > 0 && de100_memory_is_valid(file.memory)) {
  *       // Use file.memory.base, file.size
- *       debug_platform_free_file_memory(&file.memory);
+ *       de100_debug_platform_free_de100_file_memory(&file.memory);
  *   }
  */
-DebugFileReadResult debug_platform_read_entire_file(const char *filename);
+De100DebugDe100FileReadResult de100_debug_platform_read_entire_file(const char *filename);
 
 /**
- * Free memory allocated by debug_platform_read_entire_file().
+ * Free memory allocated by de100_debug_platform_read_entire_file().
  *
- * Uses memory_free() internally.
+ * Uses de100_memory_free() internally.
  *
  * @param memory Pointer to the memory block to free
  *
  * Safe to call multiple times (idempotent).
  */
-void debug_platform_free_file_memory(MemoryBlock *memory);
+void de100_debug_platform_free_de100_file_memory(De100MemoryBlock *memory);
 
 /**
  * Write data to a file (creates or overwrites).
@@ -109,12 +109,12 @@ void debug_platform_free_file_memory(MemoryBlock *memory);
  *
  * Example:
  *   const char *data = "Hello, World!";
- *   DebugFileWriteResult r = debug_platform_write_entire_file("out.txt", 13, data);
+ *   De100DebugFileWriteResult r = de100_debug_platform_write_entire_file("out.txt", 13, data);
  *   if (!r.success) {
- *       printf("Error: %s\n", debug_file_strerror(r.error_code));
+ *       printf("Error: %s\n", de100_debug_platform_de100_file_strerror(r.error_code));
  *   }
  */
-DebugFileWriteResult debug_platform_write_entire_file(const char *filename, 
+De100DebugFileWriteResult de100_debug_platform_write_entire_file(const char *filename, 
                                                        uint32 size, 
                                                        const void *data);
 
@@ -128,38 +128,7 @@ DebugFileWriteResult debug_platform_write_entire_file(const char *filename,
  * @param code Error code from any debug file operation
  * @return Static string describing the error (never NULL)
  */
-const char *debug_file_strerror(DebugFileErrorCode code);
-
-// ═══════════════════════════════════════════════════════════════════════════
-// UTILITY FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Safely truncate a 64-bit value to 32-bit.
- *
- * @param value Value to truncate (must be >= 0 and <= UINT32_MAX)
- * @return Truncated 32-bit value
- *
- * In debug builds (DE100_SLOW), asserts if value is out of range.
- * Used for file sizes that we know fit in 32 bits.
- */
-uint32 safe_truncate_uint64(int64 value);
-
-// ═══════════════════════════════════════════════════════════════════════════
-// DEBUG UTILITIES (DE100_SLOW only)
-// ═══════════════════════════════════════════════════════════════════════════
-
-#if DE100_SLOW
-
-/**
- * Get detailed error information from the last failed operation.
- * Thread-local storage - only valid immediately after a failed call.
- *
- * @return Detailed error string, or NULL if no detail available
- */
-const char *debug_file_get_last_error_detail(void);
-
-#endif // DE100_SLOW
+const char *de100_debug_platform_de100_file_strerror(De100DebugDe100FileErrorCode code);
 
 #endif // DE100_INTERNAL
 

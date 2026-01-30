@@ -54,8 +54,8 @@ static __thread char g_last_error_detail[1024];
 
 #if defined(_WIN32)
 
-file_scoped_fn inline FileErrorCode
-win32_error_to_file_error(DWORD error_code) {
+de100_file_scoped_fn inline De100FileErrorCode
+win32_error_to_de100_file_error(DWORD error_code) {
   switch (error_code) {
   case ERROR_SUCCESS:
     return FILE_SUCCESS;
@@ -106,9 +106,9 @@ win32_error_to_file_error(DWORD error_code) {
 }
 
 // #if DE100_INTERNAL && DE100_SLOW
-file_scoped_fn inline void win32_set_error_detail(const char *operation,
-                                                  const char *path,
-                                                  DWORD error_code) {
+de100_file_scoped_fn inline void win32_set_error_detail(const char *operation,
+                                                        const char *path,
+                                                        DWORD error_code) {
   char sys_msg[512];
   FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                  NULL, error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
@@ -127,7 +127,8 @@ file_scoped_fn inline void win32_set_error_detail(const char *operation,
 
 #else // POSIX
 
-file_scoped_fn inline FileErrorCode errno_to_file_error(int err) {
+de100_file_scoped_fn inline De100FileErrorCode
+errno_to_de100_file_error(int err) {
   switch (err) {
   case 0:
     return FILE_SUCCESS;
@@ -173,8 +174,8 @@ file_scoped_fn inline FileErrorCode errno_to_file_error(int err) {
 }
 
 // #if DE100_INTERNAL && DE100_SLOW
-file_scoped_fn inline void posix_set_error_detail(const char *operation,
-                                                  const char *path, int err) {
+de100_file_scoped_fn inline void
+posix_set_error_detail(const char *operation, const char *path, int err) {
   SET_ERROR_DETAIL("[%s] '%s' failed: %s (errno %d)", operation,
                    path ? path : "(null)", strerror(err), err);
 }
@@ -186,28 +187,29 @@ file_scoped_fn inline void posix_set_error_detail(const char *operation,
 // RESULT HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-file_scoped_fn inline FileResult make_success(void) {
+de100_file_scoped_fn inline De100FileResult make_success(void) {
   CLEAR_ERROR_DETAIL();
-  return (FileResult){.success = true, .error_code = FILE_SUCCESS};
+  return (De100FileResult){.success = true, .error_code = FILE_SUCCESS};
 }
 
-file_scoped_fn inline FileResult make_error(FileErrorCode code) {
-  return (FileResult){.success = false, .error_code = code};
+de100_file_scoped_fn inline De100FileResult
+make_error(De100FileErrorCode code) {
+  return (De100FileResult){.success = false, .error_code = code};
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GET FILE MODIFICATION TIME
 // ═══════════════════════════════════════════════════════════════════════════
 
-FileTimeResult file_get_mod_time(const char *filename) {
-  FileTimeResult result = {0};
+De100FileTimeResult de100_file_get_mod_time(const char *filename) {
+  De100FileTimeResult result = {0};
 
   // ─────────────────────────────────────────────────────────────────────
   // Validate input
   // ─────────────────────────────────────────────────────────────────────
   if (!filename) {
     result.error_code = FILE_ERROR_INVALID_PATH;
-    SET_ERROR_DETAIL("[file_get_mod_time] NULL filename provided");
+    SET_ERROR_DETAIL("[de100_file_get_mod_time] NULL filename provided");
     return result;
   }
 
@@ -215,14 +217,15 @@ FileTimeResult file_get_mod_time(const char *filename) {
   // ─────────────────────────────────────────────────────────────────────
   // WINDOWS
   // ─────────────────────────────────────────────────────────────────────
-  WIN32_FILE_ATTRIBUTE_DATA file_info;
+  WIN32_FILE_ATTRIBUTE_DATA de100_file_info;
 
-  if (!GetFileAttributesExA(filename, GetFileExInfoStandard, &file_info)) {
+  if (!GetFileAttributesExA(filename, GetDe100FileExInfoStandard,
+                            &de100_file_info)) {
     DWORD error_code = GetLastError();
-    result.error_code = win32_error_to_file_error(error_code);
+    result.error_code = win32_error_to_de100_file_error(error_code);
 
 #if DE100_INTERNAL && DE100_SLOW
-    win32_set_error_detail("file_get_mod_time", filename, error_code);
+    win32_set_error_detail("de100_file_get_mod_time", filename, error_code);
 #endif
     return result;
   }
@@ -230,8 +233,8 @@ FileTimeResult file_get_mod_time(const char *filename) {
   // Convert FILETIME (100-nanosecond intervals since 1601) to our format
   // Note: We keep Windows epoch, only care about relative comparisons
   ULARGE_INTEGER ull;
-  ull.LowPart = file_info.ftLastWriteTime.dwLowDateTime;
-  ull.HighPart = file_info.ftLastWriteTime.dwHighDateTime;
+  ull.LowPart = de100_file_info.ftLastWriteTime.dwLowDateTime;
+  ull.HighPart = de100_file_info.ftLastWriteTime.dwHighDateTime;
 
   result.value.seconds = (int64)(ull.QuadPart / 10000000ULL);
   result.value.nanoseconds = (int64)((ull.QuadPart % 10000000ULL) * 100);
@@ -244,20 +247,20 @@ FileTimeResult file_get_mod_time(const char *filename) {
   // ─────────────────────────────────────────────────────────────────────
   // MACOS (uses st_mtimespec)
   // ─────────────────────────────────────────────────────────────────────
-  struct stat file_stat;
+  struct stat de100_file_stat;
 
-  if (stat(filename, &file_stat) != 0) {
+  if (stat(filename, &de100_file_stat) != 0) {
     int err = errno;
-    result.error_code = errno_to_file_error(err);
+    result.error_code = errno_to_de100_file_error(err);
 
 #if DE100_INTERNAL && DE100_SLOW
-    posix_set_error_detail("file_get_mod_time", filename, err);
+    posix_set_error_detail("de100_file_get_mod_time", filename, err);
 #endif
     return result;
   }
 
-  result.value.seconds = (int64)file_stat.st_mtime;
-  result.value.nanoseconds = (int64)file_stat.st_mtimespec.tv_nsec;
+  result.value.seconds = (int64)de100_file_stat.st_mtime;
+  result.value.nanoseconds = (int64)de100_file_stat.st_mtimespec.tv_nsec;
   result.success = true;
   result.error_code = FILE_SUCCESS;
 
@@ -267,27 +270,27 @@ FileTimeResult file_get_mod_time(const char *filename) {
   // ─────────────────────────────────────────────────────────────────────
   // LINUX / BSD / UNIX (uses st_mtim)
   // ─────────────────────────────────────────────────────────────────────
-  struct stat file_stat;
+  struct stat de100_file_stat;
 
-  if (stat(filename, &file_stat) != 0) {
+  if (stat(filename, &de100_file_stat) != 0) {
     int err = errno;
-    result.error_code = errno_to_file_error(err);
+    result.error_code = errno_to_de100_file_error(err);
 
 #if DE100_INTERNAL && DE100_SLOW
-    posix_set_error_detail("file_get_mod_time", filename, err);
+    posix_set_error_detail("de100_file_get_mod_time", filename, err);
 #endif
     return result;
   }
 
-  result.value.seconds = (int64)file_stat.st_mtime;
-  result.value.nanoseconds = (int64)file_stat.st_mtim.tv_nsec;
+  result.value.seconds = (int64)de100_file_stat.st_mtime;
+  result.value.nanoseconds = (int64)de100_file_stat.st_mtim.tv_nsec;
   result.success = true;
   result.error_code = FILE_SUCCESS;
 
   CLEAR_ERROR_DETAIL();
 
 #else
-#error "file_get_mod_time not implemented for this platform"
+#error "de100_file_get_mod_time not implemented for this platform"
 #endif
 
   return result;
@@ -297,7 +300,8 @@ FileTimeResult file_get_mod_time(const char *filename) {
 // COMPARE FILE MODIFICATION TIMES
 // ═══════════════════════════════════════════════════════════════════════════
 
-real64 file_time_diff(const PlatformTimeSpec *a, const PlatformTimeSpec *b) {
+real64 de100_file_time_diff(const PlatformTimeSpec *a,
+                            const PlatformTimeSpec *b) {
   if (!a || !b) {
     return 0.0;
   }
@@ -310,13 +314,14 @@ real64 file_time_diff(const PlatformTimeSpec *a, const PlatformTimeSpec *b) {
 // COPY FILE
 // ═══════════════════════════════════════════════════════════════════════════
 
-FileResult file_copy(const char *source, const char *dest) {
+De100FileResult de100_file_copy(const char *source, const char *dest) {
   // ─────────────────────────────────────────────────────────────────────
   // Validate input
   // ─────────────────────────────────────────────────────────────────────
   if (!source || !dest) {
-    SET_ERROR_DETAIL("[file_copy] NULL path provided (source=%p, dest=%p)",
-                     (void *)source, (void *)dest);
+    SET_ERROR_DETAIL(
+        "[de100_file_copy] NULL path provided (source=%p, dest=%p)",
+        (void *)source, (void *)dest);
     return make_error(FILE_ERROR_INVALID_PATH);
   }
 
@@ -330,9 +335,9 @@ FileResult file_copy(const char *source, const char *dest) {
 #if DE100_INTERNAL && DE100_SLOW
     char detail[1024];
     snprintf(detail, sizeof(detail), "CopyFile '%s' -> '%s'", source, dest);
-    win32_set_error_detail("file_copy", detail, error_code);
+    win32_set_error_detail("de100_file_copy", detail, error_code);
 #endif
-    return make_error(win32_error_to_file_error(error_code));
+    return make_error(win32_error_to_de100_file_error(error_code));
   }
 
   return make_success();
@@ -349,9 +354,9 @@ FileResult file_copy(const char *source, const char *dest) {
   if (source_fd < 0) {
     int err = errno;
 #if DE100_INTERNAL && DE100_SLOW
-    posix_set_error_detail("file_copy:open_source", source, err);
+    posix_set_error_detail("de100_file_copy:open_source", source, err);
 #endif
-    return make_error(errno_to_file_error(err));
+    return make_error(errno_to_de100_file_error(err));
   }
 
   // Get source file info
@@ -360,21 +365,22 @@ FileResult file_copy(const char *source, const char *dest) {
     int err = errno;
     close(source_fd);
 #if DE100_INTERNAL && DE100_SLOW
-    posix_set_error_detail("file_copy:fstat", source, err);
+    posix_set_error_detail("de100_file_copy:fstat", source, err);
 #endif
-    return make_error(errno_to_file_error(err));
+    return make_error(errno_to_de100_file_error(err));
   }
 
   // Verify source is a regular file
   if (S_ISDIR(source_stat.st_mode)) {
     close(source_fd);
-    SET_ERROR_DETAIL("[file_copy] Source '%s' is a directory", source);
+    SET_ERROR_DETAIL("[de100_file_copy] Source '%s' is a directory", source);
     return make_error(FILE_ERROR_IS_DIRECTORY);
   }
 
   if (!S_ISREG(source_stat.st_mode)) {
     close(source_fd);
-    SET_ERROR_DETAIL("[file_copy] Source '%s' is not a regular file", source);
+    SET_ERROR_DETAIL("[de100_file_copy] Source '%s' is not a regular file",
+                     source);
     return make_error(FILE_ERROR_NOT_A_FILE);
   }
 
@@ -384,9 +390,9 @@ FileResult file_copy(const char *source, const char *dest) {
     int err = errno;
     close(source_fd);
 #if DE100_INTERNAL && DE100_SLOW
-    posix_set_error_detail("file_copy:open_dest", dest, err);
+    posix_set_error_detail("de100_file_copy:open_dest", dest, err);
 #endif
-    return make_error(errno_to_file_error(err));
+    return make_error(errno_to_de100_file_error(err));
   }
 
   // Copy data in chunks
@@ -411,7 +417,7 @@ FileResult file_copy(const char *source, const char *dest) {
 
 #if DE100_INTERNAL && DE100_SLOW
       SET_ERROR_DETAIL(
-          "[file_copy] Write failed: wrote %zd of %zd bytes to '%s': %s",
+          "[de100_file_copy] Write failed: wrote %zd of %zd bytes to '%s': %s",
           bytes_written, bytes_read, dest, strerror(err));
 #endif
       return make_error(FILE_ERROR_WRITE_FAILED);
@@ -427,7 +433,7 @@ FileResult file_copy(const char *source, const char *dest) {
     close(dest_fd);
 
 #if DE100_INTERNAL && DE100_SLOW
-    posix_set_error_detail("file_copy:read", source, err);
+    posix_set_error_detail("de100_file_copy:read", source, err);
 #endif
     return make_error(FILE_ERROR_READ_FAILED);
   }
@@ -437,9 +443,9 @@ FileResult file_copy(const char *source, const char *dest) {
 
   // Verify size matches (paranoid check)
   if (total_copied != source_stat.st_size) {
-    SET_ERROR_DETAIL(
-        "[file_copy] Size mismatch: copied %zd bytes, expected %lld bytes",
-        total_copied, (long long)source_stat.st_size);
+    SET_ERROR_DETAIL("[de100_file_copy] Size mismatch: copied %zd bytes, "
+                     "expected %lld bytes",
+                     total_copied, (long long)source_stat.st_size);
     return make_error(FILE_ERROR_SIZE_MISMATCH);
   }
 
@@ -451,12 +457,12 @@ FileResult file_copy(const char *source, const char *dest) {
 // CHECK IF FILE EXISTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-FileExistsResult file_exists(const char *filename) {
-  FileExistsResult result = {0};
+De100FileExistsResult de100_file_exists(const char *filename) {
+  De100FileExistsResult result = {0};
 
   if (!filename) {
     result.error_code = FILE_ERROR_INVALID_PATH;
-    SET_ERROR_DETAIL("[file_exists] NULL filename provided");
+    SET_ERROR_DETAIL("[de100_file_exists] NULL filename provided");
     return result;
   }
 
@@ -479,9 +485,9 @@ FileExistsResult file_exists(const char *filename) {
     } else {
       result.exists = false;
       result.success = false;
-      result.error_code = win32_error_to_file_error(error_code);
+      result.error_code = win32_error_to_de100_file_error(error_code);
 #if DE100_INTERNAL && DE100_SLOW
-      win32_set_error_detail("file_exists", filename, error_code);
+      win32_set_error_detail("de100_file_exists", filename, error_code);
 #endif
     }
   } else {
@@ -493,7 +499,7 @@ FileExistsResult file_exists(const char *filename) {
 
 #if DE100_INTERNAL && DE100_SLOW
     if (attrib & FILE_ATTRIBUTE_DIRECTORY) {
-      SET_ERROR_DETAIL("[file_exists] '%s' exists but is a directory",
+      SET_ERROR_DETAIL("[de100_file_exists] '%s' exists but is a directory",
                        filename);
     }
 #endif
@@ -503,28 +509,28 @@ FileExistsResult file_exists(const char *filename) {
   // ─────────────────────────────────────────────────────────────────────
   // POSIX
   // ─────────────────────────────────────────────────────────────────────
-  struct stat file_stat;
+  struct stat de100_file_stat;
 
-  if (stat(filename, &file_stat) == 0) {
+  if (stat(filename, &de100_file_stat) == 0) {
     // Path exists - check what it is
     result.success = true;
     result.error_code = FILE_SUCCESS;
 
-    if (S_ISREG(file_stat.st_mode)) {
+    if (S_ISREG(de100_file_stat.st_mode)) {
       result.exists = true;
       CLEAR_ERROR_DETAIL();
-    } else if (S_ISDIR(file_stat.st_mode)) {
+    } else if (S_ISDIR(de100_file_stat.st_mode)) {
       result.exists = false;
 #if DE100_INTERNAL && DE100_SLOW
-      SET_ERROR_DETAIL("[file_exists] '%s' exists but is a directory",
+      SET_ERROR_DETAIL("[de100_file_exists] '%s' exists but is a directory",
                        filename);
 #endif
     } else {
       result.exists = false;
 #if DE100_INTERNAL && DE100_SLOW
-      SET_ERROR_DETAIL(
-          "[file_exists] '%s' exists but is not a regular file (mode=0x%x)",
-          filename, file_stat.st_mode);
+      SET_ERROR_DETAIL("[de100_file_exists] '%s' exists but is not a regular "
+                       "file (mode=0x%x)",
+                       filename, de100_file_stat.st_mode);
 #endif
     }
   } else {
@@ -539,9 +545,9 @@ FileExistsResult file_exists(const char *filename) {
     } else {
       result.exists = false;
       result.success = false;
-      result.error_code = errno_to_file_error(err);
+      result.error_code = errno_to_de100_file_error(err);
 #if DE100_INTERNAL && DE100_SLOW
-      posix_set_error_detail("file_exists", filename, err);
+      posix_set_error_detail("de100_file_exists", filename, err);
 #endif
     }
   }
@@ -554,12 +560,12 @@ FileExistsResult file_exists(const char *filename) {
 // GET FILE SIZE
 // ═══════════════════════════════════════════════════════════════════════════
 
-FileSizeResult file_get_size(const char *filename) {
-  FileSizeResult result = {.value = -1};
+De100FileSizeResult de100_file_get_size(const char *filename) {
+  De100FileSizeResult result = {.value = -1};
 
   if (!filename) {
     result.error_code = FILE_ERROR_INVALID_PATH;
-    SET_ERROR_DETAIL("[file_get_size] NULL filename provided");
+    SET_ERROR_DETAIL("[de100_file_get_size] NULL filename provided");
     return result;
   }
 
@@ -567,27 +573,28 @@ FileSizeResult file_get_size(const char *filename) {
   // ─────────────────────────────────────────────────────────────────────
   // WINDOWS
   // ─────────────────────────────────────────────────────────────────────
-  WIN32_FILE_ATTRIBUTE_DATA file_info;
+  WIN32_FILE_ATTRIBUTE_DATA de100_file_info;
 
-  if (!GetFileAttributesExA(filename, GetFileExInfoStandard, &file_info)) {
+  if (!GetFileAttributesExA(filename, GetDe100FileExInfoStandard,
+                            &de100_file_info)) {
     DWORD error_code = GetLastError();
-    result.error_code = win32_error_to_file_error(error_code);
+    result.error_code = win32_error_to_de100_file_error(error_code);
 #if DE100_INTERNAL && DE100_SLOW
-    win32_set_error_detail("file_get_size", filename, error_code);
+    win32_set_error_detail("de100_file_get_size", filename, error_code);
 #endif
     return result;
   }
 
   // Check if it's a directory
-  if (file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+  if (de100_file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
     result.error_code = FILE_ERROR_IS_DIRECTORY;
-    SET_ERROR_DETAIL("[file_get_size] '%s' is a directory", filename);
+    SET_ERROR_DETAIL("[de100_file_get_size] '%s' is a directory", filename);
     return result;
   }
 
   LARGE_INTEGER size;
-  size.HighPart = (LONG)file_info.nFileSizeHigh;
-  size.LowPart = file_info.nFileSizeLow;
+  size.HighPart = (LONG)de100_file_info.nDe100FileSizeHigh;
+  size.LowPart = de100_file_info.nDe100FileSizeLow;
 
   result.value = (int64)size.QuadPart;
   result.success = true;
@@ -598,24 +605,24 @@ FileSizeResult file_get_size(const char *filename) {
   // ─────────────────────────────────────────────────────────────────────
   // POSIX
   // ─────────────────────────────────────────────────────────────────────
-  struct stat file_stat;
+  struct stat de100_file_stat;
 
-  if (stat(filename, &file_stat) != 0) {
+  if (stat(filename, &de100_file_stat) != 0) {
     int err = errno;
-    result.error_code = errno_to_file_error(err);
+    result.error_code = errno_to_de100_file_error(err);
 #if DE100_INTERNAL && DE100_SLOW
-    posix_set_error_detail("file_get_size", filename, err);
+    posix_set_error_detail("de100_file_get_size", filename, err);
 #endif
     return result;
   }
 
-  if (S_ISDIR(file_stat.st_mode)) {
+  if (S_ISDIR(de100_file_stat.st_mode)) {
     result.error_code = FILE_ERROR_IS_DIRECTORY;
-    SET_ERROR_DETAIL("[file_get_size] '%s' is a directory", filename);
+    SET_ERROR_DETAIL("[de100_file_get_size] '%s' is a directory", filename);
     return result;
   }
 
-  result.value = (int64)file_stat.st_size;
+  result.value = (int64)de100_file_stat.st_size;
   result.success = true;
   result.error_code = FILE_SUCCESS;
   CLEAR_ERROR_DETAIL();
@@ -628,9 +635,9 @@ FileSizeResult file_get_size(const char *filename) {
 // DELETE FILE
 // ═══════════════════════════════════════════════════════════════════════════
 
-FileResult file_delete(const char *filename) {
+De100FileResult de100_file_delete(const char *filename) {
   if (!filename) {
-    SET_ERROR_DETAIL("[file_delete] NULL filename provided");
+    SET_ERROR_DETAIL("[de100_file_delete] NULL filename provided");
     return make_error(FILE_ERROR_INVALID_PATH);
   }
 
@@ -648,9 +655,9 @@ FileResult file_delete(const char *filename) {
     }
 
 #if DE100_INTERNAL && DE100_SLOW
-    win32_set_error_detail("file_delete", filename, error_code);
+    win32_set_error_detail("de100_file_delete", filename, error_code);
 #endif
-    return make_error(win32_error_to_file_error(error_code));
+    return make_error(win32_error_to_de100_file_error(error_code));
   }
 
   return make_success();
@@ -668,9 +675,9 @@ FileResult file_delete(const char *filename) {
     }
 
 #if DE100_INTERNAL && DE100_SLOW
-    posix_set_error_detail("file_delete", filename, err);
+    posix_set_error_detail("de100_file_delete", filename, err);
 #endif
-    return make_error(errno_to_file_error(err));
+    return make_error(errno_to_de100_file_error(err));
   }
 
   return make_success();
@@ -681,7 +688,7 @@ FileResult file_delete(const char *filename) {
 // ERROR STRING TRANSLATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-const char *file_strerror(FileErrorCode code) {
+const char *de100_file_strerror(De100FileErrorCode code) {
   switch (code) {
   case FILE_SUCCESS:
     return "Success";
@@ -732,22 +739,22 @@ const char *file_strerror(FileErrorCode code) {
 
 #if DE100_INTERNAL && DE100_SLOW
 
-const char *file_get_last_error_detail(void) {
+const char *de100_file_get_last_error_detail(void) {
   if (g_last_error_detail[0] == '\0') {
     return NULL;
   }
   return g_last_error_detail;
 }
 
-void file_debug_log_result(const char *operation, const char *path,
-                           FileResult result) {
+void de100_file_debug_log_result(const char *operation, const char *path,
+                                 De100FileResult result) {
   if (result.success) {
     fprintf(stderr, "[FILE] %s('%s') = OK\n", operation,
             path ? path : "(null)");
   } else {
-    const char *detail = file_get_last_error_detail();
+    const char *detail = de100_file_get_last_error_detail();
     fprintf(stderr, "[FILE] %s('%s') = FAILED: %s\n", operation,
-            path ? path : "(null)", file_strerror(result.error_code));
+            path ? path : "(null)", de100_file_strerror(result.error_code));
     if (detail) {
       fprintf(stderr, "       Detail: %s\n", detail);
     }

@@ -140,16 +140,18 @@ bool raylib_init_audio(GameAudioOutputBuffer *audio_output,
   uint32 buffer_bytes = actual_buffer_size * audio_config->bytes_per_sample;
 
   g_raylib_audio_output.sample_buffer =
-      memory_alloc(NULL, buffer_bytes,
-                   MEMORY_FLAG_READ | MEMORY_FLAG_WRITE | MEMORY_FLAG_ZEROED);
+      de100_memory_alloc(NULL, buffer_bytes,
+                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
+                             De100_MEMORY_FLAG_ZEROED);
 
-  if (!memory_is_valid(g_raylib_audio_output.sample_buffer)) {
+  if (!de100_memory_is_valid(g_raylib_audio_output.sample_buffer)) {
     fprintf(stderr, "❌ Audio: Failed to allocate sample buffer\n");
     UnloadAudioStream(g_raylib_audio_output.stream);
     CloseAudioDevice();
     audio_config->is_initialized = false;
-    fprintf(stderr, "   Code: %s\n",
-            memory_error_str(g_raylib_audio_output.sample_buffer.error_code));
+    fprintf(
+        stderr, "   Code: %s\n",
+        de100_memory_error_str(g_raylib_audio_output.sample_buffer.error_code));
     return false;
   }
 
@@ -158,8 +160,9 @@ bool raylib_init_audio(GameAudioOutputBuffer *audio_output,
       audio_config->bytes_per_sample * 4;
 
   g_raylib_audio_output.sample_buffer =
-      memory_alloc(NULL, g_raylib_audio_output.sample_buffer_size,
-                   MEMORY_FLAG_READ | MEMORY_FLAG_WRITE | MEMORY_FLAG_ZEROED);
+      de100_memory_alloc(NULL, g_raylib_audio_output.sample_buffer_size,
+                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
+                             De100_MEMORY_FLAG_ZEROED);
 
   printf("✅ Audio: Sample buffer allocated (%d bytes)\n", buffer_bytes);
 
@@ -266,9 +269,9 @@ void raylib_clear_audio_buffer(PlatformAudioConfig *audio_config) {
 
   // Only send silence if buffer is ready
   if (IsAudioStreamProcessed(g_raylib_audio_output.stream)) {
-    memset(g_raylib_audio_output.sample_buffer.base, 0,
-           g_raylib_audio_output.buffer_size_frames *
-               audio_config->bytes_per_sample);
+    de100_mem_set(g_raylib_audio_output.sample_buffer.base, 0,
+                  g_raylib_audio_output.buffer_size_frames *
+                      audio_config->bytes_per_sample);
 
     UpdateAudioStream(g_raylib_audio_output.stream,
                       g_raylib_audio_output.sample_buffer.base,
@@ -340,14 +343,14 @@ void raylib_shutdown_audio(GameAudioOutputBuffer *audio_output,
     g_raylib_audio_output.stream_valid = false;
   }
 
-  if (memory_is_valid(g_raylib_audio_output.sample_buffer)) {
-    memory_free(&g_raylib_audio_output.sample_buffer);
+  if (de100_memory_is_valid(g_raylib_audio_output.sample_buffer)) {
+    de100_memory_free(&g_raylib_audio_output.sample_buffer);
   }
 
   CloseAudioDevice();
 
   audio_config->is_initialized = false;
-  memory_free(&audio_output->samples_block);
+  de100_memory_free(&audio_output->samples_block);
   audio_output->sample_count = 0;
 
   printf("✅ Audio: Shutdown complete\n");

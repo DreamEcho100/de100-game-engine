@@ -124,7 +124,7 @@ typedef struct {
 
   uint32 buffer_size;
 
-  MemoryBlock sample_buffer;
+  De100MemoryBlock sample_buffer;
   uint32 sample_buffer_size;
 
   int32 latency_sample_count;

@@ -47,21 +47,22 @@ typedef struct {
   int height;            // Window height
 } OpenGLState;
 
-file_scoped_global_var OpenGLState g_gl = {0};
-file_scoped_global_var bool g_window_is_active = true; // Track focus state
-file_scoped_global_var int g_last_window_width = 0;
-file_scoped_global_var int g_last_window_height = 0;
+de100_file_scoped_global_var OpenGLState g_gl = {0};
+de100_file_scoped_global_var bool g_window_is_active =
+    true; // Track focus state
+de100_file_scoped_global_var int g_last_window_width = 0;
+de100_file_scoped_global_var int g_last_window_height = 0;
 
 #if DE100_INTERNAL
-file_scoped_global_var FrameStats g_frame_stats = {0};
+de100_file_scoped_global_var FrameStats g_frame_stats = {0};
 #endif
 
 // ═══════════════════════════════════════════════════════════════════════════
 // OPENGL FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-file_scoped_fn inline bool opengl_init(Display *display, Window window,
-                                       int width, int height) {
+de100_file_scoped_fn inline bool opengl_init(Display *display, Window window,
+                                             int width, int height) {
   int visual_attribs[] = {GLX_RGBA, GLX_DEPTH_SIZE, 24, GLX_DOUBLEBUFFER, None};
 
   XVisualInfo *visual =
@@ -103,7 +104,8 @@ file_scoped_fn inline bool opengl_init(Display *display, Window window,
   return true;
 }
 
-file_scoped_fn inline void opengl_display_buffer(GameBackBuffer *backbuffer) {
+de100_file_scoped_fn inline void
+opengl_display_buffer(GameBackBuffer *backbuffer) {
   if (!backbuffer->memory.base)
     return;
 
@@ -128,7 +130,7 @@ file_scoped_fn inline void opengl_display_buffer(GameBackBuffer *backbuffer) {
 }
 
 #if DE100_SANITIZE_WAVE_1_MEMORY
-file_scoped_fn inline void opengl_cleanup(void) {
+de100_file_scoped_fn inline void opengl_cleanup(void) {
   if (g_gl.gl_context) {
     glXMakeCurrent(g_gl.display, None, NULL);
     glXDestroyContext(g_gl.display, g_gl.gl_context);
@@ -141,7 +143,8 @@ file_scoped_fn inline void opengl_cleanup(void) {
 // X11 FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-file_scoped_fn inline uint32 x11_get_monitor_refresh_rate(Display *display) {
+de100_file_scoped_fn inline uint32
+x11_get_monitor_refresh_rate(Display *display) {
   XRRScreenConfiguration *screen_config =
       XRRGetScreenInfo(display, RootWindow(display, DefaultScreen(display)));
 
@@ -157,7 +160,7 @@ file_scoped_fn inline uint32 x11_get_monitor_refresh_rate(Display *display) {
   return refresh_rate;
 }
 
-file_scoped_fn inline void
+de100_file_scoped_fn inline void
 x11_handle_event(GameBackBuffer *backbuffer, Display *display, XEvent *event,
                  GameInput *new_game_input,
                  PlatformAudioConfig *platform_audio_config) {
@@ -227,7 +230,7 @@ x11_handle_event(GameBackBuffer *backbuffer, Display *display, XEvent *event,
   }
 }
 
-file_scoped_fn inline void
+de100_file_scoped_fn inline void
 x11_process_pending_events(Display *display, GameBackBuffer *backbuffer,
                            GameInput *new_game_input,
                            PlatformAudioConfig *audio_config) {
@@ -242,11 +245,12 @@ x11_process_pending_events(Display *display, GameBackBuffer *backbuffer,
 // AUDIO HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-file_scoped_fn inline void
+de100_file_scoped_fn inline void
 audio_generate_and_send(GameCode *game, GameMemory *game_memory,
                         GameAudioOutputBuffer *game_audio_output,
                         PlatformAudioConfig *platform_audio_config,
-                        MemoryBlock *audio_samples_block, int32 max_samples) {
+                        De100MemoryBlock *audio_samples_block,
+                        int32 max_samples) {
   int32 samples_to_generate =
       linux_get_samples_to_write(platform_audio_config, game_audio_output);
 
@@ -419,10 +423,11 @@ int platform_main() {
 
   int buffer_size = game_config.window_width * game_config.window_height * 4;
   game_buffer.memory =
-      memory_alloc(NULL, buffer_size,
-                   MEMORY_FLAG_READ | MEMORY_FLAG_WRITE | MEMORY_FLAG_ZEROED);
+      de100_memory_alloc(NULL, buffer_size,
+                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
+                             De100_MEMORY_FLAG_ZEROED);
 
-  if (!memory_is_valid(game_buffer.memory)) {
+  if (!de100_memory_is_valid(game_buffer.memory)) {
     fprintf(stderr, "❌ Failed to allocate backbuffer memory\n");
     return 1;
   }
@@ -452,11 +457,12 @@ int platform_main() {
   int sample_buffer_size =
       max_samples_per_call * platform_config.audio.bytes_per_sample;
 
-  MemoryBlock audio_samples_block =
-      memory_alloc(NULL, sample_buffer_size,
-                   MEMORY_FLAG_READ | MEMORY_FLAG_WRITE | MEMORY_FLAG_ZEROED);
+  De100MemoryBlock audio_samples_block =
+      de100_memory_alloc(NULL, sample_buffer_size,
+                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
+                             De100_MEMORY_FLAG_ZEROED);
 
-  if (!memory_is_valid(audio_samples_block)) {
+  if (!de100_memory_is_valid(audio_samples_block)) {
     fprintf(stderr, "❌ Failed to allocate sound sample buffer\n");
     return 1;
   }

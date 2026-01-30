@@ -24,7 +24,7 @@ typedef struct {
   uint32 buffer_size_frames;
 
   // Sample buffer for game to fill
-  MemoryBlock sample_buffer;
+  De100MemoryBlock sample_buffer;
   uint32 sample_buffer_size;
 
   // Track write statistics

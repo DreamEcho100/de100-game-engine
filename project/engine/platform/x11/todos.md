@@ -17,6 +17,7 @@
 - Suggest improvements where needed.
 - Never use `goto` statements.
 - [x] Move shared logic between the platforms to separate file to avoid unneeded duplication.
+- [x] Change `DE100_POSIX` to `DE100_IS_GENERIC_POSIX` and define `DE100_IS_GENERIC_WINDOWS`, and implement their usage where needed.
 - [ ] Implement proper detection window focus/active/inactive/minimized, by making the platform detect it and the game is what handles it.
 - [ ] Using `#if !defined(DE100_...)` to be able make the integrated game with engine to pass some variables/states from the engine to the game (like memory size, controllers count, etc) while having sensible defaults for when the game is built standalone, this will allow for not needing to have a `GAME_STARTUP` loaded dll since the game will be able to know these values at compile time. or having a dll for configs?
 - [ ] Implement proper error handling and reporting for all functions. and refactor what's needed to be on internal/dev mode only or/and every range of time.
@@ -35,7 +36,6 @@
 ## New todos
 
 - [ ] Look at the `engine/_common/file.c` `SET_ERROR_DETAIL` and `CLEAR_ERROR_DETAIL`
-- [ ] Change `DE100_POSIX` to `DE100_IS_GENERIC_POSIX` and define `DE100_IS_GENERIC_WINDOWS`, and implement their usage where needed.
 - [ ] Make sure when windows is detected, for performance to use `WIN32_LEAN_AND_MEAN`, `NOMINMAX`, and any other needed defines.
 - [ ] Enable the build script to be done on parellel when needed
 - [ ] Improve the `engine/build-common.sh` and `handmadehero/build.sh` scripts to avoid code duplication. and make sure the `build-common.sh` provides all what's needed to be able t integrate the engine with any game project.

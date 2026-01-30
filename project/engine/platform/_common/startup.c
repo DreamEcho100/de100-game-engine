@@ -38,11 +38,11 @@ int platform_game_startup(LoadGameCodeConfig *load_game_code_config,
   if (game->is_valid) {
     printf("✅ Game code loaded successfully\n");
     // NOTE: do on a separate thread
-    file_delete(
+    de100_file_delete(
         load_game_code_config->game_main_lib_tmp_path); // Clean up temp file
-    file_delete(
+    de100_file_delete(
         load_game_code_config->game_startup_lib_tmp_path); // Clean up temp file
-    file_delete(
+    de100_file_delete(
         load_game_code_config->game_init_lib_tmp_path); // Clean up temp file
   } else {
     printf("❌ Failed to load game code, using stubs\n");
@@ -70,14 +70,15 @@ int platform_game_startup(LoadGameCodeConfig *load_game_code_config,
          get_wall_clock() - g_initial_game_time,
          game_config->permanent_storage_size / (1024 * 1024));
 
-  MemoryBlock permanent_storage =
-      memory_alloc(base_address, game_config->permanent_storage_size,
-                   MEMORY_FLAG_READ | MEMORY_FLAG_WRITE | MEMORY_FLAG_ZEROED);
+  De100MemoryBlock permanent_storage =
+      de100_memory_alloc(base_address, game_config->permanent_storage_size,
+                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
+                             De100_MEMORY_FLAG_ZEROED);
 
-  if (!memory_is_valid(permanent_storage)) {
+  if (!de100_memory_is_valid(permanent_storage)) {
     fprintf(stderr, "❌ Could not allocate permanent storage\n");
     fprintf(stderr, "   Code: %s\n",
-            memory_error_str(permanent_storage.error_code));
+            de100_memory_error_str(permanent_storage.error_code));
     return 1;
   }
 
@@ -89,14 +90,15 @@ int platform_game_startup(LoadGameCodeConfig *load_game_code_config,
   void *transient_base =
       (uint8 *)permanent_storage.base + permanent_storage.size;
 
-  MemoryBlock transient_storage =
-      memory_alloc(transient_base, game_config->transient_storage_size,
-                   MEMORY_FLAG_READ | MEMORY_FLAG_WRITE | MEMORY_FLAG_ZEROED);
+  De100MemoryBlock transient_storage =
+      de100_memory_alloc(transient_base, game_config->transient_storage_size,
+                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
+                             De100_MEMORY_FLAG_ZEROED);
 
-  if (!memory_is_valid(transient_storage)) {
+  if (!de100_memory_is_valid(transient_storage)) {
     fprintf(stderr, "❌ Could not allocate transient storage\n");
     fprintf(stderr, "   Code: %s\n",
-            memory_error_str(transient_storage.error_code));
+            de100_memory_error_str(transient_storage.error_code));
     return 1;
   }
 
@@ -124,46 +126,51 @@ int platform_game_startup(LoadGameCodeConfig *load_game_code_config,
 
   // GameInput *game_inputs[2];
   // = {0};
-  MemoryBlock new_game_input_block =
-      memory_alloc(NULL, sizeof(GameInput),
-                   MEMORY_FLAG_READ | MEMORY_FLAG_WRITE | MEMORY_FLAG_ZEROED);
+  De100MemoryBlock new_game_input_block =
+      de100_memory_alloc(NULL, sizeof(GameInput),
+                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
+                             De100_MEMORY_FLAG_ZEROED);
 
-  if (!memory_is_valid(new_game_input_block)) {
+  if (!de100_memory_is_valid(new_game_input_block)) {
     fprintf(stderr, "❌ Could not allocate new_game_input\n");
     fprintf(stderr, "   Code: %s\n",
-            memory_error_str(new_game_input_block.error_code));
+            de100_memory_error_str(new_game_input_block.error_code));
     return 1;
   }
   new_game_input = (GameInput *)new_game_input_block.base;
 
-  MemoryBlock old_game_input_block =
-      memory_alloc(NULL, sizeof(GameInput),
-                   MEMORY_FLAG_READ | MEMORY_FLAG_WRITE | MEMORY_FLAG_ZEROED);
-  if (!memory_is_valid(old_game_input_block)) {
+  De100MemoryBlock old_game_input_block =
+      de100_memory_alloc(NULL, sizeof(GameInput),
+                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
+                             De100_MEMORY_FLAG_ZEROED);
+  if (!de100_memory_is_valid(old_game_input_block)) {
     fprintf(stderr, "❌ Could not allocate old_game_input\n");
     fprintf(stderr, "   Code: %s\n",
-            memory_error_str(old_game_input_block.error_code));
+            de100_memory_error_str(old_game_input_block.error_code));
     return 1;
   }
   old_game_input = (GameInput *)old_game_input_block.base;
 
-  MemoryBlock buffer_block =
-      memory_alloc(NULL, sizeof(GameBackBuffer),
-                   MEMORY_FLAG_READ | MEMORY_FLAG_WRITE | MEMORY_FLAG_ZEROED);
-  if (!memory_is_valid(buffer_block)) {
+  De100MemoryBlock buffer_block =
+      de100_memory_alloc(NULL, sizeof(GameBackBuffer),
+                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
+                             De100_MEMORY_FLAG_ZEROED);
+  if (!de100_memory_is_valid(buffer_block)) {
     fprintf(stderr, "❌ Could not allocate buffer\n");
-    fprintf(stderr, "   Code: %s\n", memory_error_str(buffer_block.error_code));
+    fprintf(stderr, "   Code: %s\n",
+            de100_memory_error_str(buffer_block.error_code));
     return 1;
   }
-  buffer->memory = (MemoryBlock)buffer_block;
+  buffer->memory = (De100MemoryBlock)buffer_block;
 
-  MemoryBlock audio_output_block =
-      memory_alloc(NULL, sizeof(GameAudioOutputBuffer),
-                   MEMORY_FLAG_READ | MEMORY_FLAG_WRITE | MEMORY_FLAG_ZEROED);
-  if (!memory_is_valid(audio_output_block)) {
+  De100MemoryBlock audio_output_block =
+      de100_memory_alloc(NULL, sizeof(GameAudioOutputBuffer),
+                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
+                             De100_MEMORY_FLAG_ZEROED);
+  if (!de100_memory_is_valid(audio_output_block)) {
     fprintf(stderr, "❌ Could not allocate audio output\n");
     fprintf(stderr, "   Code: %s\n",
-            memory_error_str(audio_output_block.error_code));
+            de100_memory_error_str(audio_output_block.error_code));
     return 1;
   }
   audio_buffer = (GameAudioOutputBuffer *)audio_output_block.base;
@@ -185,16 +192,16 @@ int free_platform_game_startup(LoadGameCodeConfig *load_game_code_config,
   (void)old_game_input;
   (void)audio_buffer;
 
-  file_delete(load_game_code_config->game_main_lib_tmp_path);
-  file_delete(load_game_code_config->game_startup_lib_tmp_path);
-  file_delete(load_game_code_config->game_init_lib_tmp_path);
-  memory_free(&buffer->memory);
-  memory_free(&memory->transient_storage);
-  memory_free(&memory->permanent_storage);
+  de100_file_delete(load_game_code_config->game_main_lib_tmp_path);
+  de100_file_delete(load_game_code_config->game_startup_lib_tmp_path);
+  de100_file_delete(load_game_code_config->game_init_lib_tmp_path);
+  de100_memory_free(&buffer->memory);
+  de100_memory_free(&memory->transient_storage);
+  de100_memory_free(&memory->permanent_storage);
 
-  // memory_free(new_game_input);
-  // memory_free(old_game_input);
-  // memory_free(audio_buffer);
+  // de100_memory_free(new_game_input);
+  // de100_memory_free(old_game_input);
+  // de100_memory_free(audio_buffer);
 
   return 0;
 }

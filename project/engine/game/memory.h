@@ -1,5 +1,5 @@
-#ifndef DE100_GAME_MEMORY_H
-#define DE100_GAME_MEMORY_H
+#ifndef DE100_GAME_De100_MEMORY_H
+#define DE100_GAME_De100_MEMORY_H
 
 #include "../_common/memory.h"
 #include <stdint.h>
@@ -48,11 +48,11 @@ typedef struct {
   // A permanent block of memory that the game can use between calls to
   // `game_update_and_render`. This is where you should store all your game
   // state!
-  MemoryBlock permanent_storage;
+  De100MemoryBlock permanent_storage;
   // A temporary block of memory that the game can use between calls to
   // `game_update_and_render`. This is where you should store all your
   // scratch data!
-  MemoryBlock transient_storage;
+  De100MemoryBlock transient_storage;
   // Size of the permanent storage block in bytes
   uint64 permanent_storage_size;
   // Size of the temporary storage block in bytes
@@ -63,4 +63,4 @@ typedef struct {
 
 typedef struct GameState GameState;
 
-#endif // DE100_GAME_MEMORY_H
+#endif // DE100_GAME_De100_MEMORY_H

@@ -36,7 +36,8 @@ static __thread char g_last_error_detail[1024];
 // ERROR STRING TRANSLATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-const char *debug_file_strerror(DebugFileErrorCode code) {
+const char *
+de100_debug_platform_de100_file_strerror(De100DebugDe100FileErrorCode code) {
   switch (code) {
   case DEBUG_FILE_SUCCESS:
     return "Success";
@@ -53,7 +54,7 @@ const char *debug_file_strerror(DebugFileErrorCode code) {
   case DEBUG_FILE_ERROR_TOO_LARGE:
     return "File too large (exceeds 4GB limit for debug I/O)";
 
-  case DEBUG_FILE_ERROR_MEMORY_ALLOC:
+  case DEBUG_FILE_ERROR_De100_MEMORY_ALLOC:
     return "Memory allocation failed";
 
   case DEBUG_FILE_ERROR_READ_FAILED:
@@ -75,7 +76,7 @@ const char *debug_file_strerror(DebugFileErrorCode code) {
 }
 
 #if DE100_SLOW
-const char *debug_file_get_last_error_detail(void) {
+const char *debug_de100_file_get_last_error_detail(void) {
   if (g_last_error_detail[0] == '\0') {
     return NULL;
   }
@@ -102,22 +103,24 @@ uint32 safe_truncate_uint64(int64 value) {
 // RESULT HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-file_scoped_fn DebugFileReadResult make_read_error(DebugFileErrorCode code) {
-  DebugFileReadResult result = {0};
+de100_file_scoped_fn De100DebugDe100FileReadResult
+make_read_error(De100DebugDe100FileErrorCode code) {
+  De100DebugDe100FileReadResult result = {0};
   result.size = 0;
   result.error_code = code;
   return result;
 }
 
-file_scoped_fn DebugFileWriteResult make_write_error(DebugFileErrorCode code) {
-  DebugFileWriteResult result = {0};
+de100_file_scoped_fn De100DebugFileWriteResult
+make_write_error(De100DebugDe100FileErrorCode code) {
+  De100DebugFileWriteResult result = {0};
   result.success = false;
   result.error_code = code;
   return result;
 }
 
-file_scoped_fn DebugFileWriteResult make_write_success(void) {
-  DebugFileWriteResult result = {0};
+de100_file_scoped_fn De100DebugFileWriteResult make_write_success(void) {
+  De100DebugFileWriteResult result = {0};
   result.success = true;
   result.error_code = DEBUG_FILE_SUCCESS;
   CLEAR_ERROR_DETAIL();
@@ -128,8 +131,9 @@ file_scoped_fn DebugFileWriteResult make_write_success(void) {
 // READ ENTIRE FILE
 // ═══════════════════════════════════════════════════════════════════════════
 
-DebugFileReadResult debug_platform_read_entire_file(const char *filename) {
-  DebugFileReadResult result = {0};
+De100DebugDe100FileReadResult
+de100_debug_platform_read_entire_file(const char *filename) {
+  De100DebugDe100FileReadResult result = {0};
 
   // ─────────────────────────────────────────────────────────────────────
   // Validate input
@@ -142,10 +146,10 @@ DebugFileReadResult debug_platform_read_entire_file(const char *filename) {
   // ─────────────────────────────────────────────────────────────────────
   // Check if file exists using file.h API
   // ─────────────────────────────────────────────────────────────────────
-  FileExistsResult exists_result = file_exists(filename);
+  De100FileExistsResult exists_result = de100_file_exists(filename);
   if (!exists_result.success) {
-    SET_ERROR_DETAIL("[debug_read] file_exists() failed for '%s': %s", filename,
-                     file_strerror(exists_result.error_code));
+    SET_ERROR_DETAIL("[debug_read] de100_file_exists() failed for '%s': %s",
+                     filename, de100_file_strerror(exists_result.error_code));
     return make_read_error(DEBUG_FILE_ERROR_NOT_FOUND);
   }
 
@@ -157,10 +161,10 @@ DebugFileReadResult debug_platform_read_entire_file(const char *filename) {
   // ─────────────────────────────────────────────────────────────────────
   // Get file size using file.h API
   // ─────────────────────────────────────────────────────────────────────
-  FileSizeResult size_result = file_get_size(filename);
+  De100FileSizeResult size_result = de100_file_get_size(filename);
   if (!size_result.success) {
-    SET_ERROR_DETAIL("[debug_read] file_get_size() failed for '%s': %s",
-                     filename, file_strerror(size_result.error_code));
+    SET_ERROR_DETAIL("[debug_read] de100_file_get_size() failed for '%s': %s",
+                     filename, de100_file_strerror(size_result.error_code));
     return make_read_error(DEBUG_FILE_ERROR_READ_FAILED);
   }
 
@@ -176,42 +180,44 @@ DebugFileReadResult debug_platform_read_entire_file(const char *filename) {
     return make_read_error(DEBUG_FILE_ERROR_TOO_LARGE);
   }
 
-  size_t file_size = (size_t)size_result.value;
+  size_t de100_file_size = (size_t)size_result.value;
 
   // ─────────────────────────────────────────────────────────────────────
   // Allocate memory using memory.h API
   // ─────────────────────────────────────────────────────────────────────
   result.memory =
-      memory_alloc(NULL, file_size,
-                   MEMORY_FLAG_READ | MEMORY_FLAG_WRITE | MEMORY_FLAG_ZEROED);
+      de100_memory_alloc(NULL, de100_file_size,
+                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
+                             De100_MEMORY_FLAG_ZEROED);
 
-  if (!memory_is_valid(result.memory)) {
-    SET_ERROR_DETAIL(
-        "[debug_read] memory_alloc() failed for '%s': %s (requested %zu bytes)",
-        filename, memory_error_str(result.memory.error_code), file_size);
-    return make_read_error(DEBUG_FILE_ERROR_MEMORY_ALLOC);
+  if (!de100_memory_is_valid(result.memory)) {
+    SET_ERROR_DETAIL("[debug_read] de100_memory_alloc() failed for '%s': %s "
+                     "(requested %zu bytes)",
+                     filename, de100_memory_error_str(result.memory.error_code),
+                     de100_file_size);
+    return make_read_error(DEBUG_FILE_ERROR_De100_MEMORY_ALLOC);
   }
 
   // ─────────────────────────────────────────────────────────────────────
-  // Open and read file (stdio for simplicity - no file_read() in file.h)
+  // Open and read file (stdio for simplicity - no de100_file_read() in file.h)
   // ─────────────────────────────────────────────────────────────────────
   FILE *file = fopen(filename, "rb");
   if (!file) {
     SET_ERROR_DETAIL("[debug_read] fopen() failed for '%s': %s", filename,
                      strerror(errno));
-    memory_free(&result.memory);
+    de100_memory_free(&result.memory);
     return make_read_error(DEBUG_FILE_ERROR_OPEN_FAILED);
   }
 
-  size_t bytes_read = fread(result.memory.base, 1, file_size, file);
+  size_t bytes_read = fread(result.memory.base, 1, de100_file_size, file);
 
-  if (bytes_read != file_size) {
+  if (bytes_read != de100_file_size) {
     SET_ERROR_DETAIL(
         "[debug_read] fread() failed for '%s': expected %zu, got %zu (%s)",
-        filename, file_size, bytes_read,
+        filename, de100_file_size, bytes_read,
         ferror(file) ? strerror(errno) : "unexpected EOF");
     fclose(file);
-    memory_free(&result.memory);
+    de100_memory_free(&result.memory);
     return make_read_error(DEBUG_FILE_ERROR_READ_FAILED);
   }
 
@@ -220,7 +226,7 @@ DebugFileReadResult debug_platform_read_entire_file(const char *filename) {
   // ─────────────────────────────────────────────────────────────────────
   // Success
   // ─────────────────────────────────────────────────────────────────────
-  result.size = safe_truncate_uint64((int64)file_size);
+  result.size = safe_truncate_uint64((int64)de100_file_size);
   result.error_code = DEBUG_FILE_SUCCESS;
   CLEAR_ERROR_DETAIL();
 
@@ -236,14 +242,14 @@ DebugFileReadResult debug_platform_read_entire_file(const char *filename) {
 // FREE FILE MEMORY
 // ═══════════════════════════════════════════════════════════════════════════
 
-void debug_platform_free_file_memory(MemoryBlock *memory) {
+void de100_debug_platform_free_de100_file_memory(De100MemoryBlock *memory) {
   if (!memory) {
     return;
   }
 
   // Use memory.h API
   if (memory->base && memory->is_valid) {
-    MemoryError err = memory_free(memory);
+    De100MemoryError err = de100_memory_free(memory);
     (void)err; // Ignore error in debug cleanup
   }
 
@@ -256,9 +262,9 @@ void debug_platform_free_file_memory(MemoryBlock *memory) {
 // WRITE ENTIRE FILE
 // ═══════════════════════════════════════════════════════════════════════════
 
-DebugFileWriteResult debug_platform_write_entire_file(const char *filename,
-                                                      uint32 size,
-                                                      const void *data) {
+De100DebugFileWriteResult
+de100_debug_platform_write_entire_file(const char *filename, uint32 size,
+                                       const void *data) {
   // ─────────────────────────────────────────────────────────────────────
   // Validate input
   // ─────────────────────────────────────────────────────────────────────
@@ -273,7 +279,7 @@ DebugFileWriteResult debug_platform_write_entire_file(const char *filename,
   }
 
   // ─────────────────────────────────────────────────────────────────────
-  // Open file for writing (stdio - no file_write() in file.h)
+  // Open file for writing (stdio - no de100_file_write() in file.h)
   // ─────────────────────────────────────────────────────────────────────
   FILE *file = fopen(filename, "wb");
   if (!file) {

@@ -26,11 +26,12 @@ GAME_INIT(game_init) {
 #if DE100_INTERNAL
     char *Filename = __FILE__;
 
-    DebugFileReadResult file = debug_platform_read_entire_file(Filename);
+    De100DebugDe100FileReadResult file =
+        de100_debug_platform_read_entire_file(Filename);
     if (file.memory.base) {
-      debug_platform_write_entire_file("out/test.out", file.size,
-                                       file.memory.base);
-      debug_platform_free_file_memory(&file.memory);
+      de100_debug_platform_write_entire_file("out/test.out", file.size,
+                                             file.memory.base);
+      de100_debug_platform_free_de100_file_memory(&file.memory);
       printf("Wrote test.out\n");
     }
 #endif

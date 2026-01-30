@@ -25,7 +25,7 @@ typedef enum {
     FILE_ERROR_UNKNOWN,
     
     FILE_ERROR_COUNT  // Sentinel for validation
-} FileErrorCode;
+} De100FileErrorCode;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // RESULT STRUCTURES (Lean - No Error Message Buffers)
@@ -33,26 +33,26 @@ typedef enum {
 
 typedef struct {
     bool success;
-    FileErrorCode error_code;
-} FileResult;
+    De100FileErrorCode error_code;
+} De100FileResult;
 
 typedef struct {
     PlatformTimeSpec value;
     bool success;
-    FileErrorCode error_code;
-} FileTimeResult;
+    De100FileErrorCode error_code;
+} De100FileTimeResult;
 
 typedef struct {
     int64 value;  // -1 on error
     bool success;
-    FileErrorCode error_code;
-} FileSizeResult;
+    De100FileErrorCode error_code;
+} De100FileSizeResult;
 
 typedef struct {
     bool exists;
     bool success;  // false if check itself failed (e.g., permission error)
-    FileErrorCode error_code;
-} FileExistsResult;
+    De100FileErrorCode error_code;
+} De100FileExistsResult;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // API FUNCTIONS
@@ -62,15 +62,15 @@ typedef struct {
  * Get the last modification time of a file.
  *
  * @param filename Path to the file
- * @return FileTimeResult with modification time or error code
+ * @return De100FileTimeResult with modification time or error code
  *
  * Usage:
- *   FileTimeResult r = file_get_mod_time("game.so");
+ *   De100FileTimeResult r = de100_file_get_mod_time("game.so");
  *   if (!r.success) {
- *       printf("Error: %s\n", file_strerror(r.error_code));
+ *       printf("Error: %s\n", de100_file_strerror(r.error_code));
  *   }
  */
-FileTimeResult file_get_mod_time(const char *filename);
+De100FileTimeResult de100_file_get_mod_time(const char *filename);
 
 /**
  * Compare two file modification times.
@@ -79,7 +79,7 @@ FileTimeResult file_get_mod_time(const char *filename);
  * @param b Second time value
  * @return Difference in seconds (a - b). Positive if a is newer.
  */
-real64 file_time_diff(const PlatformTimeSpec *a, const PlatformTimeSpec *b);
+real64 de100_file_time_diff(const PlatformTimeSpec *a, const PlatformTimeSpec *b);
 
 /**
  * Copy a file from source to destination.
@@ -87,36 +87,36 @@ real64 file_time_diff(const PlatformTimeSpec *a, const PlatformTimeSpec *b);
  *
  * @param source Path to source file
  * @param dest Path to destination file
- * @return FileResult indicating success or failure
+ * @return De100FileResult indicating success or failure
  */
-FileResult file_copy(const char *source, const char *dest);
+De100FileResult de100_file_copy(const char *source, const char *dest);
 
 /**
  * Check if a file exists (and is a regular file, not a directory).
  *
  * @param filename Path to the file
- * @return FileExistsResult with exists flag and any error
+ * @return De100FileExistsResult with exists flag and any error
  *
  * Note: result.success can be true even if result.exists is false
  *       (file doesn't exist is not an error, just a fact)
  */
-FileExistsResult file_exists(const char *filename);
+De100FileExistsResult de100_file_exists(const char *filename);
 
 /**
  * Get the size of a file in bytes.
  *
  * @param filename Path to the file
- * @return FileSizeResult with size or error code
+ * @return De100FileSizeResult with size or error code
  */
-FileSizeResult file_get_size(const char *filename);
+De100FileSizeResult de100_file_get_size(const char *filename);
 
 /**
  * Delete a file. Idempotent - returns success if file doesn't exist.
  *
  * @param filename Path to the file
- * @return FileResult indicating success or failure
+ * @return De100FileResult indicating success or failure
  */
-FileResult file_delete(const char *filename);
+De100FileResult de100_file_delete(const char *filename);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ERROR HANDLING
@@ -128,31 +128,6 @@ FileResult file_delete(const char *filename);
  * @param code Error code from any file operation
  * @return Static string describing the error (never NULL)
  */
-const char *file_strerror(FileErrorCode code);
-
-// ═══════════════════════════════════════════════════════════════════════════
-// DEBUG UTILITIES (DE100_INTERNAL && DE100_SLOW only)
-// ═══════════════════════════════════════════════════════════════════════════
-
-#if DE100_INTERNAL && DE100_SLOW
-
-/**
- * Get detailed error information from the last failed operation.
- * Thread-local storage - only valid immediately after a failed call.
- *
- * @return Detailed error string with platform-specific info, or NULL
- */
-const char *file_get_last_error_detail(void);
-
-/**
- * Log a file operation result to stderr (debug builds only).
- *
- * @param operation Name of the operation (e.g., "file_copy")
- * @param path Primary path involved
- * @param result The result to log
- */
-void file_debug_log_result(const char *operation, const char *path, FileResult result);
-
-#endif // DE100_INTERNAL && DE100_SLOW
+const char *de100_file_strerror(De100FileErrorCode code);
 
 #endif // DE100_FILE_H

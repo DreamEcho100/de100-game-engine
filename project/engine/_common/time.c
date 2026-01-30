@@ -30,7 +30,7 @@
 #if defined(_WIN32)
 
 // Windows: Cache the performance counter frequency
-file_scoped_fn inline int64 win32_get_frequency(void) {
+de100_file_scoped_fn inline int64 win32_get_frequency(void) {
   // Thread-safe on Windows due to static initialization guarantees
   static LARGE_INTEGER frequency = {0};
   static bool initialized = false;
@@ -52,7 +52,7 @@ typedef struct {
   bool initialized;
 } CachedTimebase;
 
-file_scoped_fn inline CachedTimebase macos_get_timebase(void) {
+de100_file_scoped_fn inline CachedTimebase macos_get_timebase(void) {
   static CachedTimebase cached = {0};
 
   if (!cached.initialized) {

@@ -11,7 +11,8 @@ typedef struct {
   char device_name[128]; // For debugging
 } LinuxJoystickState;
 
-file_scoped_global_var LinuxJoystickState g_joysticks[MAX_JOYSTICK_COUNT] = {0};
+de100_file_scoped_global_var LinuxJoystickState
+    g_joysticks[MAX_JOYSTICK_COUNT] = {0};
 
 // ═══════════════════════════════════════════════════════════════
 // 🎮 JOYSTICK DYNAMIC LOADING (Casey's Pattern for Linux)
@@ -31,14 +32,14 @@ LINUX_JOYSTICK_READ(LinuxJoystickReadStub) {
 }
 
 // Global function pointer (initially stub)
-file_scoped_global_var linux_joystick_read *LinuxJoystickRead_ =
+de100_file_scoped_global_var linux_joystick_read *LinuxJoystickRead_ =
     LinuxJoystickReadStub;
 
 // Redefine API name
 #define LinuxJoystickRead LinuxJoystickRead_
 
 // Real implementation (only used if joystick found)
-file_scoped_fn LINUX_JOYSTICK_READ(linux_joystick_read_impl) {
+de100_file_scoped_fn LINUX_JOYSTICK_READ(linux_joystick_read_impl) {
   // This is what actually reads from /dev/input/js*
   return read(fd, event, sizeof(*event));
 }
@@ -64,8 +65,8 @@ void linux_init_joystick(GameControllerInput *controller_old_input,
     int g_joysticks_index = i - 1; // Adjust for keyboard at index 0
     if (g_joysticks_index >= 0 && g_joysticks_index < MAX_JOYSTICK_COUNT) {
       g_joysticks[g_joysticks_index].fd = -1;
-      memset(g_joysticks[g_joysticks_index].device_name, 0,
-             sizeof(g_joysticks[g_joysticks_index].device_name));
+      de100_mem_set(g_joysticks[g_joysticks_index].device_name, 0,
+                    sizeof(g_joysticks[g_joysticks_index].device_name));
     }
   }
 
@@ -126,7 +127,8 @@ void linux_close_joysticks(void) {
     if (g_joysticks[i].fd >= 0) {
       close(g_joysticks[i].fd);
       g_joysticks[i].fd = -1;
-      memset(g_joysticks[i].device_name, 0, sizeof(g_joysticks[i].device_name));
+      de100_mem_set(g_joysticks[i].device_name, 0,
+                    sizeof(g_joysticks[i].device_name));
     }
   }
 }

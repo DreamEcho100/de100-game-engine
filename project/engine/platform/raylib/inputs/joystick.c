@@ -9,8 +9,8 @@ typedef struct {
   char device_name[128]; // For debugging
 } RaylibJoystickState;
 
-file_scoped_global_var RaylibJoystickState g_joysticks[MAX_JOYSTICK_COUNT] = {
-    0};
+de100_file_scoped_global_var RaylibJoystickState
+    g_joysticks[MAX_JOYSTICK_COUNT] = {0};
 
 void raylib_game_initpad(GameControllerInput *controller_old_input,
                          GameControllerInput *controller_new_input) {
@@ -29,8 +29,8 @@ void raylib_game_initpad(GameControllerInput *controller_old_input,
     int g_joysticks_index = i - 1; // Adjust for keyboard at index 0
     if (g_joysticks_index >= 0 && g_joysticks_index < MAX_JOYSTICK_COUNT) {
       g_joysticks[g_joysticks_index].gamepad_id = -1;
-      memset(g_joysticks[g_joysticks_index].device_name, 0,
-             sizeof(g_joysticks[g_joysticks_index].device_name));
+      de100_mem_set(g_joysticks[g_joysticks_index].device_name, 0,
+                    sizeof(g_joysticks[g_joysticks_index].device_name));
     }
   }
 

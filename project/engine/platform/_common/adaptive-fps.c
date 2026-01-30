@@ -17,7 +17,7 @@ void adaptive_fps_init(AdaptiveFPS *adaptive) {
   }
 }
 
-file_scoped_fn inline void
+de100_file_scoped_fn inline void
 adaptive_fps_record_frame(AdaptiveFPS *adaptive, real32 frame_time_ms,
                           real32 target_frame_time_ms) {
   adaptive->frames_sampled++;
@@ -38,7 +38,7 @@ adaptive_fps_record_frame(AdaptiveFPS *adaptive, real32 frame_time_ms,
   }
 }
 
-file_scoped_fn inline real32
+de100_file_scoped_fn inline real32
 adaptive_fps_get_recent_average(AdaptiveFPS *adaptive) {
   real32 sum = 0.0f;
   for (int i = 0; i < 10; i++) {
@@ -47,7 +47,7 @@ adaptive_fps_get_recent_average(AdaptiveFPS *adaptive) {
   return sum / 10.0f;
 }
 
-file_scoped_fn inline bool
+de100_file_scoped_fn inline bool
 adaptive_fps_should_increase(AdaptiveFPS *adaptive, GameConfig *game_config,
                              PlatformConfig *platform_config,
                              real32 target_frame_time_ms) {
@@ -80,7 +80,8 @@ adaptive_fps_should_increase(AdaptiveFPS *adaptive, GameConfig *game_config,
   return false;
 }
 
-file_scoped_fn inline bool adaptive_fps_should_decrease(AdaptiveFPS *adaptive) {
+de100_file_scoped_fn inline bool
+adaptive_fps_should_decrease(AdaptiveFPS *adaptive) {
   if (adaptive->frames_sampled >= adaptive->sample_window &&
       adaptive->frames_since_last_change >= adaptive->cooldown_frames) {
 
@@ -95,8 +96,8 @@ file_scoped_fn inline bool adaptive_fps_should_decrease(AdaptiveFPS *adaptive) {
   return false;
 }
 
-file_scoped_fn inline uint32 adaptive_fps_get_next_higher(uint32 current_fps,
-                                                          uint32 monitor_hz) {
+de100_file_scoped_fn inline uint32
+adaptive_fps_get_next_higher(uint32 current_fps, uint32 monitor_hz) {
   uint32 next_fps;
 
   switch (current_fps) {
@@ -120,7 +121,8 @@ file_scoped_fn inline uint32 adaptive_fps_get_next_higher(uint32 current_fps,
   return (next_fps > monitor_hz) ? monitor_hz : next_fps;
 }
 
-file_scoped_fn inline uint32 adaptive_fps_get_next_lower(uint32 current_fps) {
+de100_file_scoped_fn inline uint32
+adaptive_fps_get_next_lower(uint32 current_fps) {
   switch (current_fps) {
   case FPS_120:
     return FPS_90;
@@ -135,9 +137,9 @@ file_scoped_fn inline uint32 adaptive_fps_get_next_lower(uint32 current_fps) {
   }
 }
 
-file_scoped_fn inline void adaptive_fps_apply_change(AdaptiveFPS *adaptive,
-                                                     GameConfig *game_config,
-                                                     uint32 new_fps) {
+de100_file_scoped_fn inline void
+adaptive_fps_apply_change(AdaptiveFPS *adaptive, GameConfig *game_config,
+                          uint32 new_fps) {
   game_config->refresh_rate_hz = new_fps;
   game_config->target_seconds_per_frame = 1.0f / (real32)new_fps;
 
@@ -149,7 +151,8 @@ file_scoped_fn inline void adaptive_fps_apply_change(AdaptiveFPS *adaptive,
   g_fps = new_fps;
 }
 
-file_scoped_fn inline void adaptive_fps_reset_window(AdaptiveFPS *adaptive) {
+de100_file_scoped_fn inline void
+adaptive_fps_reset_window(AdaptiveFPS *adaptive) {
   adaptive->frames_sampled = 0;
   adaptive->frames_missed = 0;
 }

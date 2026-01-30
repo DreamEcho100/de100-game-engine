@@ -53,7 +53,7 @@ static __thread char g_last_error_detail[1024];
 
 #if defined(_WIN32)
 
-file_scoped_fn inline PathErrorCode
+de100_file_scoped_fn inline PathErrorCode
 win32_error_to_path_error(DWORD error_code) {
   switch (error_code) {
   case ERROR_SUCCESS:
@@ -81,8 +81,8 @@ win32_error_to_path_error(DWORD error_code) {
 }
 
 #if DE100_INTERNAL && DE100_SLOW
-file_scoped_fn inline void win32_set_error_detail(const char *operation,
-                                                  DWORD error_code) {
+de100_file_scoped_fn inline void win32_set_error_detail(const char *operation,
+                                                        DWORD error_code) {
   char sys_msg[512];
   FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                  NULL, error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
@@ -100,7 +100,7 @@ file_scoped_fn inline void win32_set_error_detail(const char *operation,
 
 #else // POSIX
 
-file_scoped_fn inline PathErrorCode errno_to_path_error(int err) {
+de100_file_scoped_fn inline PathErrorCode errno_to_path_error(int err) {
   switch (err) {
   case 0:
     return PATH_SUCCESS;
@@ -125,8 +125,8 @@ file_scoped_fn inline PathErrorCode errno_to_path_error(int err) {
 }
 
 #if DE100_INTERNAL && DE100_SLOW
-file_scoped_fn inline void posix_set_error_detail(const char *operation,
-                                                  int err) {
+de100_file_scoped_fn inline void posix_set_error_detail(const char *operation,
+                                                        int err) {
   SET_ERROR_DETAIL("[%s] %s (errno %d)", operation, strerror(err), err);
 }
 #endif
@@ -137,7 +137,7 @@ file_scoped_fn inline void posix_set_error_detail(const char *operation,
 // RESULT HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-file_scoped_fn inline PathResult make_path_error(PathErrorCode code) {
+de100_file_scoped_fn inline PathResult make_path_error(PathErrorCode code) {
   PathResult result = {0};
   result.success = false;
   result.error_code = code;
@@ -370,7 +370,7 @@ PathResult path_join(const char *directory, const char *filename) {
   }
 
   size_t dir_len = strlen(directory);
-  size_t file_len = strlen(filename);
+  size_t de100_file_len = strlen(filename);
 
   // Empty directory is invalid
   if (dir_len == 0) {
@@ -398,7 +398,7 @@ PathResult path_join(const char *directory, const char *filename) {
   // ─────────────────────────────────────────────────────────────────────
 
   size_t separator_len = has_trailing_separator ? 0 : 1;
-  size_t total_len = dir_len + separator_len + file_len;
+  size_t total_len = dir_len + separator_len + de100_file_len;
 
   if (total_len >= sizeof(result.path)) {
     SET_ERROR_DETAIL("[path_join] Path too long: need %zu bytes, have %zu",
@@ -425,8 +425,8 @@ PathResult path_join(const char *directory, const char *filename) {
   }
 
   // Copy filename
-  memcpy(write_ptr, filename, file_len);
-  write_ptr += file_len;
+  memcpy(write_ptr, filename, de100_file_len);
+  write_ptr += de100_file_len;
 
   // Null-terminate
   *write_ptr = '\0';

@@ -28,15 +28,15 @@
 // CACHED PAGE SIZE
 // ═══════════════════════════════════════════════════════════════════════════
 
-file_scoped_global_var size_t g_page_size = 0;
+de100_file_scoped_global_var size_t g_page_size = 0;
 
-size_t memory_page_size(void) {
+size_t de100_memory_page_size(void) {
   if (g_page_size == 0) {
 #if defined(_WIN32)
     SYSTEM_INFO info;
     GetSystemInfo(&info);
     g_page_size = (size_t)info.dwPageSize;
-#elif defined(DE100_POSIX)
+#elif defined(DE100_IS_GENERIC_POSIX)
     long ps = sysconf(_SC_PAGESIZE);
     g_page_size = (ps > 0) ? (size_t)ps : 4096;
 #endif
@@ -48,35 +48,36 @@ size_t memory_page_size(void) {
 // ERROR MESSAGES
 // ═══════════════════════════════════════════════════════════════════════════
 
-file_scoped_global_var const char *g_memory_error_messages[] = {
-    [MEMORY_OK] = "Success",
-    [MEMORY_ERR_OUT_OF_MEMORY] = "Out of memory",
-    [MEMORY_ERR_INVALID_SIZE] = "Invalid size (zero or negative)",
-    [MEMORY_ERR_SIZE_OVERFLOW] = "Size overflow (too large)",
-    [MEMORY_ERR_INVALID_ADDRESS] = "Invalid address",
-    [MEMORY_ERR_ADDRESS_IN_USE] = "Address already in use",
-    [MEMORY_ERR_ALIGNMENT_FAILED] = "Alignment failed",
-    [MEMORY_ERR_PERMISSION_DENIED] = "Permission denied",
-    [MEMORY_ERR_PROTECTION_FAILED] = "Failed to set memory protection",
-    [MEMORY_ERR_NULL_BLOCK] = "NULL block pointer",
-    [MEMORY_ERR_INVALID_BLOCK] = "Invalid block (corrupted or uninitialized)",
-    [MEMORY_ERR_ALREADY_FREED] = "Block already freed",
-    [MEMORY_ERR_PAGE_SIZE_FAILED] = "Failed to get system page size",
-    [MEMORY_ERR_PLATFORM_ERROR] = "Platform-specific error",
+de100_file_scoped_global_var const char *g_de100_memory_error_messages[] = {
+    [De100_MEMORY_OK] = "Success",
+    [De100_MEMORY_ERR_OUT_OF_MEMORY] = "Out of memory",
+    [De100_MEMORY_ERR_INVALID_SIZE] = "Invalid size (zero or negative)",
+    [De100_MEMORY_ERR_SIZE_OVERFLOW] = "Size overflow (too large)",
+    [De100_MEMORY_ERR_INVALID_ADDRESS] = "Invalid address",
+    [De100_MEMORY_ERR_ADDRESS_IN_USE] = "Address already in use",
+    [De100_MEMORY_ERR_ALIGNMENT_FAILED] = "Alignment failed",
+    [De100_MEMORY_ERR_PERMISSION_DENIED] = "Permission denied",
+    [De100_MEMORY_ERR_PROTECTION_FAILED] = "Failed to set memory protection",
+    [De100_MEMORY_ERR_NULL_BLOCK] = "NULL block pointer",
+    [De100_MEMORY_ERR_INVALID_BLOCK] =
+        "Invalid block (corrupted or uninitialized)",
+    [De100_MEMORY_ERR_ALREADY_FREED] = "Block already freed",
+    [De100_MEMORY_ERR_PAGE_SIZE_FAILED] = "Failed to get system page size",
+    [De100_MEMORY_ERR_PLATFORM_ERROR] = "Platform-specific error",
 };
 
-const char *memory_error_str(MemoryError error) {
-  if (error >= 0 && error < MEMORY_ERR_COUNT) {
-    return g_memory_error_messages[error];
+const char *de100_memory_error_str(De100MemoryError error) {
+  if (error >= 0 && error < De100_MEMORY_ERR_COUNT) {
+    return g_de100_memory_error_messages[error];
   }
   return "Unknown error";
 }
 
 // #if DE100_INTERNAL && DE100_SLOW
-file_scoped_global_var const char *g_memory_error_details[] = {
-    [MEMORY_OK] = "Operation completed successfully.",
+de100_file_scoped_global_var const char *g_de100_memory_error_details[] = {
+    [De100_MEMORY_OK] = "Operation completed successfully.",
 
-    [MEMORY_ERR_OUT_OF_MEMORY] =
+    [De100_MEMORY_ERR_OUT_OF_MEMORY] =
         "The system cannot allocate the requested memory.\n"
         "Possible causes:\n"
         "  - Physical RAM exhausted\n"
@@ -85,21 +86,22 @@ file_scoped_global_var const char *g_memory_error_details[] = {
         "  - System commit limit reached (Windows)\n"
         "Try: Reduce allocation size or free unused memory.",
 
-    [MEMORY_ERR_INVALID_SIZE] = "Size parameter is invalid.\n"
-                                "Requirements:\n"
-                                "  - Size must be > 0\n"
-                                "  - Size will be rounded up to page boundary\n"
-                                "Check: Ensure you're not passing 0 or a "
-                                "negative value cast to size_t.",
+    [De100_MEMORY_ERR_INVALID_SIZE] =
+        "Size parameter is invalid.\n"
+        "Requirements:\n"
+        "  - Size must be > 0\n"
+        "  - Size will be rounded up to page boundary\n"
+        "Check: Ensure you're not passing 0 or a "
+        "negative value cast to size_t.",
 
-    [MEMORY_ERR_SIZE_OVERFLOW] =
+    [De100_MEMORY_ERR_SIZE_OVERFLOW] =
         "Size calculation overflowed.\n"
         "The requested size plus guard pages exceeds SIZE_MAX.\n"
         "This typically means you're requesting an impossibly large "
         "allocation.\n"
         "Check: Verify size calculation doesn't overflow before calling.",
 
-    [MEMORY_ERR_INVALID_ADDRESS] =
+    [De100_MEMORY_ERR_INVALID_ADDRESS] =
         "The base address hint is invalid.\n"
         "Possible causes:\n"
         "  - Address not page-aligned\n"
@@ -107,17 +109,19 @@ file_scoped_global_var const char *g_memory_error_details[] = {
         "  - Address conflicts with existing mapping\n"
         "Try: Use NULL for base_hint to let the OS choose.",
 
-    [MEMORY_ERR_ADDRESS_IN_USE] =
+    [De100_MEMORY_ERR_ADDRESS_IN_USE] =
         "The requested address range is already mapped.\n"
-        "This occurs with MEMORY_FLAG_BASE_FIXED when the address is taken.\n"
-        "Try: Use MEMORY_FLAG_BASE_HINT instead, or choose different address.",
+        "This occurs with De100_MEMORY_FLAG_BASE_FIXED when the address is "
+        "taken.\n"
+        "Try: Use De100_MEMORY_FLAG_BASE_HINT instead, or choose different "
+        "address.",
 
-    [MEMORY_ERR_ALIGNMENT_FAILED] =
+    [De100_MEMORY_ERR_ALIGNMENT_FAILED] =
         "Failed to align memory to required boundary.\n"
         "This is rare and indicates a system issue.\n"
         "Check: Verify page size is a power of 2.",
 
-    [MEMORY_ERR_PERMISSION_DENIED] =
+    [De100_MEMORY_ERR_PERMISSION_DENIED] =
         "Permission denied for memory operation.\n"
         "Possible causes:\n"
         "  - SELinux/AppArmor blocking mmap\n"
@@ -125,7 +129,7 @@ file_scoped_global_var const char *g_memory_error_details[] = {
         "  - System policy restricting memory allocation\n"
         "Try: Check system security policies.",
 
-    [MEMORY_ERR_PROTECTION_FAILED] =
+    [De100_MEMORY_ERR_PROTECTION_FAILED] =
         "Failed to set memory protection flags.\n"
         "The memory was allocated but mprotect/VirtualProtect failed.\n"
         "Possible causes:\n"
@@ -133,25 +137,25 @@ file_scoped_global_var const char *g_memory_error_details[] = {
         "  - System security restrictions\n"
         "Note: Memory has been freed to prevent partial allocation.",
 
-    [MEMORY_ERR_NULL_BLOCK] =
+    [De100_MEMORY_ERR_NULL_BLOCK] =
         "NULL pointer passed for block parameter.\n"
         "The block pointer itself is NULL, not the block's base.\n"
         "Check: Ensure you're passing &block, not block.base.",
 
-    [MEMORY_ERR_INVALID_BLOCK] =
+    [De100_MEMORY_ERR_INVALID_BLOCK] =
         "Block structure is invalid or corrupted.\n"
         "Possible causes:\n"
-        "  - Uninitialized MemoryBlock variable\n"
+        "  - Uninitialized De100MemoryBlock variable\n"
         "  - Block was corrupted by buffer overflow\n"
         "  - Block from different allocator\n"
-        "Check: Ensure block was returned by memory_alloc().",
+        "Check: Ensure block was returned by de100_memory_alloc().",
 
-    [MEMORY_ERR_ALREADY_FREED] =
+    [De100_MEMORY_ERR_ALREADY_FREED] =
         "Block has already been freed.\n"
         "Double-free detected. This is safe (idempotent) but indicates a bug.\n"
         "Check: Review ownership and lifetime of this block.",
 
-    [MEMORY_ERR_PAGE_SIZE_FAILED] =
+    [De100_MEMORY_ERR_PAGE_SIZE_FAILED] =
         "Failed to determine system page size.\n"
         "This is a critical system error that should never happen.\n"
         "Possible causes:\n"
@@ -159,15 +163,15 @@ file_scoped_global_var const char *g_memory_error_details[] = {
         "  - GetSystemInfo failed on Windows\n"
         "Check: System may be in an unstable state.",
 
-    [MEMORY_ERR_PLATFORM_ERROR] =
+    [De100_MEMORY_ERR_PLATFORM_ERROR] =
         "Platform-specific error occurred.\n"
         "The underlying OS call failed for an unmapped reason.\n"
         "Check: Use platform debugging tools (strace, Process Monitor).",
 };
 
-const char *memory_error_str_detailed(MemoryError error) {
-  if (error >= 0 && error < MEMORY_ERR_COUNT) {
-    return g_memory_error_details[error];
+const char *de100_memory_error_str_detailed(De100MemoryError error) {
+  if (error >= 0 && error < De100_MEMORY_ERR_COUNT) {
+    return g_de100_memory_error_details[error];
   }
   return "Unknown error code. This indicates a bug in error handling.";
 }
@@ -179,32 +183,34 @@ const char *memory_error_str_detailed(MemoryError error) {
 
 #if defined(_WIN32)
 
-file_scoped_fn inline MemoryError win32_error_to_memory_error(DWORD err) {
+de100_file_scoped_fn inline De100MemoryError
+win32_error_to_de100_memory_error(DWORD err) {
   switch (err) {
   case ERROR_NOT_ENOUGH_MEMORY:
   case ERROR_OUTOFMEMORY:
   case ERROR_COMMITMENT_LIMIT:
-    return MEMORY_ERR_OUT_OF_MEMORY;
+    return De100_MEMORY_ERR_OUT_OF_MEMORY;
 
   case ERROR_INVALID_ADDRESS:
   case ERROR_INVALID_PARAMETER:
-    return MEMORY_ERR_INVALID_ADDRESS;
+    return De100_MEMORY_ERR_INVALID_ADDRESS;
 
   case ERROR_ACCESS_DENIED:
-    return MEMORY_ERR_PERMISSION_DENIED;
+    return De100_MEMORY_ERR_PERMISSION_DENIED;
 
   case ERROR_ALREADY_EXISTS:
-    return MEMORY_ERR_ADDRESS_IN_USE;
+    return De100_MEMORY_ERR_ADDRESS_IN_USE;
 
   default:
-    return MEMORY_ERR_PLATFORM_ERROR;
+    return De100_MEMORY_ERR_PLATFORM_ERROR;
   }
 }
 
-file_scoped_fn inline DWORD win32_protection_flags(MemoryFlags flags) {
-  bool r = (flags & MEMORY_FLAG_READ) != 0;
-  bool w = (flags & MEMORY_FLAG_WRITE) != 0;
-  bool x = (flags & MEMORY_FLAG_EXECUTE) != 0;
+de100_file_scoped_fn inline DWORD
+win32_protection_flags(De100MemoryFlags flags) {
+  bool r = (flags & De100_MEMORY_FLAG_READ) != 0;
+  bool w = (flags & De100_MEMORY_FLAG_WRITE) != 0;
+  bool x = (flags & De100_MEMORY_FLAG_EXECUTE) != 0;
 
   if (x) {
     if (w)
@@ -221,35 +227,36 @@ file_scoped_fn inline DWORD win32_protection_flags(MemoryFlags flags) {
   return PAGE_NOACCESS;
 }
 
-#elif defined(DE100_POSIX)
+#elif defined(DE100_IS_GENERIC_POSIX)
 
-file_scoped_fn inline MemoryError posix_error_to_memory_error(int err) {
+de100_file_scoped_fn inline De100MemoryError
+posix_error_to_de100_memory_error(int err) {
   switch (err) {
   case ENOMEM:
-    return MEMORY_ERR_OUT_OF_MEMORY;
+    return De100_MEMORY_ERR_OUT_OF_MEMORY;
 
   case EINVAL:
-    return MEMORY_ERR_INVALID_ADDRESS;
+    return De100_MEMORY_ERR_INVALID_ADDRESS;
 
   case EACCES:
   case EPERM:
-    return MEMORY_ERR_PERMISSION_DENIED;
+    return De100_MEMORY_ERR_PERMISSION_DENIED;
 
   case EEXIST:
-    return MEMORY_ERR_ADDRESS_IN_USE;
+    return De100_MEMORY_ERR_ADDRESS_IN_USE;
 
   default:
-    return MEMORY_ERR_PLATFORM_ERROR;
+    return De100_MEMORY_ERR_PLATFORM_ERROR;
   }
 }
 
-file_scoped_fn inline int posix_protection_flags(MemoryFlags flags) {
+de100_file_scoped_fn inline int posix_protection_flags(De100MemoryFlags flags) {
   int prot = PROT_NONE;
-  if (flags & MEMORY_FLAG_READ)
+  if (flags & De100_MEMORY_FLAG_READ)
     prot |= PROT_READ;
-  if (flags & MEMORY_FLAG_WRITE)
+  if (flags & De100_MEMORY_FLAG_WRITE)
     prot |= PROT_WRITE;
-  if (flags & MEMORY_FLAG_EXECUTE)
+  if (flags & De100_MEMORY_FLAG_EXECUTE)
     prot |= PROT_EXEC;
   return prot;
 }
@@ -260,21 +267,22 @@ file_scoped_fn inline int posix_protection_flags(MemoryFlags flags) {
 // ALLOCATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-MemoryBlock memory_alloc(void *base_hint, size_t size, MemoryFlags flags) {
-  MemoryBlock result = {0};
+De100MemoryBlock de100_memory_alloc(void *base_hint, size_t size,
+                                    De100MemoryFlags flags) {
+  De100MemoryBlock result = {0};
 
   // ─────────────────────────────────────────────────────────────────────
   // Validate size
   // ─────────────────────────────────────────────────────────────────────
 
   if (size == 0) {
-    result.error_code = MEMORY_ERR_INVALID_SIZE;
+    result.error_code = De100_MEMORY_ERR_INVALID_SIZE;
     return result;
   }
 
-  size_t page_size = memory_page_size();
+  size_t page_size = de100_memory_page_size();
   if (page_size == 0) {
-    result.error_code = MEMORY_ERR_PAGE_SIZE_FAILED;
+    result.error_code = De100_MEMORY_ERR_PAGE_SIZE_FAILED;
     return result;
   }
 
@@ -290,7 +298,7 @@ MemoryBlock memory_alloc(void *base_hint, size_t size, MemoryFlags flags) {
 
   // Overflow check
   if (total_size < aligned_size) {
-    result.error_code = MEMORY_ERR_SIZE_OVERFLOW;
+    result.error_code = De100_MEMORY_ERR_SIZE_OVERFLOW;
     return result;
   }
 
@@ -300,7 +308,7 @@ MemoryBlock memory_alloc(void *base_hint, size_t size, MemoryFlags flags) {
   // ═════════════════════════════════════════════════════════════════════
 
   void *request_addr = NULL;
-  if (flags & (MEMORY_FLAG_BASE_FIXED | MEMORY_FLAG_BASE_HINT)) {
+  if (flags & (De100_MEMORY_FLAG_BASE_FIXED | De100_MEMORY_FLAG_BASE_HINT)) {
     request_addr = base_hint;
   }
 
@@ -309,12 +317,12 @@ MemoryBlock memory_alloc(void *base_hint, size_t size, MemoryFlags flags) {
       VirtualAlloc(request_addr, total_size, MEM_RESERVE, PAGE_NOACCESS);
 
   // If hint failed, try without specific address
-  if (!reserved && (flags & MEMORY_FLAG_BASE_HINT)) {
+  if (!reserved && (flags & De100_MEMORY_FLAG_BASE_HINT)) {
     reserved = VirtualAlloc(NULL, total_size, MEM_RESERVE, PAGE_NOACCESS);
   }
 
   if (!reserved) {
-    result.error = win32_error_to_memory_error(GetLastError());
+    result.error = win32_error_to_de100_memory_error(GetLastError());
     return result;
   }
 
@@ -324,25 +332,25 @@ MemoryBlock memory_alloc(void *base_hint, size_t size, MemoryFlags flags) {
 
   void *committed = VirtualAlloc(usable, aligned_size, MEM_COMMIT, protect);
   if (!committed) {
-    result.error = win32_error_to_memory_error(GetLastError());
+    result.error = win32_error_to_de100_memory_error(GetLastError());
     VirtualFree(reserved, 0, MEM_RELEASE);
     return result;
   }
 
   // Zero if requested (VirtualAlloc already zeros, but be explicit)
-  if (flags & MEMORY_FLAG_ZEROED) {
+  if (flags & De100_MEMORY_FLAG_ZEROED) {
     ZeroMemory(committed, aligned_size);
   }
 
   result.base = committed;
 
-#elif defined(DE100_POSIX)
+#elif defined(DE100_IS_GENERIC_POSIX)
   // ═════════════════════════════════════════════════════════════════════
   // POSIX (Linux, macOS, BSD)
   // ═════════════════════════════════════════════════════════════════════
 
   int mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS;
-  if (flags & MEMORY_FLAG_BASE_FIXED) {
+  if (flags & De100_MEMORY_FLAG_BASE_FIXED) {
     mmap_flags |= MAP_FIXED;
   }
 
@@ -350,7 +358,7 @@ MemoryBlock memory_alloc(void *base_hint, size_t size, MemoryFlags flags) {
   void *reserved = mmap(base_hint, total_size, PROT_NONE, mmap_flags, -1, 0);
 
   if (reserved == MAP_FAILED) {
-    result.error_code = posix_error_to_memory_error(errno);
+    result.error_code = posix_error_to_de100_memory_error(errno);
     return result;
   }
 
@@ -359,7 +367,7 @@ MemoryBlock memory_alloc(void *base_hint, size_t size, MemoryFlags flags) {
   int prot = posix_protection_flags(flags);
 
   if (mprotect(usable, aligned_size, prot) != 0) {
-    result.error_code = posix_error_to_memory_error(errno);
+    result.error_code = posix_error_to_de100_memory_error(errno);
     munmap(reserved, total_size);
     return result;
   }
@@ -369,7 +377,7 @@ MemoryBlock memory_alloc(void *base_hint, size_t size, MemoryFlags flags) {
 
 #if DE100_INTERNAL && DE100_SLOW
   // Verify zero-initialization in dev builds
-  if (flags & MEMORY_FLAG_ZEROED) {
+  if (flags & De100_MEMORY_FLAG_ZEROED) {
     uint8 *p = (uint8 *)usable;
     size_t check_offsets[] = {0, aligned_size / 4, aligned_size / 2,
                               3 * aligned_size / 4, aligned_size - 1};
@@ -391,7 +399,7 @@ MemoryBlock memory_alloc(void *base_hint, size_t size, MemoryFlags flags) {
   result.size = aligned_size;
   result.total_size = total_size;
   result.flags = flags;
-  result.error_code = MEMORY_OK;
+  result.error_code = De100_MEMORY_OK;
   result.is_valid = true;
 
   return result;
@@ -401,46 +409,46 @@ MemoryBlock memory_alloc(void *base_hint, size_t size, MemoryFlags flags) {
 // FREE
 // ═══════════════════════════════════════════════════════════════════════════
 
-MemoryError memory_free(MemoryBlock *block) {
+De100MemoryError de100_memory_free(De100MemoryBlock *block) {
   // ─────────────────────────────────────────────────────────────────────
   // Validate
   // ─────────────────────────────────────────────────────────────────────
 
   if (!block) {
-    return MEMORY_ERR_NULL_BLOCK;
+    return De100_MEMORY_ERR_NULL_BLOCK;
   }
 
   // Idempotent: already freed is OK
   if (!block->base || !block->is_valid) {
     block->base = NULL;
     block->is_valid = false;
-    block->error_code = MEMORY_OK;
+    block->error_code = De100_MEMORY_OK;
 #if DE100_INTERNAL && DE100_SLOW
-    printf("memory_free: Block already freed or invalid\n");
+    printf("de100_memory_free: Block already freed or invalid\n");
 #endif
-    return MEMORY_OK;
+    return De100_MEMORY_OK;
   }
 
   // ─────────────────────────────────────────────────────────────────────
   // Calculate original reserved base
   // ─────────────────────────────────────────────────────────────────────
 
-  size_t page_size = memory_page_size();
+  size_t page_size = de100_memory_page_size();
   if (page_size == 0) {
-    block->error_code = MEMORY_ERR_PAGE_SIZE_FAILED;
-    return MEMORY_ERR_PAGE_SIZE_FAILED;
+    block->error_code = De100_MEMORY_ERR_PAGE_SIZE_FAILED;
+    return De100_MEMORY_ERR_PAGE_SIZE_FAILED;
   }
 
   void *reserved_base = (uint8 *)block->base - page_size;
 
 #if defined(_WIN32)
   if (!VirtualFree(reserved_base, 0, MEM_RELEASE)) {
-    block->error = win32_error_to_memory_error(GetLastError());
+    block->error = win32_error_to_de100_memory_error(GetLastError());
     return block->error;
   }
-#elif defined(DE100_POSIX)
+#elif defined(DE100_IS_GENERIC_POSIX)
   if (munmap(reserved_base, block->total_size) != 0) {
-    block->error_code = posix_error_to_memory_error(errno);
+    block->error_code = posix_error_to_de100_memory_error(errno);
     return block->error_code;
   }
 #endif
@@ -453,42 +461,43 @@ MemoryError memory_free(MemoryBlock *block) {
   block->size = 0;
   block->total_size = 0;
   block->is_valid = false;
-  block->error_code = MEMORY_OK;
+  block->error_code = De100_MEMORY_OK;
 
-  return MEMORY_OK;
+  return De100_MEMORY_OK;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════
 
-bool memory_is_valid(MemoryBlock block) {
-  return block.is_valid && block.base != NULL && block.error_code == MEMORY_OK;
+bool de100_memory_is_valid(De100MemoryBlock block) {
+  return block.is_valid && block.base != NULL &&
+         block.error_code == De100_MEMORY_OK;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MEMORY OPERATIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-void *mem_set(void *dest, int value, size_t size) {
+void *de100_mem_set(void *dest, int value, size_t size) {
   if (!dest || size == 0)
     return dest;
   return memset(dest, value, size);
 }
 
-void *mem_copy(void *dest, const void *src, size_t size) {
+void *de100_mem_copy(void *dest, const void *src, size_t size) {
   if (!dest || !src || size == 0)
     return dest;
   return memcpy(dest, src, size);
 }
 
-void *mem_move(void *dest, const void *src, size_t size) {
+void *de100_mem_move(void *dest, const void *src, size_t size) {
   if (!dest || !src || size == 0)
     return dest;
   return memmove(dest, src, size);
 }
 
-void *mem_zero_secure(void *dest, size_t size) {
+void *de100_mem_zero_secure(void *dest, size_t size) {
   if (!dest || size == 0)
     return dest;
 

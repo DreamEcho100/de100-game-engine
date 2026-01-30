@@ -9,10 +9,21 @@
 
 // #define DE100_INTERNAL 0
 
-#ifndef DE100_POSIX
-#define DE100_POSIX                                                            \
-  defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) ||          \
-      defined(__unix__) || defined(__MACH__)
+#ifndef DE100_IS_GENERIC_POSIX
+#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) ||        \
+    defined(__unix__) || defined(__MACH__)
+#define DE100_IS_GENERIC_POSIX 1
+#else
+#define DE100_IS_GENERIC_POSIX 0
+#endif
+#endif
+
+#ifndef DE100_IS_GENERIC_WINDOWS
+#if defined(_WIN32)
+#define DE100_IS_GENERIC_WINDOWS 1
+#else
+#define DE100_IS_GENERIC_WINDOWS 0
+#endif
 #endif
 
 /* ========================= DEBUG BREAK ========================= */
@@ -116,9 +127,9 @@
 
 /* ========================= ENGINE STYLE ========================= */
 
-#define file_scoped_fn static
+#define de100_file_scoped_fn static
 #define local_persist_var static
-#define file_scoped_global_var static
+#define de100_file_scoped_global_var static
 
 typedef float real32;
 typedef double real64;

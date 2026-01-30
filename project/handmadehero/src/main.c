@@ -7,14 +7,14 @@
 #include <stddef.h>
 #include <stdio.h>
 
-file_scoped_global_var inline real32 apply_deadzone(real32 value) {
+de100_file_scoped_global_var inline real32 apply_deadzone(real32 value) {
   if (fabsf(value) < CONTROLLER_DEADZONE) {
     return 0.0f;
   }
   return value;
 }
 
-file_scoped_global_var inline bool
+de100_file_scoped_global_var inline bool
 controller_has_input(GameControllerInput *controller) {
   return (fabsf(controller->stick_avg_x) > CONTROLLER_DEADZONE ||
           fabsf(controller->stick_avg_y) > CONTROLLER_DEADZONE ||

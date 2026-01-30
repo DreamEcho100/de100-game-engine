@@ -35,7 +35,7 @@ typedef enum {
     DLL_ERROR_UNKNOWN,
     
     DLL_ERROR_COUNT  // Sentinel for validation
-} DllErrorCode;
+} De100DllErrorCode;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DLL HANDLE STRUCTURE (Lean - No Error Message Buffer)
@@ -47,9 +47,9 @@ typedef struct {
 #else
     void *handle;
 #endif
-    DllErrorCode error_code;
+    De100DllErrorCode error_code;
     bool is_valid;
-} DllHandle;
+} De100DllHandle;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // API FUNCTIONS
@@ -62,20 +62,20 @@ typedef struct {
  * @param flags Platform-specific flags:
  *              - POSIX: RTLD_NOW, RTLD_LAZY, RTLD_LOCAL, RTLD_GLOBAL
  *              - Windows: Ignored (uses default LoadLibrary behavior)
- * @return DllHandle with is_valid=true on success
+ * @return De100DllHandle with is_valid=true on success
  *
  * Example:
- *   DllHandle lib = dll_open("./libgame.so", RTLD_NOW);
+ *   De100DllHandle lib = de100_dll_open("./libgame.so", RTLD_NOW);
  *   if (!lib.is_valid) {
- *       printf("Failed: %s\n", dll_strerror(lib.error_code));
+ *       printf("Failed: %s\n", de100_dll_strerror(lib.error_code));
  *   }
  */
-DllHandle dll_open(const char *filepath, int flags);
+De100DllHandle de100_dll_open(const char *filepath, int flags);
 
 /**
  * Get a symbol (function or variable) from a loaded library.
  *
- * @param dll Pointer to DllHandle from dll_open()
+ * @param dll Pointer to De100DllHandle from de100_dll_open()
  * @param symbol_name Name of the symbol to find
  * @return Pointer to the symbol, or NULL on error
  *
@@ -83,28 +83,28 @@ DllHandle dll_open(const char *filepath, int flags);
  *
  * Example:
  *   typedef void (*GameUpdateFn)(float dt);
- *   GameUpdateFn update = (GameUpdateFn)dll_sym(&lib, "game_update");
+ *   GameUpdateFn update = (GameUpdateFn)de100_dll_sym(&lib, "game_update");
  */
-void *dll_sym(DllHandle *dll, const char *symbol_name);
+void *de100_dll_sym(De100DllHandle *dll, const char *symbol_name);
 
 /**
  * Close a dynamic library.
  *
- * @param dll Pointer to DllHandle to close
+ * @param dll Pointer to De100DllHandle to close
  * @return Error code (DLL_SUCCESS on success)
  *
  * After closing, dll->handle is set to NULL and is_valid to false.
  * Safe to call multiple times (idempotent).
  */
-DllErrorCode dll_close(DllHandle *dll);
+De100DllErrorCode de100_dll_close(De100DllHandle *dll);
 
 /**
  * Check if a DLL handle is valid and loaded.
  *
- * @param dll DllHandle to check
+ * @param dll De100DllHandle to check
  * @return true if valid and loaded, false otherwise
  */
-static inline bool dll_is_valid(DllHandle dll) {
+de100_file_scoped_fn inline bool de100_dll_is_valid(De100DllHandle dll) {
     return dll.is_valid && dll.handle != NULL && dll.error_code == DLL_SUCCESS;
 }
 
@@ -118,27 +118,6 @@ static inline bool dll_is_valid(DllHandle dll) {
  * @param code Error code from any DLL operation
  * @return Static string describing the error (never NULL)
  */
-const char *dll_strerror(DllErrorCode code);
-
-// ═══════════════════════════════════════════════════════════════════════════
-// DEBUG UTILITIES (DE100_INTERNAL && DE100_SLOW only)
-// ═══════════════════════════════════════════════════════════════════════════
-
-#if DE100_INTERNAL && DE100_SLOW
-
-/**
- * Get detailed error information from the last failed operation.
- * Thread-local storage - only valid immediately after a failed call.
- *
- * @return Detailed error string with platform-specific info, or NULL
- */
-const char *dll_get_last_error_detail(void);
-
-/**
- * Log a DLL operation result to stderr (debug builds only).
- */
-void dll_debug_log_result(const char *operation, const char *path, DllHandle dll);
-
-#endif // DE100_INTERNAL && DE100_SLOW
+const char *de100_dll_strerror(De100DllErrorCode code);
 
 #endif // DE100_DLL_H
