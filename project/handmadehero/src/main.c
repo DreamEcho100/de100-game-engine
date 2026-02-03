@@ -28,18 +28,18 @@ de100_file_scoped_global_var inline real32 apply_deadzone(real32 value) {
 de100_file_scoped_global_var void render_player(GameBackBuffer *backbuffer,
                                                 int pos_x, int pos_y) {
   uint8 *end_of_buffer =
-      (uint8 *)backbuffer->memory + backbuffer->pitch * backbuffer->height;
+      (uint8 *)backbuffer->memory.base + backbuffer->pitch * backbuffer->height;
 
   uint32 color = 0xFFFFFFFF; // White
   int top = pos_y;
   int bottom = pos_y + 10;
 
   for (int X = pos_x; X < pos_x + 10; ++X) {
-    uint8 *pixel = ((uint8 *)backbuffer->memory +
+    uint8 *pixel = ((uint8 *)backbuffer->memory.base +
                     X * backbuffer->bytes_per_pixel + top * backbuffer->pitch);
     for (int Y = top; Y < bottom; ++Y) {
       // Bounds checking!
-      if ((pixel >= (uint8 *)backbuffer->memory) &&
+      if ((pixel >= (uint8 *)backbuffer->memory.base) &&
           ((pixel + 4) <= (uint8 *)end_of_buffer)) {
         *(uint32 *)pixel = color;
       }
@@ -48,48 +48,48 @@ de100_file_scoped_global_var void render_player(GameBackBuffer *backbuffer,
   }
 }
 
-void render_weird_gradient(GameBackBuffer *buffer,
+void render_weird_gradient(GameBackBuffer *backbuffer,
                            HandMadeHeroGameState *game_state) {
-  uint8 *row = (uint8 *)buffer->memory;
+  uint8 *row = (uint8 *)backbuffer->memory.base;
 
   // The following is correct for X11
-  for (int y = 0; y < buffer->height; ++y) {
+  for (int y = 0; y < backbuffer->height; ++y) {
     int offset_x = game_state->gradient_state.offset_x;
     uint32 *pixel = (uint32 *)row;
     int offset_y = game_state->gradient_state.offset_y;
 
-    for (int x = 0; x < buffer->width; ++x) {
+    for (int x = 0; x < backbuffer->width; ++x) {
       uint8 blue = (uint8)(x + offset_x);
       uint8 green = (uint8)(y + offset_y);
 
       // RGBA format - works for BOTH OpenGL X11 AND Raylib!
       *pixel++ = (0xFF000000u |  // Alpha = 255
-                  (blue << 8) | // Blue
+                  (blue << 16) | // Blue
                   (green << 8) | // Green
                   (0));
     }
-    row += buffer->pitch;
+    row += backbuffer->pitch;
   }
 }
 
-void testPixelAnimation(GameBackBuffer *buffer,
+void testPixelAnimation(GameBackBuffer *backbuffer,
                         HandMadeHeroGameState *game_state) {
   // Test pixel animation
-  uint32 *pixels = (uint32 *)buffer->memory;
-  int total_pixels = buffer->width * buffer->height;
+  uint32 *pixels = (uint32 *)backbuffer->memory.base;
+  int total_pixels = backbuffer->width * backbuffer->height;
 
-  int test_offset = game_state->pixel_state.offset_y * buffer->width +
+  int test_offset = game_state->pixel_state.offset_y * backbuffer->width +
                     game_state->pixel_state.offset_x;
 
   if (test_offset < total_pixels) {
     pixels[test_offset] = 0xFF0000FF;
   }
 
-  if (game_state->pixel_state.offset_x + 1 < buffer->width - 1) {
+  if (game_state->pixel_state.offset_x + 1 < backbuffer->width - 1) {
     game_state->pixel_state.offset_x += 1;
   } else {
     game_state->pixel_state.offset_x = 0;
-    if (game_state->pixel_state.offset_y + 75 < buffer->height - 1) {
+    if (game_state->pixel_state.offset_y + 75 < backbuffer->height - 1) {
       game_state->pixel_state.offset_y += 75;
     } else {
       game_state->pixel_state.offset_y = 0;
@@ -142,15 +142,19 @@ void handle_controls(GameControllerInput *input,
   } else {
     if (input->move_up.ended_down) {
       game_state->gradient_state.offset_y += game_state->speed;
+      game_state->player_state.y -= game_state->speed;
     }
     if (input->move_down.ended_down) {
       game_state->gradient_state.offset_y -= game_state->speed;
+      game_state->player_state.y += game_state->speed;
     }
     if (input->move_left.ended_down) {
       game_state->gradient_state.offset_x += game_state->speed;
+      game_state->player_state.x -= game_state->speed;
     }
     if (input->move_right.ended_down) {
       game_state->gradient_state.offset_x -= game_state->speed;
+      game_state->player_state.x += game_state->speed;
     }
   }
 
@@ -166,6 +170,7 @@ void handle_controls(GameControllerInput *input,
 }
 
 GAME_UPDATE_AND_RENDER(game_update_and_render) {
+  (void)thread_context;
 
   HandMadeHeroGameState *game_state =
       (HandMadeHeroGameState *)memory->permanent_storage;

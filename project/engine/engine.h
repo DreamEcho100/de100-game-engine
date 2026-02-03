@@ -6,13 +6,14 @@
 #include "game/audio.h"
 #include "game/backbuffer.h"
 #include "game/config.h"
+#include "game/thread.h"
 #include "game/game-loader.h"
 #include "game/input.h"
 #include "game/memory.h"
-#include "platform/_common/adaptive-fps.h"
-#include "platform/_common/config.h"
-#include "platform/_common/frame-stats.h"
-#include "platform/_common/frame-timing.h"
+#include "platforms/_common/adaptive-fps.h"
+#include "platforms/_common/config.h"
+#include "platforms/_common/frame-stats.h"
+#include "platforms/_common/frame-timing.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ENGINE STATE
@@ -48,6 +49,8 @@ typedef struct {
   // (what game sees)
   GameInput *input;
 
+  ThreadContext thread_context;
+
 } EngineGameState;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -59,7 +62,7 @@ typedef struct {
 typedef struct {
   PlatformConfig config;
   GameCode code;
-  GameCodePaths code_paths;
+  GameCodePaths paths;
   GameMemoryState memory_state; // Recording/playback
 
   // Double-buffered input (platform manages swap)
@@ -68,17 +71,12 @@ typedef struct {
   // ← Platform uses for state preservation
   GameInput *old_input;
 
-  AdaptiveFPS adaptive_fps;
-  FrameTiming frame_timing;
-  FrameStats frame_stats;
-
   // Platform-specific extension (X11State*, Win32State*, etc.)
   void *backend;
 } EnginePlatformState;
 
 typedef struct {
   De100MemoryBlock game_state;    // Permanent + Transient
-  De100MemoryBlock backbuffer;    // Pixel memory
   De100MemoryBlock audio_samples; // Audio sample buffer
 } EngineAllocations;
 

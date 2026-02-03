@@ -88,10 +88,7 @@
 
 /* ========================= FRAME RATE CONFIG ========================= */
 
-#ifndef DE100_TARGET_FPS
-#define DE100_TARGET_FPS 60
-#endif
-
+#define DE100_DEFAULT_TARGET_FPS 60
 #define FPS_30 30
 #define FPS_45 45
 #define FPS_60 60

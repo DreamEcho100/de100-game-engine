@@ -1,11 +1,12 @@
 #include "backend.h"
 
 #include "../../_common/base.h"
+#include "../../engine.h"
 #include "../../game/backbuffer.h"
 #include "../../game/base.h"
 #include "../../game/game-loader.h"
 #include "../../game/input.h"
-#include "../../game/memory.h"
+#include "../_common/input-recording.h"
 #include "audio.h"
 #include "inputs/joystick.h"
 #include "inputs/keyboard.h"
@@ -14,10 +15,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
+
+#if DE100_INTERNAL
+#include "../_common/frame-stats.h"
+#endif
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🎨 RAYLIB-SPECIFIC TYPES
+// State
 // ═══════════════════════════════════════════════════════════════════════════
 
 typedef struct {
@@ -27,13 +31,16 @@ typedef struct {
 
 de100_file_scoped_global_var BackBufferMeta g_game_buffer_meta = {0};
 
+#if DE100_INTERNAL
+de100_file_scoped_global_var FrameStats g_frame_stats = {0};
+#endif
+
 // ═══════════════════════════════════════════════════════════════════════════
-// 🖼️ BACKBUFFER MANAGEMENT
+// Backbuffer Management
 // ═══════════════════════════════════════════════════════════════════════════
 
-de100_file_scoped_fn inline void
-resize_back_buffer(GameBackBuffer *backbuffer, BackBufferMeta *backbuffer_meta,
-                   int width, int height) {
+de100_file_scoped_fn inline void resize_back_buffer(GameBackBuffer *backbuffer,
+                                                    int width, int height) {
   printf("Resizing backbuffer → %dx%d\n", width, height);
 
   if (width <= 0 || height <= 0) {
@@ -48,275 +55,205 @@ resize_back_buffer(GameBackBuffer *backbuffer, BackBufferMeta *backbuffer_meta,
   backbuffer->height = height;
   backbuffer->pitch = backbuffer->width * backbuffer->bytes_per_pixel;
 
-  // Free old memory
-  if (backbuffer->memory.base && old_width > 0 && old_height > 0) {
-    de100_memory_free(&backbuffer->memory);
+  if (de100_memory_is_valid(backbuffer->memory) && old_width > 0 &&
+      old_height > 0) {
+    int buffer_size = width * height * backbuffer->bytes_per_pixel;
+    de100_memory_realloc(&backbuffer->memory, buffer_size, 0);
   }
 
-  // Free old texture
-  if (backbuffer_meta->has_texture) {
-    UnloadTexture(backbuffer_meta->texture);
-    backbuffer_meta->has_texture = false;
+  if (g_game_buffer_meta.has_texture) {
+    UnloadTexture(g_game_buffer_meta.texture);
+    g_game_buffer_meta.has_texture = false;
   }
 
-  // Allocate new memory
-  int buffer_size = width * height * backbuffer->bytes_per_pixel;
-  De100MemoryBlock backbuffer_memory =
-      de100_memory_alloc(NULL, buffer_size,
-                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
-                             De100_MEMORY_FLAG_ZEROED);
-
-  if (!de100_memory_is_valid(backbuffer_memory)) {
-    fprintf(stderr, "❌ Failed to allocate backbuffer: %s\n",
-            de100_memory_error_str(backbuffer_memory.error_code));
-    return;
-  }
-  backbuffer->memory = backbuffer_memory;
-
-  // Create Raylib texture
   Image img = {.data = backbuffer->memory.base,
                .width = backbuffer->width,
                .height = backbuffer->height,
                .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
                .mipmaps = 1};
 
-  backbuffer_meta->texture = LoadTextureFromImage(img);
-  backbuffer_meta->has_texture = true;
+  g_game_buffer_meta.texture = LoadTextureFromImage(img);
+  g_game_buffer_meta.has_texture = true;
 
   printf("✅ Raylib texture created successfully\n");
 }
 
 de100_file_scoped_fn inline void
-update_window_from_backbuffer(GameBackBuffer *backbuffer,
-                              BackBufferMeta *backbuffer_meta) {
-
-  if (!backbuffer_meta->has_texture || !backbuffer->memory.base) {
+update_window_from_backbuffer(GameBackBuffer *backbuffer) {
+  if (!g_game_buffer_meta.has_texture ||
+      !de100_memory_is_valid(backbuffer->memory)) {
     return;
   }
 
-  UpdateTexture(backbuffer_meta->texture, backbuffer->memory.base);
-  DrawTexture(backbuffer_meta->texture, 0, 0, WHITE);
+  UpdateTexture(g_game_buffer_meta.texture, backbuffer->memory.base);
+  DrawTexture(g_game_buffer_meta.texture, 0, 0, WHITE);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🚀 MAIN PLATFORM ENTRY POINT
+// Audio
 // ═══════════════════════════════════════════════════════════════════════════
 
-int platform_main() {
-  real64 t_start = GetTime();
-  printf("[%.3fs] Starting platform_main\n", GetTime() - t_start);
-  fflush(stdout);
-
-  // ═══════════════════════════════════════════════════════════════════
-  // 💾 ALLOCATE GAME MEMORY
-  // ═══════════════════════════════════════════════════════════════════
+de100_file_scoped_fn inline void
+audio_generate_and_send(EnginePlatformState *platform, EngineGameState *game) {
+  uint32 samples_to_generate =
+      raylib_get_samples_to_write(&platform->config.audio, &game->audio);
 
 #if DE100_INTERNAL
-  void *base_address = (void *)TERABYTES(2);
-#else
-  void *base_address = NULL;
+  if (FRAME_LOG_EVERY_THREE_SECONDS_CHECK) {
+    printf("[AUDIO] samples_to_generate=%d, RSI=%ld\n", samples_to_generate,
+           (long)platform->config.audio.running_sample_index);
+  }
 #endif
 
-  uint64 permanent_storage_size = MEGABYTES(64);
-  uint64 transient_storage_size = GIGABYTES(1);
+  if (samples_to_generate > 0) {
+    if (samples_to_generate > platform->config.audio.max_samples_per_call) {
+      samples_to_generate = platform->config.audio.max_samples_per_call;
+    }
 
-  De100MemoryBlock permanent_storage =
-      de100_memory_alloc(base_address, permanent_storage_size,
-                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
-                             De100_MEMORY_FLAG_ZEROED);
+    GameAudioOutputBuffer audio_buffer = {
+        .samples_per_second = game->audio.samples_per_second,
+        .sample_count = samples_to_generate,
+        .samples = (int16 *)game->audio.samples};
 
-  if (!de100_memory_is_valid(permanent_storage)) {
-    fprintf(stderr, "❌ ERROR: Could not allocate permanent storage\n");
-    de100_memory_free(&permanent_storage);
-    fprintf(stderr, "   Error: %s\n",
-            de100_memory_error_str(permanent_storage.error_code));
-    return 1;
+    platform->code.get_audio_samples(&game->memory, &audio_buffer);
+    raylib_send_samples(&platform->config.audio, &audio_buffer);
   }
+}
 
-  void *transient_base =
-      (uint8 *)permanent_storage.base + permanent_storage.size;
-  De100MemoryBlock transient_storage =
-      de100_memory_alloc(transient_base, transient_storage_size,
-                         De100_MEMORY_FLAG_READ | De100_MEMORY_FLAG_WRITE |
-                             De100_MEMORY_FLAG_ZEROED);
+// ═══════════════════════════════════════════════════════════════════════════
+// Initialization
+// ═══════════════════════════════════════════════════════════════════════════
 
-  if (!de100_memory_is_valid(transient_storage)) {
-    fprintf(stderr, "❌ ERROR: Could not allocate transient storage\n");
-    de100_memory_free(&permanent_storage);
-    fprintf(stderr, "   Error: %s\n",
-            de100_memory_error_str(transient_storage.error_code));
-    return 1;
-  }
-
-  GameMemory game_memory = {.permanent_storage = permanent_storage,
-                            .transient_storage = transient_storage,
-                            .permanent_storage_size = permanent_storage.size,
-                            .transient_storage_size = transient_storage.size};
-
-  printf("✅ Game memory allocated\n");
-
-  // ═══════════════════════════════════════════════════════════════════
-  // 🎮 INITIALIZE INPUT BUFFERS
-  // ═══════════════════════════════════════════════════════════════════
-
-  local_persist_var GameInput game_inputs[2] = {0};
-  GameInput *new_game_input = &game_inputs[0];
-  GameInput *old_game_input = &game_inputs[1];
-
-  // ═══════════════════════════════════════════════════════════════════
-  // 🪟 CREATE WINDOW
-  // ═══════════════════════════════════════════════════════════════════
-
-  InitWindow(1280, 720, "Handmade Hero");
+de100_file_scoped_fn inline int raylib_init(EngineState *engine) {
+  InitWindow(engine->game.config.window_width,
+             engine->game.config.window_height,
+             engine->game.config.window_title);
   SetWindowState(FLAG_WINDOW_RESIZABLE);
   SetExitKey(KEY_NULL);
-  int32 target_fps = 60;
-  SetTargetFPS(target_fps);
-
-#if DE100_INTERNAL
-  g_frame_counter = 0;
-  g_fps = target_fps;
-#endif
+  engine->game.config.refresh_rate_hz = 60;
+  engine->game.config.prefer_adaptive_fps = false;
+  SetTargetFPS(engine->game.config.refresh_rate_hz);
 
   printf("✅ Window created\n");
 
-  // ═══════════════════════════════════════════════════════════════════
-  // 🎮 INITIALIZE GAMEPAD
-  // ═══════════════════════════════════════════════════════════════════
-
-  raylib_game_initpad(old_game_input->controllers, new_game_input->controllers);
-
-  // ═══════════════════════════════════════════════════════════════════
-  // 🔊 INITIALIZE AUDIO (MIRRORS X11 PATTERN)
-  // ═══════════════════════════════════════════════════════════════════
-
-  GameAudioOutputBuffer game_audio_output = {0};
-  PlatformAudioConfig platform_audio_config = {0};
-
-  // Audio parameters (same as X11)
-  int32 samples_per_second = 48000;
-  int32 buffer_size_frames = 4096; // ~85ms at 48kHz
-  int32 game_update_hz = 30;
+  raylib_game_initpad(engine->platform.old_input->controllers,
+                      engine->game.input->controllers);
 
   bool audio_initialized =
-      raylib_init_audio(&game_audio_output, &platform_audio_config,
-                        samples_per_second, buffer_size_frames, game_update_hz);
+      raylib_init_audio(&engine->platform.config.audio,
+                        engine->game.config.initial_audio_sample_rate,
+                        engine->game.config.audio_game_update_hz);
 
   if (!audio_initialized) {
     fprintf(stderr,
             "⚠️  Audio failed to initialize, continuing without sound\n");
+    return 1;
   }
 
-  // ═══════════════════════════════════════════════════════════════════
-  // 🖼️ INITIALIZE BACKBUFFER
-  // ═══════════════════════════════════════════════════════════════════
+  resize_back_buffer(&engine->game.backbuffer, engine->game.backbuffer.width,
+                     engine->game.backbuffer.height);
 
-  GameBackBuffer game_buffer = {0};
-  int init_backbuffer_status = init_backbuffer(&game_buffer, 1280, 720, 4);
-  if (init_backbuffer_status != 0) {
-    fprintf(stderr, "❌ Failed to initialize backbuffer\n");
-    return init_backbuffer_status;
+  return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Main Loop
+// ═══════════════════════════════════════════════════════════════════════════
+
+int platform_main() {
+  EngineState engine = {0};
+  engine.platform.code = (GameCode){0};
+
+  if (engine_init(&engine)) {
+    return 1;
   }
 
-  resize_back_buffer(&game_buffer, &g_game_buffer_meta, game_buffer.width,
-                     game_buffer.height);
+  if (raylib_init(&engine) != 0) {
+#if DE100_SANITIZE_WAVE_1_MEMORY
+    engine_shutdown(&engine);
+#endif
+    return 1;
+  }
 
-  // ═══════════════════════════════════════════════════════════════════
-  // 🎮 LOAD GAME CODE
-  // ═══════════════════════════════════════════════════════════════════
-
-  char *game_so_path = "build/libgame.so";
-  char *game_temp_so_path = "build/libgame_temp.so";
-  GameCode game = load_game_code(game_so_path, game_temp_so_path);
+  engine.platform.code.init(&engine.game.memory, engine.game.input,
+                            &engine.game.backbuffer);
 
   printf("✅ Entering main loop...\n");
 
-  // ═══════════════════════════════════════════════════════════════════
-  // 🔁 MAIN GAME LOOP
-  // ═══════════════════════════════════════════════════════════════════
-
   while (!WindowShouldClose() && is_game_running) {
+    frame_timing_begin(&engine.platform.frame_timing);
 
-    // ─────────────────────────────────────────────────────────────
-    // INPUT: Prepare frame
-    // ─────────────────────────────────────────────────────────────
-    prepare_input_frame(old_game_input, new_game_input);
+    handle_game_reload_check(&engine.platform.code, &engine.platform.paths);
+    prepare_input_frame(engine.platform.old_input, engine.game.input);
 
-    // ─────────────────────────────────────────────────────────────
-    // HANDLE WINDOW RESIZE
-    // ─────────────────────────────────────────────────────────────
     if (IsWindowResized()) {
-      resize_back_buffer(&game_buffer, &g_game_buffer_meta, GetScreenWidth(),
+      resize_back_buffer(&engine.game.backbuffer, GetScreenWidth(),
                          GetScreenHeight());
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // INPUT: Keyboard
-    // ─────────────────────────────────────────────────────────────
-    handle_keyboard_inputs(&platform_audio_config, new_game_input);
+    handle_keyboard_inputs(&engine.platform, &engine.game);
+    raylib_poll_gamepad(engine.game.input);
 
-    // ─────────────────────────────────────────────────────────────
-    // INPUT: Gamepad
-    // ─────────────────────────────────────────────────────────────
-    raylib_poll_gamepad(new_game_input);
-
-    // ─────────────────────────────────────────────────────────────
-    // GAME UPDATE + RENDER
-    // ─────────────────────────────────────────────────────────────
-    if (game_buffer.memory.base) {
-      game.update_and_render(&game_memory, new_game_input, &game_buffer);
+    if (input_recording_is_recording(&engine.platform.memory_state)) {
+      input_recording_record_frame(&engine.platform.memory_state,
+                                   engine.game.input);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // AUDIO: Only generate when Raylib needs more data
-    // ─────────────────────────────────────────────────────────────
-    if (platform_audio_config.is_initialized) {
-      // Check if Raylib's buffer is ready for more samples
-      int32 samples_to_write = raylib_get_samples_to_write(
-          &platform_audio_config, &game_audio_output);
-
-      if (samples_to_write > 0) {
-        // Configure buffer for game
-        game_audio_output.sample_count = samples_to_write;
-
-        // Game generates samples
-        game.get_audio_samples(&game_memory, &game_audio_output);
-
-        // Platform sends to hardware
-        raylib_send_samples(&platform_audio_config, &game_audio_output);
-      }
-      // If samples_to_write == 0, Raylib's buffer is still full
-      // This is normal - we don't write every frame!
+    if (input_recording_is_playing(&engine.platform.memory_state)) {
+      input_recording_playback_frame(&engine.platform.memory_state,
+                                     engine.game.input);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // DISPLAY
-    // ─────────────────────────────────────────────────────────────
+    engine.platform.code.update_and_render(
+        &engine.game.memory, engine.game.input, &engine.game.backbuffer);
+
+    audio_generate_and_send(&engine.platform, &engine.game);
+
     BeginDrawing();
     ClearBackground(BLACK);
-    update_window_from_backbuffer(&game_buffer, &g_game_buffer_meta);
+    update_window_from_backbuffer(&engine.game.backbuffer);
     EndDrawing();
 
+    frame_timing_mark_work_done(&engine.platform.frame_timing);
+    frame_timing_sleep_until_target(
+        &engine.platform.frame_timing,
+        engine.game.config.target_seconds_per_frame);
+    frame_timing_end(&engine.platform.frame_timing);
+
+    real32 frame_time_ms = frame_timing_get_ms(&engine.platform.frame_timing);
+    real32 target_frame_time_ms =
+        engine.game.config.target_seconds_per_frame * 1000.0f;
+
+    if (frame_time_ms > (target_frame_time_ms + 5.0f)) {
+      printf("⚠️  MISSED FRAME! %.2fms (target: %.2fms, over by: %.2fms)\n",
+             frame_time_ms, target_frame_time_ms,
+             frame_time_ms - target_frame_time_ms);
+    }
+
 #if DE100_INTERNAL
-    g_frame_counter++;
+    frame_stats_record(&g_frame_stats, frame_time_ms,
+                       engine.game.config.target_seconds_per_frame);
 #endif
 
-    // ─────────────────────────────────────────────────────────────
-    // SWAP INPUT BUFFERS
-    // ─────────────────────────────────────────────────────────────
-    GameInput *temp = new_game_input;
-    new_game_input = old_game_input;
-    old_game_input = temp;
+    g_frame_counter++;
 
-    // ─────────────────────────────────────────────────────────────
-    // DEBUG: FPS logging
-    // ─────────────────────────────────────────────────────────────
 #if DE100_INTERNAL
     if (FRAME_LOG_EVERY_FIVE_SECONDS_CHECK) {
-      printf("[Raylib] %.2fms/f, %.0ff/s\n", GetFrameTime() * 1000.0f,
-             (float)GetFPS());
+      printf("[Raylib] %.2fms/f, %.2ff/s, %.2fmc/f (work: %.2fms, sleep: "
+             "%.2fms)\n",
+             frame_time_ms, frame_timing_get_fps(&engine.platform.frame_timing),
+             frame_timing_get_mcpf(&engine.platform.frame_timing),
+             engine.platform.frame_timing.work_seconds * 1000.0f,
+             engine.platform.frame_timing.sleep_seconds * 1000.0f);
     }
 #endif
+
+    adaptive_fps_update(&engine.platform.adaptive_fps, &engine.game.config,
+                        &engine.platform.config, frame_time_ms);
+
+    GameInput *temp = engine.game.input;
+    engine.game.input = engine.platform.old_input;
+    engine.platform.old_input = temp;
   }
 
 #if DE100_INTERNAL
@@ -326,27 +263,27 @@ int platform_main() {
 #endif
 
   // ═══════════════════════════════════════════════════════════════════
-  // 🧹 CLEANUP
+  // Cleanup
   // ═══════════════════════════════════════════════════════════════════
 
 #if DE100_SANITIZE_WAVE_1_MEMORY
-  printf("Cleaning up...\n");
+  printf("[%.3fs] Exiting, freeing memory...\n",
+         get_wall_clock() - g_initial_game_time);
 
   if (g_game_buffer_meta.has_texture) {
     UnloadTexture(g_game_buffer_meta.texture);
   }
-
-  if (game_buffer.memory.base) {
-    de100_memory_free(&game_buffer.memory);
-  }
-
-  raylib_shutdown_audio(&game_audio_output, &platform_audio_config);
-
-  de100_memory_free(&transient_storage);
-  de100_memory_free(&permanent_storage);
-
+  raylib_shutdown_audio(&engine.game.audio, &engine.platform.config.audio);
   CloseWindow();
+
+  engine_shutdown(&engine);
+
   printf("✅ Cleanup complete\n");
+  printf("[%.3fs] Memory freed\n", get_wall_clock() - g_initial_game_time);
+#endif
+
+#if DE100_INTERNAL
+  frame_stats_print(&g_frame_stats);
 #endif
 
   printf("Goodbye!\n");

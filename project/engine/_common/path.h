@@ -24,7 +24,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Maximum path length we support
-#define PATH_MAX_LENGTH 4096
+#define DE100_MAX_PATH_LENGTH 4096
+
+extern char g_argv0[DE100_MAX_PATH_LENGTH];
+void path_on_init(int argc, char **argv);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ERROR CODES
@@ -46,7 +49,7 @@ typedef enum {
 // ═══════════════════════════════════════════════════════════════════════════
 
 typedef struct {
-    char path[PATH_MAX_LENGTH];
+    char path[DE100_MAX_PATH_LENGTH];
     size_t length;
     bool success;
     PathErrorCode error_code;

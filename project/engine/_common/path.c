@@ -19,9 +19,27 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__)
+#include <errno.h>
+#include <limits.h>
+#include <sys/sysctl.h>
+#include <sys/types.h>
 #else
-#error "Unsupported platform for path operations"
+/* Generic POSIX fallback (OpenBSD lands here) */
+#include <errno.h>
+#include <limits.h>
+#include <stdlib.h> // realpath
 #endif
+
+char g_argv0[DE100_MAX_PATH_LENGTH] = {0};
+
+// At program startup
+void path_on_init(int argc, char **argv) {
+  if (argc > 0 && argv[0]) {
+    strncpy(g_argv0, argv[0], sizeof(g_argv0) - 1);
+    g_argv0[sizeof(g_argv0) - 1] = '\0';
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DEBUG ERROR DETAIL STORAGE (Thread-Local)
@@ -179,10 +197,6 @@ PathResult path_get_executable(void) {
   // Null-terminate (readlink doesn't!)
   result.path[len] = '\0';
   result.length = (size_t)len;
-  result.success = true;
-  result.error_code = PATH_SUCCESS;
-
-  CLEAR_ERROR_DETAIL();
 
 #elif defined(__APPLE__)
   // ─────────────────────────────────────────────────────────────────────
@@ -193,17 +207,28 @@ PathResult path_get_executable(void) {
 
   if (_NSGetExecutablePath(result.path, &size) != 0) {
     result.error_code = PATH_ERROR_BUFFER_TOO_SMALL;
-
     SET_ERROR_DETAIL("[path_get_executable] Buffer too small, need %u bytes",
                      size);
     return result;
   }
 
-  result.length = strlen(result.path);
-  result.success = true;
-  result.error_code = PATH_SUCCESS;
+  char resolved[PATH_MAX];
+  if (!realpath(result.path, resolved)) {
+    int err = errno;
+    result.error_code = errno_to_path_error(err);
+#if DE100_INTERNAL && DE100_SLOW
+    posix_set_error_detail("path_get_executable:realpath", err);
+#endif
+    return result;
+  }
 
-  CLEAR_ERROR_DETAIL();
+  size_t len = strlen(resolved);
+  if (len >= sizeof(result.path)) {
+    result.error_code = PATH_ERROR_BUFFER_TOO_SMALL;
+    return result;
+  }
+  memcpy(result.path, resolved, len + 1);
+  result.length = len;
 
 #elif defined(_WIN32)
   // ─────────────────────────────────────────────────────────────────────
@@ -230,21 +255,69 @@ PathResult path_get_executable(void) {
   }
 
   // Check for truncation
-  if (len >= sizeof(result.path) - 1) {
+  if (len == sizeof(result.path)) {
     result.error_code = PATH_ERROR_BUFFER_TOO_SMALL;
     SET_ERROR_DETAIL("[path_get_executable] Path truncated at %lu chars", len);
     return result;
   }
 
   result.length = (size_t)len;
+#elif defined(__FreeBSD__) || defined(__DragonFly__)
+  int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
+  size_t len = sizeof(result.path);
+
+  if (sysctl(mib, 4, result.path, &len, NULL, 0) != 0) {
+    int err = errno;
+    result.error_code = errno_to_path_error(err);
+#if DE100_INTERNAL && DE100_SLOW
+    posix_set_error_detail("path_get_executable:sysctl", err);
+#endif
+    return result;
+  }
+
+  result.length = len - 1;
+
+#elif defined(__NetBSD__)
+  int mib[4] = {CTL_KERN, KERN_PROC_ARGS, -1, KERN_PROC_PATHNAME};
+  size_t len = sizeof(result.path);
+
+  if (sysctl(mib, 4, result.path, &len, NULL, 0) != 0) {
+    int err = errno;
+    result.error_code = errno_to_path_error(err);
+#if DE100_INTERNAL && DE100_SLOW
+    posix_set_error_detail("path_get_executable:sysctl", err);
+#endif
+    return result;
+  }
+
+  result.length = len - 1;
+  // Fallthrough for other OSes
+#else
+#ifndef DE100_INTERNAL // PATH_ASSUME_ARGV0_IS_TRUSTWORTHY
+#warning "Executable path fallback uses argv[0]; result may be unreliable"
+#endif
+
+  if (!g_argv0[0]) {
+    result.error_code = PATH_ERROR_NOT_FOUND;
+    SET_ERROR_DETAIL("[path_get_executable] argv[0] not initialized");
+    return result;
+  }
+
+  char resolved[PATH_MAX];
+  if (!realpath(g_argv0, resolved)) {
+    int err = errno;
+    result.error_code = errno_to_path_error(err);
+    posix_set_error_detail("path_get_executable:realpath(argv[0])", err);
+    return result;
+  }
+
+  strncpy(result.path, resolved, sizeof(result.path));
+  result.length = strlen(result.path);
+#endif
+
   result.success = true;
   result.error_code = PATH_SUCCESS;
-
   CLEAR_ERROR_DETAIL();
-
-#else
-#error "path_get_executable not implemented for this platform"
-#endif
 
   return result;
 }

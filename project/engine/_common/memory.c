@@ -406,6 +406,138 @@ De100MemoryBlock de100_memory_alloc(void *base_hint, size_t size,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// RESET (Zero existing block without reallocating)
+// ═══════════════════════════════════════════════════════════════════════════
+
+De100MemoryError de100_memory_reset(De100MemoryBlock *block) {
+  if (!block) {
+    return De100_MEMORY_ERR_NULL_BLOCK;
+  }
+
+  if (!block->base || !block->is_valid) {
+    return De100_MEMORY_ERR_INVALID_BLOCK;
+  }
+
+  de100_mem_set(block->base, 0, block->size);
+
+  return De100_MEMORY_OK;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REALLOC (Resize block with optional data preservation)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Updates struct IN PLACE - the De100MemoryBlock* remains valid.
+// Increments generation so holders of old base pointers can detect staleness.
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
+De100MemoryError de100_memory_realloc(De100MemoryBlock *block, size_t new_size,
+                                      bool preserve_data) {
+  if (!block) {
+    return De100_MEMORY_ERR_NULL_BLOCK;
+  }
+
+  if (new_size == 0) {
+    return De100_MEMORY_ERR_INVALID_SIZE;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Case 1: Block is invalid/empty - allocate fresh, update in place
+  // ─────────────────────────────────────────────────────────────────────
+  if (!block->base || !block->is_valid) {
+    De100MemoryBlock new_block = 
+        de100_memory_alloc(NULL, new_size, De100_MEMORY_FLAG_RW_ZEROED);
+    
+    // Update struct fields in place
+    block->base = new_block.base;
+    block->size = new_block.size;
+    block->total_size = new_block.total_size;
+    block->flags = new_block.flags;
+    block->error_code = new_block.error_code;
+    block->is_valid = new_block.is_valid;
+    block->generation++;
+    
+    return block->error_code;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Calculate aligned sizes
+  // ─────────────────────────────────────────────────────────────────────
+  size_t page_size = de100_memory_page_size();
+  if (page_size == 0) {
+    block->error_code = De100_MEMORY_ERR_PAGE_SIZE_FAILED;
+    return De100_MEMORY_ERR_PAGE_SIZE_FAILED;
+  }
+
+  size_t new_aligned = (new_size + page_size - 1) & ~(page_size - 1);
+  size_t old_aligned = block->size;
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Case 2: Same aligned size - no reallocation needed
+  // ─────────────────────────────────────────────────────────────────────
+  if (new_aligned == old_aligned) {
+    if (!preserve_data) {
+      de100_mem_set(block->base, 0, block->size);
+    }
+    block->error_code = De100_MEMORY_OK;
+    return De100_MEMORY_OK;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Case 3: Different size - must reallocate
+  // ─────────────────────────────────────────────────────────────────────
+  
+  // Save old state for copy/cleanup
+  void *old_base = block->base;
+  size_t old_size = block->size;
+  size_t old_total_size = block->total_size;
+  size_t copy_size = (old_size < new_aligned) ? old_size : new_aligned;
+
+  // Allocate new memory
+  De100MemoryBlock new_block = de100_memory_alloc(NULL, new_size, block->flags);
+  if (!de100_memory_is_valid(new_block)) {
+    // Original block unchanged on failure
+    block->error_code = new_block.error_code;
+    return new_block.error_code;
+  }
+
+  // Copy old data if requested
+  if (preserve_data && old_base) {
+    de100_mem_copy(new_block.base, old_base, copy_size);
+    
+    // Zero extra space if we grew
+    if (new_block.size > old_size) {
+      de100_mem_set((uint8 *)new_block.base + old_size, 0,
+                    new_block.size - old_size);
+    }
+  }
+
+  // Free old memory (calculate original reserved base)
+  size_t guard_page_size = de100_memory_page_size();
+  void *old_reserved_base = (uint8 *)old_base - guard_page_size;
+
+#if defined(_WIN32)
+  VirtualFree(old_reserved_base, 0, MEM_RELEASE);
+#elif defined(DE100_IS_GENERIC_POSIX)
+  munmap(old_reserved_base, old_total_size);
+#endif
+
+  // Update struct fields in place (pointer to block stays valid!)
+  block->base = new_block.base;
+  block->size = new_block.size;
+  block->total_size = new_block.total_size;
+  // block->flags stays the same
+  block->error_code = De100_MEMORY_OK;
+  block->is_valid = true;
+  block->generation++;
+
+  return De100_MEMORY_OK;
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════
 // FREE
 // ═══════════════════════════════════════════════════════════════════════════
 

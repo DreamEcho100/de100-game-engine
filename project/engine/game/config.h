@@ -49,7 +49,8 @@ typedef struct {
    * @note This is a **hint only**, not a guarantee of actual monitor refresh
    * rate.
    */
-  uint32 refresh_rate_hz;
+  uint32 target_refresh_rate_hz;
+  uint32 max_allowed_refresh_rate_hz;
 
   /** Request VSync be enabled if possible */
   bool prefer_vsync;

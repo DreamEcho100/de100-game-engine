@@ -1,4 +1,5 @@
 #include "./platform/platform.h"
+#include "_common/path.h"
 
 #if DE100_INTERNAL
 #include "./_common/base.h"
@@ -7,6 +8,8 @@
 #endif
 
 int main(int argc, char **argv) {
+  path_on_init(argc, argv);
+
   (void)argc;
   (void)argv;
 

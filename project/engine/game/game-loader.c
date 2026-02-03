@@ -5,7 +5,6 @@
 
 #include "../_common/dll.h"
 #include "../_common/file.h"
-#include "../_common/memory.h"
 #include "game-loader.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -448,6 +447,7 @@ void handle_game_reload_check(GameCode *game_code,
 // ═══════════════════════════════════════════════════════════════════════════
 
 GAME_UPDATE_AND_RENDER(game_update_and_render_stub) {
+  (void)thread_context;
   (void)memory;
   (void)input;
   (void)buffer;
@@ -470,6 +470,7 @@ GAME_STARTUP(game_startup_stub) {
 }
 
 GAME_INIT(game_init_stub) {
+  (void)thread_context;
   (void)memory;
   (void)input;
   (void)buffer;

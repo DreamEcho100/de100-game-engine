@@ -23,7 +23,7 @@ GameConfig get_default_game_config() {
 
   config.window_width = 1280;
   config.window_height = 720;
-  config.refresh_rate_hz = 60;
+  config.max_allowed_refresh_rate_hz = FPS_60;
 
   config.prefer_vsync = true;
   config.prefer_borderless = false;
@@ -51,7 +51,8 @@ GameConfig get_default_game_config() {
      TIMING
      ========================= */
 
-  config.target_seconds_per_frame = 1.0f / (real32)config.refresh_rate_hz;
+  config.target_seconds_per_frame =
+      1.0f / (real32)config.max_allowed_refresh_rate_hz;
 
   return config;
 }

@@ -37,7 +37,6 @@
 #include "audio.h"
 
 #include "../../_common/base.h"
-#include "../../_common/dll.h"
 #include "../../_common/memory.h"
 #include "../../game/audio.h"
 #include "../_common/config.h"
@@ -349,11 +348,8 @@ void linux_load_alsa(void) {
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
-bool linux_init_audio(GameAudioOutputBuffer *audio_output,
-                      PlatformAudioConfig *audio_config,
-                      int32 samples_per_second, int32 buffer_size_bytes,
-                      int32 game_update_hz) {
-  (void)buffer_size_bytes; // We calculate our own buffer size
+bool linux_init_audio(PlatformAudioConfig *audio_config,
+                      int32 samples_per_second, int32 game_update_hz) {
 
   printf("═══════════════════════════════════════════════════════════\n");
   printf("🔊 ALSA AUDIO INITIALIZATION\n");
@@ -549,14 +545,6 @@ bool linux_init_audio(GameAudioOutputBuffer *audio_output,
   printf("✅ Audio: Sample buffer allocated (%d bytes)\n", sample_buffer_size);
 
   // ─────────────────────────────────────────────────────────────────────
-  // STEP 8: Configure game audio output buffer
-  // ─────────────────────────────────────────────────────────────────────
-
-  audio_output->samples_per_second = samples_per_second;
-  audio_output->sample_count = 0; // Will be set each frame
-  audio_output->samples = g_linux_audio_output.sample_buffer.base;
-
-  // ─────────────────────────────────────────────────────────────────────
   // STEP 9: Pre-fill buffer with silence and start playback
   // ─────────────────────────────────────────────────────────────────────
   //
@@ -635,8 +623,8 @@ bool linux_init_audio(GameAudioOutputBuffer *audio_output,
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
-int32 linux_get_samples_to_write(PlatformAudioConfig *audio_config,
-                                 GameAudioOutputBuffer *audio_output) {
+uint32 linux_get_samples_to_write(PlatformAudioConfig *audio_config,
+                                  GameAudioOutputBuffer *audio_output) {
   (void)audio_output;
 
   if (!audio_config->is_initialized || !g_linux_audio_output.pcm_handle) {

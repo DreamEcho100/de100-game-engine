@@ -11,6 +11,7 @@
 #endif
 
 GAME_INIT(game_init) {
+(void)thread_context;
   (void)input;
   (void)buffer;
   HandMadeHeroGameState *game_state =
