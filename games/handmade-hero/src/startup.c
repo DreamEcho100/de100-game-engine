@@ -10,9 +10,9 @@ GAME_STARTUP(game_startup) {
   game_config->transient_storage_size = GIGABYTES(1);
   // X11 - Unused yet
   game_config->game_flags = 0;
-  game_config->window_width = 1280;
-  game_config->window_height = 720;
-  game_config->max_allowed_refresh_rate_hz = FPS_60;
+  game_config->window_width = 960;
+  game_config->window_height = 540;
+  game_config->max_allowed_refresh_rate_hz = FPS_30;
   // X11 - Unused yet
   game_config->prefer_vsync = true;
   // X11 - Unused yet
@@ -26,7 +26,6 @@ GAME_STARTUP(game_startup) {
   game_config->initial_audio_sample_rate = 48000;
   // X11 - Unused yet
   game_config->audio_buffer_size_frames = 1024;
-  game_config->max_allowed_refresh_rate_hz = FPS_60;
   game_config->target_seconds_per_frame =
       1.0f / (real32)game_config->max_allowed_refresh_rate_hz;
 

@@ -17,7 +17,7 @@ int engine_init(EngineState *engine) {
   EnginePlatformState *platform = &engine->platform;
   EngineAllocations *allocations = &engine->allocations;
 
-  g_initial_game_time = get_wall_clock();
+  g_initial_game_time_ms = get_wall_clock();
 
   // ─────────────────────────────────────────────────────────────────────
   // ZERO INITIALIZE

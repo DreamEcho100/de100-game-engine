@@ -2,21 +2,30 @@
 #include "../../../engine/_common/base.h"
 #include "../../../engine/game/backbuffer.h"
 #include "../../../engine/game/inputs.h"
+#include "../../../engine/platforms/_common/hooks/utils.h"
 #include <fcntl.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 
-// de100_file_scoped_fn inline real32 apply_deadzone(real32 value) {
-//   if (fabsf(value) < CONTROLLER_DEADZONE) {
-//     return 0.0f;
-//   }
-//   return value;
-// }
+#if 0
+de100_file_scoped_fn inline real32 apply_deadzone(real32 value) {
+  if (fabsf(value) < CONTROLLER_DEADZONE) {
+    return 0.0f;
+  }
+  return value;
+}
+#endif
 
 de100_file_scoped_fn int32 round_real32_to_int32(real32 num) {
   int32 result = (int32)(num + 0.5f);
+  // TODO: Intrinsic????
+  return (result);
+}
+de100_file_scoped_fn uint32 round_real32_to_uint32(real32 num) {
+  uint32 result = (uint32)(num + 0.5f);
   // TODO: Intrinsic????
   return (result);
 }
@@ -24,7 +33,7 @@ de100_file_scoped_fn int32 round_real32_to_int32(real32 num) {
 de100_file_scoped_fn void draw_rect(GameBackBuffer *backbuffer,
                                     real32 real_min_x, real32 real_min_y,
                                     real32 real_max_x, real32 real_max_y,
-                                    uint32 color) {
+                                    real32 r, real32 g, real32 b, real32 a) {
   int32 min_x = real_min_x < 0 ? 0 : round_real32_to_int32(real_min_x);
   int32 min_y = real_min_y < 0 ? 0 : round_real32_to_int32(real_min_y);
   int32 max_x = real_max_x > backbuffer->width
@@ -33,6 +42,12 @@ de100_file_scoped_fn void draw_rect(GameBackBuffer *backbuffer,
   int32 max_y = real_max_y > backbuffer->height
                     ? backbuffer->height
                     : round_real32_to_int32(real_max_y);
+
+  uint32 color =
+      // AARRGGBB format - works for BOTH OpenGL X11 AND Raylib!
+      (round_real32_to_uint32(a * 255) << 24 |
+       round_real32_to_uint32(r * 255) << 16 |
+       round_real32_to_uint32(g * 255) << 8 | round_real32_to_uint32(b * 255));
 
   uint8 *xy_mem_pos =
       // Base address to start from
@@ -78,43 +93,66 @@ void render_weird_gradient(GameBackBuffer *backbuffer,
 */
 
 // Handle game controls
-void handle_controls(GameControllerInput *inputs,
-                     HandMadeHeroGameState *game_state) {
-  (void)inputs;
-  (void)game_state;
 
+// Handle game controls
+void handle_controls(GameControllerInput *inputs,
+                     HandMadeHeroGameState *game_state, real32 frame_time) {
 #if 0
+  if (inputs->action_down.ended_down && game_state->player_state.t_jump <= 0) {
+    game_state->player_state.t_jump = 4.0; // Start jump
+  }
+
+  // Simple jump arc
+  int jump_offset = 0;
+  if (game_state->player_state.t_jump > 0) {
+    jump_offset =
+        (int)(5.0f * sinf(0.5f * M_PI * game_state->player_state.t_jump));
+    game_state->player_state.y += jump_offset;
+  }
+  game_state->player_state.t_jump -= 0.033f; // Tick down jump timer
+#endif
+
   if (inputs->is_analog) {
-    // ═════════════════════════════════════════════════════════
-    // ANALOG MOVEMENT (Joystick)
-    // ═════════════════════════════════════════════════════════
-    // Casey's Day 13 formula:
-    //   BlueOffset += (int)(4.0f * Input0->EndX);
-    //   ToneHz = 256 + (int)(128.0f * Input0->EndY);
-    //
-    // stick_avg_x/stick_avg_y are NORMALIZED (-1.0 to +1.0)!
-    // ═════════════════════════════════════════════════════════
+// NOTE: Use analog movement tuning
+#if 0
 
     real32 stick_avg_x = apply_deadzone(inputs->stick_avg_x);
     real32 stick_avg_y = apply_deadzone(inputs->stick_avg_y);
 
+    // Horizontal stick controls blue offset
 
-    // Vertical stick controls tone frequency
-    // NOTE: `tone_hz` is moved to the game layer, but initilized by the
-    // platform layer
     game_state->audio.tone.frequency = 256 + (int)(128.0f * stick_avg_y);
-
+    
+    // In GameUpdateAndRender:
+    game_state->player_state.x += (int)(4.0f * stick_avg_x);
+    game_state->player_state.y += (int)(4.0f * stick_avg_y);
+#endif
   } else {
+    // NOTE: Use digital movement tuning
+    real32 d_player_x = 0.0f; // pixels/second
+    real32 d_player_y = 0.0f; // pixels/second
+
     if (inputs->move_up.ended_down) {
+      d_player_y = -1.0f;
     }
     if (inputs->move_down.ended_down) {
+      d_player_y = 1.0f;
     }
     if (inputs->move_left.ended_down) {
+      d_player_x = -1.0f;
     }
     if (inputs->move_right.ended_down) {
+      d_player_x = 1.0f;
     }
+    d_player_x *= game_state->speed;
+    d_player_y *= game_state->speed;
+
+    // TODO: Diagonal will be faster!  Fix once we have vectors :)
+    game_state->player_state.x += d_player_x * frame_time;
+    game_state->player_state.y += d_player_y * frame_time;
   }
 
+#if 0
   // Clamp tone
   if (game_state->audio.tone.frequency < 20)
     game_state->audio.tone.frequency = 20;
@@ -180,11 +218,37 @@ GAME_UPDATE_AND_RENDER(game_update_and_render) {
   }
 #endif
 
-  handle_controls(active_controller, game_state);
+  real32 frame_time = de100_get_frame_time();
+
+  handle_controls(active_controller, game_state, frame_time);
 
   draw_rect(buffer, 0.0f, 0.0f, (real32)buffer->width, (real32)buffer->height,
-            0xFFFF00FF);
-  draw_rect(buffer, 10.0f, 10.0f, 40.0f, 40.0f, 0xFF00FFFF);
+            1.0f, 0.0f, 1.0f, 1.0f);
+
+  TileState *tile_state = &game_state->tile_state;
+  for (uint32 row = 0; row < ArraySize(tile_state->map); ++row) {
+    for (uint32 col = 0; col < ArraySize(tile_state->map[0]); ++col) {
+      uint32 tile_id = tile_state->map[row][col];
+      real32 gray = tile_id == 1 ? 1.0f : 0.5f;
+
+      real32 min_x = tile_state->upper_left_x + (real32)col * tile_state->width;
+      real32 min_y =
+          tile_state->upper_left_y + (real32)row * tile_state->height;
+      real32 max_x = min_x + tile_state->width;
+      real32 max_y = min_y + tile_state->height;
+      draw_rect(buffer, min_x, min_y, max_x, max_y, gray, gray, gray, 1.0f);
+    }
+  }
+
+  real32 player_left =
+      game_state->player_state.x - game_state->player_state.width * 0.5;
+  real32 player_top =
+      game_state->player_state.y - game_state->player_state.height * 0.5;
+  draw_rect(buffer, player_left, player_top,
+            player_left + game_state->player_state.width,
+            player_top + game_state->player_state.height,
+            game_state->player_state.color_r, game_state->player_state.color_g,
+            game_state->player_state.color_b, 1.0f);
 
   // Render indicators for pressed mouse buttons
   for (int button_index = 0; button_index < 5; ++button_index) {
@@ -192,7 +256,7 @@ GAME_UPDATE_AND_RENDER(game_update_and_render) {
       draw_rect(buffer,
                 // (10 + 20 * button_index), 0
                 inputs->mouse_x, inputs->mouse_y, inputs->mouse_x + 10,
-                inputs->mouse_y + 10, 0xFF00FFFF);
+                inputs->mouse_y + 10, 0.0f, 1.0f, 1.0f, 1.0f);
     }
   }
 }

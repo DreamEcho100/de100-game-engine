@@ -15,6 +15,25 @@ GameControllerInput *GetController(GameInput *Input,
                                    unsigned int ControllerIndex);
 
 typedef struct {
+  uint32 map[9][17];
+  real32 upper_left_x;
+  real32 upper_left_y;
+  real32 width;
+  real32 height;
+} TileState;
+
+typedef struct {
+  int32 x;
+  int32 y;
+  real32 width;
+  real32 height;
+  real32 t_jump;
+  real32 color_r;
+  real32 color_g;
+  real32 color_b;
+  real32 color_a;
+} PlayerState;
+typedef struct {
   // Audio state (embedded struct, not pointer)
   GameAudioState audio;
   // Future: More game-specific state
@@ -25,6 +44,8 @@ typedef struct {
   // int32 tone_hz;
   // real32 t_sine; // Phase accumulator
 
+  TileState tile_state;
+  PlayerState player_state;
   // Your other state
   int32 speed;
 } HandMadeHeroGameState;

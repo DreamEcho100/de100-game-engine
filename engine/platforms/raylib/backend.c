@@ -251,7 +251,7 @@ int platform_main() {
 
 #if DE100_SANITIZE_WAVE_1_MEMORY
   printf("[%.3fs] Exiting, freeing memory...\n",
-         get_wall_clock() - g_initial_game_time);
+         get_wall_clock() - g_initial_game_time_ms);
 
   if (g_game_buffer_meta.has_texture) {
     UnloadTexture(g_game_buffer_meta.texture);
@@ -262,7 +262,7 @@ int platform_main() {
   engine_shutdown(&engine);
 
   printf("✅ Cleanup complete\n");
-  printf("[%.3fs] Memory freed\n", get_wall_clock() - g_initial_game_time);
+  printf("[%.3fs] Memory freed\n", get_wall_clock() - g_initial_game_time_ms);
 #endif
 
 #if DE100_INTERNAL

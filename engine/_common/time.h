@@ -12,8 +12,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 typedef struct {
-    int64 seconds;
-    int64 nanoseconds;
+  int64 seconds;
+  int64 nanoseconds;
 } PlatformTimeSpec;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -39,8 +39,9 @@ real64 get_wall_clock(void);
  *
  * Note: This is a trivial subtraction, provided for API symmetry.
  */
-de100_file_scoped_fn inline real64 get_seconds_elapsed(real64 start, real64 end) {
-    return end - start;
+de100_file_scoped_fn inline real64 get_seconds_elapsed(real64 start,
+                                                       real64 end) {
+  return end - start;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -102,6 +103,9 @@ real64 platform_timespec_to_seconds(const PlatformTimeSpec *time);
  */
 real64 platform_timespec_diff_seconds(const PlatformTimeSpec *start,
                                       const PlatformTimeSpec *end);
+
+real64 platform_timespec_diff_milliseconds(const PlatformTimeSpec *start,
+                                           const PlatformTimeSpec *end);
 
 /**
  * Compare two PlatformTimeSpec values.

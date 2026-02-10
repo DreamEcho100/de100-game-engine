@@ -10,6 +10,7 @@ typedef struct {
   PlatformTimeSpec frame_end;
   real32 work_seconds;
   real32 total_seconds;
+  // real32 total_ms;
   real32 sleep_seconds;
 #if DE100_INTERNAL
   uint64 start_cycles;

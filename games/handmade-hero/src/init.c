@@ -53,7 +53,30 @@ GAME_INIT(game_init) {
     game_state->audio.tone.is_playing = true;
     game_state->audio.master_volume = 1.0f;
 
-    game_state->speed = 5;
+    game_state->speed = 64;
+
+    uint32 temp_map[9][17] = {
+        {1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1},
+        {1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1},
+        {1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1},
+        {1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1},
+        {0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0},
+        {1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1},
+        {1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1},
+        {1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1},
+        {1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1},
+    };
+    de100_mem_copy(game_state->tile_state.map, temp_map, sizeof(temp_map));
+    game_state->tile_state.upper_left_x = -30;
+    game_state->tile_state.upper_left_y = 0;
+    game_state->tile_state.width = 60;
+    game_state->tile_state.height = 60;
+
+    game_state->player_state.color_r = 1.0f;
+    game_state->player_state.color_g = 1.0f;
+    game_state->player_state.color_b = 0.0f;
+    game_state->player_state.width = 0.75f * game_state->tile_state.width;
+    game_state->player_state.height = game_state->tile_state.height;
 
     memory->is_initialized = true;
 #if DE100_INTERNAL

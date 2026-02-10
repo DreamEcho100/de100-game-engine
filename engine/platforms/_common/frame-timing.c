@@ -56,6 +56,9 @@ void frame_timing_end() {
       &g_frame_timing.frame_start, &g_frame_timing.frame_end);
   g_frame_timing.sleep_seconds =
       g_frame_timing.total_seconds - g_frame_timing.work_seconds;
+
+  // g_frame_timing.total_ms = (real32)platform_timespec_diff_milliseconds(
+  //     &g_frame_timing.frame_start, &g_frame_timing.frame_end);
 }
 
 real32 frame_timing_get_ms() { return g_frame_timing.total_seconds * 1000.0f; }

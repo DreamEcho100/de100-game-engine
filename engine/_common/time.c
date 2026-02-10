@@ -257,6 +257,19 @@ real64 platform_timespec_diff_seconds(const PlatformTimeSpec *start,
   return (real64)sec_diff + (real64)nsec_diff / 1000000000.0;
 }
 
+real64 platform_timespec_diff_milliseconds(const PlatformTimeSpec *start,
+                                           const PlatformTimeSpec *end) {
+  if (!start || !end) {
+    return 0.0;
+  }
+
+  // Calculate difference with proper handling of nanosecond underflow
+  int64 ms_diff = end->seconds * 1000 + end->nanoseconds / 1000000 -
+                  start->seconds * 1000 - start->nanoseconds / 1000000;
+
+  return (real64)ms_diff;
+}
+
 int32 platform_timespec_compare(const PlatformTimeSpec *a,
                                 const PlatformTimeSpec *b) {
   if (!a || !b) {
