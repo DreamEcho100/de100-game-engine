@@ -68,6 +68,17 @@ de100_file_scoped_global_var int g_last_window_height = 0;
 // OpenGL Functions
 // ═══════════════════════════════════════════════════════════════════════════
 
+de100_file_scoped_fn inline void opengl_update_projection(int window_width,
+                                                          int window_height) {
+  // TODO: Make this call configurable
+  glViewport(0, 0, window_width, window_height); // Add this!
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  glOrtho(0, window_width, window_height, 0, -1, 1);
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+}
+
 de100_file_scoped_fn inline bool opengl_init(Display *display, Window window,
                                              int width, int height) {
   int visual_attribs[] = {GLX_RGBA, GLX_DEPTH_SIZE, 24, GLX_DOUBLEBUFFER, None};
@@ -104,6 +115,8 @@ de100_file_scoped_fn inline bool opengl_init(Display *display, Window window,
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
 
+  opengl_update_projection(width, height);
+
   glEnable(GL_TEXTURE_2D);
 
   printf("✅ OpenGL initialized (version: %s)\n", glGetString(GL_VERSION));
@@ -112,25 +125,37 @@ de100_file_scoped_fn inline bool opengl_init(Display *display, Window window,
 }
 
 de100_file_scoped_fn inline void
-opengl_display_buffer(GameBackBuffer *backbuffer) {
+opengl_display_buffer(GameBackBuffer *backbuffer, int window_width,
+                      int window_height) {
+  (void)window_width;
+  (void)window_height;
   if (!de100_memory_is_valid(backbuffer->memory))
     return;
+
+  // Center the backbuffer in the window
+  int offset_x = (window_width - backbuffer->width) / 2;
+  int offset_y = (window_height - backbuffer->height) / 2;
+
+  // Or fixed offset like Casey:
+  // int offset_x = 10;
+  // int offset_y = 10;
+
+  glClear(GL_COLOR_BUFFER_BIT);
 
   glBindTexture(GL_TEXTURE_2D, g_gl.texture_id);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, backbuffer->width, backbuffer->height,
                0, GL_RGBA, GL_UNSIGNED_BYTE, backbuffer->memory.base);
 
-  glClear(GL_COLOR_BUFFER_BIT);
-
+  // Draw at offset with BACKBUFFER size, not window size
   glBegin(GL_QUADS);
   glTexCoord2f(0.0f, 0.0f);
-  glVertex2f(0, 0);
+  glVertex2f(offset_x, offset_y);
   glTexCoord2f(1.0f, 0.0f);
-  glVertex2f(backbuffer->width, 0);
+  glVertex2f(offset_x + backbuffer->width, offset_y);
   glTexCoord2f(1.0f, 1.0f);
-  glVertex2f(backbuffer->width, backbuffer->height);
+  glVertex2f(offset_x + backbuffer->width, offset_y + backbuffer->height);
   glTexCoord2f(0.0f, 1.0f);
-  glVertex2f(0, backbuffer->height);
+  glVertex2f(offset_x, offset_y + backbuffer->height);
   glEnd();
 
   glXSwapBuffers(g_gl.display, g_gl.window);
@@ -165,6 +190,9 @@ de100_file_scoped_fn inline void x11_handle_event(Display *display,
              g_last_window_height, new_width, new_height);
       g_last_window_width = new_width;
       g_last_window_height = new_height;
+
+      // Update OpenGL projection to match new window size
+      opengl_update_projection(new_width, new_height);
     }
     break;
   }
@@ -178,11 +206,13 @@ de100_file_scoped_fn inline void x11_handle_event(Display *display,
     break;
   }
 
+  // In Expose handler:
   case Expose: {
     if (event->xexpose.count != 0)
       break;
     printf("Repainting window\n");
-    opengl_display_buffer(&game->backbuffer);
+    opengl_display_buffer(&game->backbuffer, g_last_window_width,
+                          g_last_window_height);
     XFlush(display);
     break;
   }
@@ -276,6 +306,9 @@ audio_generate_and_send(EnginePlatformState *platform, EngineGameState *game) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 de100_file_scoped_fn inline int x11_init(EngineState *engine) {
+  g_last_window_width = engine->game.config.window_width;
+  g_last_window_height = engine->game.config.window_height;
+
   X11PlatformState *x11 = calloc(1, sizeof(X11PlatformState));
   if (!x11) {
     fprintf(stderr, "❌ Failed to allocate X11 state\n");
@@ -459,7 +492,8 @@ int platform_main() {
                              display_marker_index);
 #endif
 
-    opengl_display_buffer(&engine.game.backbuffer);
+    opengl_display_buffer(&engine.game.backbuffer, g_last_window_width,
+                          g_last_window_height);
     XSync(x11->display, False);
 
 #if DE100_INTERNAL

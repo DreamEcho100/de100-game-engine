@@ -19,14 +19,19 @@ de100_file_scoped_fn inline real32 apply_deadzone(real32 value) {
 }
 #endif
 
-de100_file_scoped_fn int32 round_real32_to_int32(real32 num) {
+de100_file_scoped_fn inline int32 round_real32_to_int32(real32 num) {
   int32 result = (int32)(num + 0.5f);
   // TODO: Intrinsic????
   return (result);
 }
-de100_file_scoped_fn uint32 round_real32_to_uint32(real32 num) {
+de100_file_scoped_fn inline uint32 round_real32_to_uint32(real32 num) {
   uint32 result = (uint32)(num + 0.5f);
   // TODO: Intrinsic????
+  return (result);
+}
+
+de100_file_scoped_fn inline int32 truncate_real32_to_int32(real32 num) {
+  int32 result = (int32)(num);
   return (result);
 }
 
@@ -34,6 +39,7 @@ de100_file_scoped_fn void draw_rect(GameBackBuffer *backbuffer,
                                     real32 real_min_x, real32 real_min_y,
                                     real32 real_max_x, real32 real_max_y,
                                     real32 r, real32 g, real32 b, real32 a) {
+  (void)a;
   int32 min_x = real_min_x < 0 ? 0 : round_real32_to_int32(real_min_x);
   int32 min_y = real_min_y < 0 ? 0 : round_real32_to_int32(real_min_y);
   int32 max_x = real_max_x > backbuffer->width
@@ -47,7 +53,8 @@ de100_file_scoped_fn void draw_rect(GameBackBuffer *backbuffer,
       // AARRGGBB format - works for BOTH OpenGL X11 AND Raylib!
       (round_real32_to_uint32(a * 255) << 24 |
        round_real32_to_uint32(r * 255) << 16 |
-       round_real32_to_uint32(g * 255) << 8 | round_real32_to_uint32(b * 255));
+       round_real32_to_uint32(g * 255) << 8 |
+       round_real32_to_uint32(b * 255) << 0);
 
   uint8 *xy_mem_pos =
       // Base address to start from
@@ -66,33 +73,82 @@ de100_file_scoped_fn void draw_rect(GameBackBuffer *backbuffer,
   }
 }
 
-/*
-void render_weird_gradient(GameBackBuffer *backbuffer,
-                           HandMadeHeroGameState *game_state) {
-  uint8 *row = (uint8 *)backbuffer->memory.base;
-
-  // The following is correct for X11
-  for (int y = 0; y < backbuffer->height; ++y) {
-    int offset_x = game_state->gradient_state.offset_x;
-    uint32 *pixel = (uint32 *)row;
-    int offset_y = game_state->gradient_state.offset_y;
-
-    for (int x = 0; x < backbuffer->width; ++x) {
-      uint8 blue = (uint8)(x + offset_x);
-      uint8 green = (uint8)(y + offset_y);
-
-      // RGBA format - works for BOTH OpenGL X11 AND Raylib!
-      *pixel++ = (0xFF000000u |  // Alpha = 255
-                  (blue << 16) | // Blue
-                  (green << 8) | // Green
-                  (0));
-    }
-    row += backbuffer->pitch;
-  }
+de100_file_scoped_fn inline uint32
+get_tile_value_unchecked(TileMapState *tile_map, int32 tile_x, int32 tile_row) {
+  return tile_map->tiles[tile_row * tile_map->column_count + tile_x];
 }
-*/
 
-// Handle game controls
+de100_file_scoped_fn inline bool32
+is_tile_map_point_empty(TileMapState *tile_map, uint32 x, uint32 y) {
+  bool32 is_empty = false;
+
+  uint32 tile_col =
+      truncate_real32_to_int32((x - tile_map->origin_x) / tile_map->width);
+  uint32 tile_row =
+      truncate_real32_to_int32((y - tile_map->origin_y) / tile_map->height);
+
+  if (tile_col >= 0 && tile_col < tile_map->column_count && tile_row >= 0 &&
+      tile_row < tile_map->row_count) {
+    int32 tile_map_value =
+        get_tile_value_unchecked(tile_map, tile_col, tile_row);
+
+    is_empty = (tile_map_value == 0);
+
+    if (!is_empty) {
+#if DE100_INTERNAL
+      printf("Blocked by tile at (%d, %d) with value %d\n", tile_col, tile_row,
+             tile_map_value);
+#endif
+    }
+  }
+
+  return is_empty;
+}
+
+#if 0
+de100_file_scoped_fn inline TileMapState *
+get_tile_map(WorldState *world, int32 tile_map_x, int32 tile_map_y) {
+  TileMapState *tile_map = 0;
+
+  if (tile_map_x >= 0 && tile_map_x < world->tile_map_count_x &&
+      tile_map_y >= 0 && tile_map_y < world->tile_map_count_y) {
+    tile_map =
+        &world->tile_maps[tile_map_y * world->tile_map_count_x + tile_map_x];
+  }
+
+  return tile_map;
+}
+
+de100_file_scoped_fn inline bool32
+is_world_map_point_empty(WorldState *world, uint32 x, uint32 y) {
+  bool32 is_empty = false;
+
+  TileMapState *tile_map = get_tile_map(world, x, y);
+  if (tile_map) {
+    uint32 tile_col =
+        truncate_real32_to_int32((x - tile_map->origin_x) / tile_map->width);
+    uint32 tile_row =
+        truncate_real32_to_int32((y - tile_map->origin_y) / tile_map->height);
+
+    if (tile_col >= 0 && tile_col < tile_map->column_count && tile_row >= 0 &&
+        tile_row < tile_map->row_count) {
+      int32 tile_map_value =
+          get_tile_value_unchecked(tile_map, tile_col, tile_row);
+
+      is_empty = (tile_map_value == 0);
+
+      if (!is_empty) {
+#if DE100_INTERNAL
+        printf("Blocked by tile at (%d, %d) with value %d\n", tile_col,
+               tile_row, tile_map_value);
+#endif
+      }
+    }
+  }
+
+  return is_empty;
+}
+#endif
 
 // Handle game controls
 void handle_controls(GameControllerInput *inputs,
@@ -148,8 +204,31 @@ void handle_controls(GameControllerInput *inputs,
     d_player_y *= game_state->speed;
 
     // TODO: Diagonal will be faster!  Fix once we have vectors :)
-    game_state->player_state.x += d_player_x * frame_time;
-    game_state->player_state.y += d_player_y * frame_time;
+    int32 new_player_state_x =
+        game_state->player_state.x + (int32)(d_player_x * frame_time);
+    int32 new_player_state_y =
+        game_state->player_state.y + (int32)(d_player_y * frame_time);
+
+    if (
+        // Check center point of player from his origin _(in this case bottom
+        // center)_
+        is_tile_map_point_empty(game_state->active_tile_map, new_player_state_x,
+                                new_player_state_y) &&
+        // Check left edge of player _(in this case we multiply by 0.5f since
+        // player width is centered around his origin)_
+        is_tile_map_point_empty(game_state->active_tile_map,
+                                new_player_state_x -
+                                    game_state->player_state.width * 0.5f,
+                                new_player_state_y) &&
+        // Check right edge of player _(in this case we multiply by 0.5f since
+        // player width is centered around his origin)_
+        is_tile_map_point_empty(game_state->active_tile_map,
+                                new_player_state_x +
+                                    game_state->player_state.width * 0.5f,
+                                new_player_state_y)) {
+      game_state->player_state.x = new_player_state_x;
+      game_state->player_state.y = new_player_state_y;
+    }
   }
 
 #if 0
@@ -225,17 +304,18 @@ GAME_UPDATE_AND_RENDER(game_update_and_render) {
   draw_rect(buffer, 0.0f, 0.0f, (real32)buffer->width, (real32)buffer->height,
             1.0f, 0.0f, 1.0f, 1.0f);
 
-  TileState *tile_state = &game_state->tile_state;
-  for (uint32 row = 0; row < ArraySize(tile_state->map); ++row) {
-    for (uint32 col = 0; col < ArraySize(tile_state->map[0]); ++col) {
-      uint32 tile_id = tile_state->map[row][col];
+  TileMapState *active_tile_map = game_state->active_tile_map;
+  for (uint32 row = 0; row < active_tile_map->row_count; ++row) {
+    for (uint32 col = 0; col < active_tile_map->column_count; ++col) {
+      uint32 tile_id = get_tile_value_unchecked(active_tile_map, col, row);
       real32 gray = tile_id == 1 ? 1.0f : 0.5f;
 
-      real32 min_x = tile_state->upper_left_x + (real32)col * tile_state->width;
+      real32 min_x =
+          active_tile_map->origin_x + (real32)col * active_tile_map->width;
       real32 min_y =
-          tile_state->upper_left_y + (real32)row * tile_state->height;
-      real32 max_x = min_x + tile_state->width;
-      real32 max_y = min_y + tile_state->height;
+          active_tile_map->origin_y + (real32)row * active_tile_map->height;
+      real32 max_x = min_x + active_tile_map->width;
+      real32 max_y = min_y + active_tile_map->height;
       draw_rect(buffer, min_x, min_y, max_x, max_y, gray, gray, gray, 1.0f);
     }
   }
@@ -248,7 +328,7 @@ GAME_UPDATE_AND_RENDER(game_update_and_render) {
             player_left + game_state->player_state.width,
             player_top + game_state->player_state.height,
             game_state->player_state.color_r, game_state->player_state.color_g,
-            game_state->player_state.color_b, 1.0f);
+            game_state->player_state.color_b, game_state->player_state.color_a);
 
   // Render indicators for pressed mouse buttons
   for (int button_index = 0; button_index < 5; ++button_index) {
@@ -369,3 +449,29 @@ GAME_GET_AUDIO_SAMPLES(game_get_audio_samples) {
     }
   }
 }
+
+/*
+void render_weird_gradient(GameBackBuffer *backbuffer,
+                           HandMadeHeroGameState *game_state) {
+  uint8 *row = (uint8 *)backbuffer->memory.base;
+
+  // The following is correct for X11
+  for (int y = 0; y < backbuffer->height; ++y) {
+    int offset_x = game_state->gradient_state.offset_x;
+    uint32 *pixel = (uint32 *)row;
+    int offset_y = game_state->gradient_state.offset_y;
+
+    for (int x = 0; x < backbuffer->width; ++x) {
+      uint8 blue = (uint8)(x + offset_x);
+      uint8 green = (uint8)(y + offset_y);
+
+      // RGBA format - works for BOTH OpenGL X11 AND Raylib!
+      *pixel++ = (0xFF000000u |  // Alpha = 255
+                  (blue << 16) | // Blue
+                  (green << 8) | // Green
+                  (0));
+    }
+    row += backbuffer->pitch;
+  }
+}
+*/

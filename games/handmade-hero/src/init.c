@@ -55,28 +55,94 @@ GAME_INIT(game_init) {
 
     game_state->speed = 64;
 
-    uint32 temp_map[9][17] = {
-        {1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1},
-        {1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1},
-        {1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1},
-        {1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1},
-        {0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0},
-        {1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1},
-        {1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1},
-        {1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1},
-        {1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1},
-    };
-    de100_mem_copy(game_state->tile_state.map, temp_map, sizeof(temp_map));
-    game_state->tile_state.upper_left_x = -30;
-    game_state->tile_state.upper_left_y = 0;
-    game_state->tile_state.width = 60;
-    game_state->tile_state.height = 60;
+    // TODO: consider arenas
+    local_persist_var uint32
+        tiles00[TILE_MAP_ROW_COUNT][TILE_MAP_COLUMN_COUNT] = {
+            {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+            {1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1},
+            {1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1},
+            {1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1},
+            {1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1},
+            {1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1},
+        };
 
+    local_persist_var uint32
+        tiles01[TILE_MAP_ROW_COUNT][TILE_MAP_COLUMN_COUNT] = {
+            {1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+        };
+
+    local_persist_var uint32
+        tiles10[TILE_MAP_ROW_COUNT][TILE_MAP_COLUMN_COUNT] = {
+            {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1},
+        };
+
+    local_persist_var uint32
+        tiles11[TILE_MAP_ROW_COUNT][TILE_MAP_COLUMN_COUNT] = {
+            {1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+        };
+
+    local_persist_var TileMapState tile_maps[2][2];
+    tile_maps[0][0].column_count = TILE_MAP_COLUMN_COUNT;
+    tile_maps[0][0].row_count = TILE_MAP_ROW_COUNT;
+
+    tile_maps[0][0].origin_x = -30;
+    tile_maps[0][0].origin_y = 0;
+    tile_maps[0][0].width = 60;
+    tile_maps[0][0].height = 60;
+
+    tile_maps[0][0].tiles = (uint32 *)tiles00;
+
+    tile_maps[0][1] = tile_maps[0][0];
+    tile_maps[0][1].tiles = (uint32 *)tiles01;
+
+    tile_maps[1][0] = tile_maps[0][0];
+    tile_maps[1][0].tiles = (uint32 *)tiles10;
+
+    tile_maps[1][1] = tile_maps[0][0];
+    tile_maps[1][1].tiles = (uint32 *)tiles11;
+
+    game_state->active_tile_map = &tile_maps[0][0];
+
+    game_state->world.tile_map_count_x = 2;
+    game_state->world.tile_map_count_y = 2;
+
+    game_state->world.tile_maps = (TileMapState *)tile_maps;
+
+    game_state->player_state.x = 150;
+    game_state->player_state.y = 150;
     game_state->player_state.color_r = 1.0f;
     game_state->player_state.color_g = 1.0f;
     game_state->player_state.color_b = 0.0f;
-    game_state->player_state.width = 0.75f * game_state->tile_state.width;
-    game_state->player_state.height = game_state->tile_state.height;
+    game_state->player_state.color_a = 1.0f;
+    game_state->player_state.width = 0.75f * game_state->active_tile_map->width;
+    game_state->player_state.height = game_state->active_tile_map->height;
 
     memory->is_initialized = true;
 #if DE100_INTERNAL

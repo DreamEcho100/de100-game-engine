@@ -81,8 +81,22 @@ update_window_from_backbuffer(GameBackBuffer *backbuffer) {
     return;
   }
 
+  int window_width = GetScreenWidth();
+  int window_height = GetScreenHeight();
+
+  // Center the backbuffer in the window
+  int offset_x = (window_width - backbuffer->width) / 2;
+  int offset_y = (window_height - backbuffer->height) / 2;
+
+  // Or fixed offset like Casey:
+  // int offset_x = 10;
+  // int offset_y = 10;
+
   UpdateTexture(g_game_buffer_meta.texture, backbuffer->memory.base);
-  DrawTexture(g_game_buffer_meta.texture, 0, 0, WHITE);
+
+  // ClearBackground(BLACK) already clears the whole window
+  // Just draw the texture at an offset instead of (0, 0)
+  DrawTexture(g_game_buffer_meta.texture, offset_x, offset_y, WHITE);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -178,10 +192,10 @@ int platform_main() {
     handle_game_reload_check(&engine.platform.code, &engine.platform.paths);
     prepare_input_frame(engine.platform.old_inputs, engine.game.inputs);
 
-    if (IsWindowResized()) {
-      resize_back_buffer(&engine.game.backbuffer, GetScreenWidth(),
-                         GetScreenHeight());
-    }
+    // if (IsWindowResized()) {
+    //   resize_back_buffer(&engine.game.backbuffer, GetScreenWidth(),
+    //                      GetScreenHeight());
+    // }
 
     handle_keyboard_inputs(&engine.platform, &engine.game);
     raylib_poll_gamepad(engine.game.inputs);
