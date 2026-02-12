@@ -20,7 +20,7 @@ GAME_INIT(game_init) {
   DEV_ASSERT_MSG(sizeof(_GameButtonsCounter) == sizeof(GameButtonState) * 12,
                  "Button struct size mismatch");
 
-  HandMadeHeroGameState *game_state =
+  HandMadeHeroGameState *game =
       (HandMadeHeroGameState *)memory->permanent_storage;
 
   if (!memory->is_initialized) { // false (skip!)
@@ -46,18 +46,28 @@ GAME_INIT(game_init) {
            1); // change this number each rebuild
 
     // Initialize audio state
-    game_state->audio.tone.frequency = 256;
-    game_state->audio.tone.phase = 0.0f;
-    game_state->audio.tone.volume = 1.0f;
-    game_state->audio.tone.pan_position = 0.0f;
-    game_state->audio.tone.is_playing = true;
-    game_state->audio.master_volume = 1.0f;
+    game->audio.tone.frequency = 256;
+    game->audio.tone.phase = 0.0f;
+    game->audio.tone.volume = 1.0f;
+    game->audio.tone.pan_position = 0.0f;
+    game->audio.tone.is_playing = true;
+    game->audio.master_volume = 1.0f;
 
-    game_state->speed = 64;
+    game->speed = 128;
+
+    game->world.tiles_per_map_x_count = TILES_PER_MAP_X_COUNT;
+    game->world.tiles_per_map_y_count = TILES_PER_MAP_Y_COUNT;
+
+    game->world.origin_x = -30;
+    game->world.origin_y = 0;
+    game->world.tilemap_width_px = 60;
+    game->world.tilemap_height_px = 60;
+    game->world.tilemaps_count_x = 2;
+    game->world.tilemaps_count_y = 2;
 
     // TODO: consider arenas
     local_persist_var uint32
-        tiles00[TILE_MAP_ROW_COUNT][TILE_MAP_COLUMN_COUNT] = {
+        tiles_Y0_X0[TILES_PER_MAP_Y_COUNT][TILES_PER_MAP_X_COUNT] = {
             {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
             {1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1},
             {1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1},
@@ -70,7 +80,7 @@ GAME_INIT(game_init) {
         };
 
     local_persist_var uint32
-        tiles01[TILE_MAP_ROW_COUNT][TILE_MAP_COLUMN_COUNT] = {
+        tiles_Y1_X0[TILES_PER_MAP_Y_COUNT][TILES_PER_MAP_X_COUNT] = {
             {1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1},
             {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
             {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
@@ -83,7 +93,7 @@ GAME_INIT(game_init) {
         };
 
     local_persist_var uint32
-        tiles10[TILE_MAP_ROW_COUNT][TILE_MAP_COLUMN_COUNT] = {
+        tiles_Y0_X1[TILES_PER_MAP_Y_COUNT][TILES_PER_MAP_X_COUNT] = {
             {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
             {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
             {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
@@ -96,7 +106,7 @@ GAME_INIT(game_init) {
         };
 
     local_persist_var uint32
-        tiles11[TILE_MAP_ROW_COUNT][TILE_MAP_COLUMN_COUNT] = {
+        tiles_Y1_X1[TILES_PER_MAP_Y_COUNT][TILES_PER_MAP_X_COUNT] = {
             {1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1},
             {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
             {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
@@ -108,41 +118,23 @@ GAME_INIT(game_init) {
             {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
         };
 
-    local_persist_var TileMapState tile_maps[2][2];
-    tile_maps[0][0].column_count = TILE_MAP_COLUMN_COUNT;
-    tile_maps[0][0].row_count = TILE_MAP_ROW_COUNT;
+    local_persist_var Tilemap tilemaps[TILE_MAPS_Y_COUNT][TILE_MAPS_X_COUNT];
 
-    tile_maps[0][0].origin_x = -30;
-    tile_maps[0][0].origin_y = 0;
-    tile_maps[0][0].width = 60;
-    tile_maps[0][0].height = 60;
+    tilemaps[0][0].tiles = (uint32 *)tiles_Y0_X0;
+    tilemaps[0][1].tiles = (uint32 *)tiles_Y0_X1;
+    tilemaps[1][0].tiles = (uint32 *)tiles_Y1_X0;
+    tilemaps[1][1].tiles = (uint32 *)tiles_Y1_X1;
 
-    tile_maps[0][0].tiles = (uint32 *)tiles00;
+    game->world.tilemaps = (Tilemap *)tilemaps;
 
-    tile_maps[0][1] = tile_maps[0][0];
-    tile_maps[0][1].tiles = (uint32 *)tiles01;
-
-    tile_maps[1][0] = tile_maps[0][0];
-    tile_maps[1][0].tiles = (uint32 *)tiles10;
-
-    tile_maps[1][1] = tile_maps[0][0];
-    tile_maps[1][1].tiles = (uint32 *)tiles11;
-
-    game_state->active_tile_map = &tile_maps[0][0];
-
-    game_state->world.tile_map_count_x = 2;
-    game_state->world.tile_map_count_y = 2;
-
-    game_state->world.tile_maps = (TileMapState *)tile_maps;
-
-    game_state->player_state.x = 150;
-    game_state->player_state.y = 150;
-    game_state->player_state.color_r = 1.0f;
-    game_state->player_state.color_g = 1.0f;
-    game_state->player_state.color_b = 0.0f;
-    game_state->player_state.color_a = 1.0f;
-    game_state->player_state.width = 0.75f * game_state->active_tile_map->width;
-    game_state->player_state.height = game_state->active_tile_map->height;
+    game->player.x = 150;
+    game->player.y = 150;
+    game->player.color_r = 0.0f;
+    game->player.color_g = 1.0f;
+    game->player.color_b = 1.0f;
+    game->player.color_a = 1.0f;
+    game->player.width = 0.75f * game->world.tilemap_width_px;
+    game->player.height = game->world.tilemap_height_px;
 
     memory->is_initialized = true;
 #if DE100_INTERNAL

@@ -54,16 +54,17 @@
     }                                                                          \
   } while (0)
 
-#define ASSERT_MSG(expr, msg)                                                  \
+#define ASSERT_MSG(expr, fmt, ...)                                             \
   do {                                                                         \
     if (!(expr)) {                                                             \
       fprintf(stderr,                                                          \
               "ASSERTION FAILED\n"                                             \
               "  Expression: %s\n"                                             \
-              "  Message: %s\n"                                                \
+              "  Message: " fmt "\n"                                           \
               "  File: %s\n"                                                   \
-              "  Line: %d\n",                                                  \
-              #expr, msg, __FILE__, __LINE__);                                 \
+              "  Line: %d\n"                                                   \
+              "  File:Line: %s:%d\n",                                          \
+              #expr, ##__VA_ARGS__, __FILE__, __LINE__, __FILE__, __LINE__);   \
       fflush(stderr);                                                          \
       DEBUG_BREAK();                                                           \
     }                                                                          \
@@ -79,11 +80,11 @@
 #if DE100_SLOW
 #define DEV_DEBUG_BREAK() DEBUG_BREAK()
 #define DEV_ASSERT(expr) ASSERT(expr)
-#define DEV_ASSERT_MSG(expr, msg) ASSERT_MSG(expr, msg)
+#define DEV_ASSERT_MSG(expr, fmt, ...) ASSERT_MSG(expr, fmt, ##__VA_ARGS__)
 #else
 #define DEV_DEBUG_BREAK() ((void)0)
 #define DEV_ASSERT(expr) ((void)0)
-#define DEV_ASSERT_MSG(e, msg) ((void)0)
+#define DEV_ASSERT_MSG(expr, fmt, ...) ((void)0)
 #endif
 
 /* ========================= FRAME RATE CONFIG ========================= */

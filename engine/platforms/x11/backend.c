@@ -432,9 +432,7 @@ int platform_main() {
   }
 
   if (x11_init(&engine) != 0) {
-#if DE100_SANITIZE_WAVE_1_MEMORY
     engine_shutdown(&engine);
-#endif
     return 1;
   }
 
@@ -539,16 +537,15 @@ int platform_main() {
     engine_swap_inputs(&engine);
   }
 
-#if DE100_SANITIZE_WAVE_1_MEMORY
   printf("[%.3fs] Exiting, freeing memory...\n",
          get_wall_clock() - g_initial_game_time_ms);
-
+#if DE100_SANITIZE_WAVE_1_MEMORY
   x11_shutdown(&engine);
+#endif
   engine_shutdown(&engine);
 
   printf("✅ Cleanup complete\n");
   printf("[%.3fs] Memory freed\n", get_wall_clock() - g_initial_game_time_ms);
-#endif
 
 #if DE100_INTERNAL
   frame_stats_print();

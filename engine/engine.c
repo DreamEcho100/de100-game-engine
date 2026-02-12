@@ -218,14 +218,17 @@ int engine_init(EngineState *engine) {
 
 void engine_shutdown(EngineState *engine) {
   EnginePlatformState *platform = &engine->platform;
+#if DE100_SANITIZE_WAVE_1_MEMORY
   EngineGameState *game = &engine->game;
   EngineAllocations *allocations = &engine->allocations;
+#endif
 
   printf("[SHUTDOWN] Engine cleanup...\n");
 
   replay_buffers_shutdown(platform->memory_state.replay_buffers,
                           platform->memory_state.total_size);
 
+#if DE100_SANITIZE_WAVE_1_MEMORY
   // Clean up temp files
   de100_file_delete(platform->paths.game_main_lib_tmp_path);
   de100_file_delete(platform->paths.game_startup_lib_tmp_path);
@@ -244,6 +247,7 @@ void engine_shutdown(EngineState *engine) {
 
   input_recording_end(&engine->platform.memory_state);
   input_recording_playback_end(&engine->platform.memory_state);
+#endif
 
   printf("[SHUTDOWN] Engine cleanup complete\n");
 }
