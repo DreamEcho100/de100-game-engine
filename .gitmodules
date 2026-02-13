@@ -1,0 +1,3 @@
+[submodule "handmade-hero-game"]
+	path = games/handmade-hero-game
+	url = git@github.com:DreamEcho100/handmade-hero-game.git
