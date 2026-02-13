@@ -79,8 +79,8 @@ make_result(bool success, ReplayBufferErrorCode code) {
  * Windows memory-mapping implementation.
  * Uses CreateFileMapping + MapViewOfFile.
  */
-de100_file_scoped_fn void *
-platform_mmap_file(int32 fd, uint64 size, ReplayBufferErrorCode *out_error) {
+de100_file_scoped_fn void *de100_mmap_file(int32 fd, uint64 size,
+                                           ReplayBufferErrorCode *out_error) {
   *out_error = REPLAY_BUFFER_SUCCESS;
 
   // Get Windows HANDLE from file descriptor
@@ -121,14 +121,14 @@ platform_mmap_file(int32 fd, uint64 size, ReplayBufferErrorCode *out_error) {
   return ptr;
 }
 
-de100_file_scoped_fn void platform_munmap_file(void *ptr, uint64 size) {
+de100_file_scoped_fn void de100_munmap_file(void *ptr, uint64 size) {
   (void)size; // Windows doesn't need size for unmap
   if (ptr) {
     UnmapViewOfFile(ptr);
   }
 }
 
-de100_file_scoped_fn bool platform_file_resize(int32 fd, uint64 size) {
+de100_file_scoped_fn bool de100_file_resize(int32 fd, uint64 size) {
   HANDLE file_handle = (HANDLE)_get_osfhandle(fd);
   if (file_handle == INVALID_HANDLE_VALUE) {
     return false;
@@ -150,8 +150,8 @@ de100_file_scoped_fn bool platform_file_resize(int32 fd, uint64 size) {
  * POSIX memory-mapping implementation.
  * Uses mmap directly.
  */
-de100_file_scoped_fn void *
-platform_mmap_file(int32 fd, uint64 size, ReplayBufferErrorCode *out_error) {
+de100_file_scoped_fn void *de100_mmap_file(int32 fd, uint64 size,
+                                           ReplayBufferErrorCode *out_error) {
   *out_error = REPLAY_BUFFER_SUCCESS;
 
   void *ptr = mmap(NULL, // Let OS choose address
@@ -172,13 +172,13 @@ platform_mmap_file(int32 fd, uint64 size, ReplayBufferErrorCode *out_error) {
   return ptr;
 }
 
-de100_file_scoped_fn void platform_munmap_file(void *ptr, uint64 size) {
+de100_file_scoped_fn void de100_munmap_file(void *ptr, uint64 size) {
   if (ptr && ptr != MAP_FAILED) {
     munmap(ptr, (size_t)size);
   }
 }
 
-de100_file_scoped_fn bool platform_file_resize(int32 fd, uint64 size) {
+de100_file_scoped_fn bool de100_file_resize(int32 fd, uint64 size) {
   if (ftruncate(fd, (off_t)size) != 0) {
 #if DE100_INTERNAL && DE100_SLOW
     fprintf(stderr, "[REPLAY BUFFER] ftruncate failed: %s\n", strerror(errno));
@@ -266,7 +266,7 @@ ReplayBufferInitResult replay_buffers_init(const char *exe_directory,
     // CRITICAL: mmap requires the file to be the right size FIRST!
     // ─────────────────────────────────────────────────────────────────
 
-    if (!platform_file_resize(buffer->file_fd, total_size)) {
+    if (!de100_file_resize(buffer->file_fd, total_size)) {
       buffer->last_error = REPLAY_BUFFER_ERROR_FILE_RESIZE_FAILED;
       de100_file_close(buffer->file_fd);
       buffer->file_fd = -1;
@@ -279,7 +279,7 @@ ReplayBufferInitResult replay_buffers_init(const char *exe_directory,
 
     ReplayBufferErrorCode mmap_error;
     buffer->memory_block =
-        platform_mmap_file(buffer->file_fd, total_size, &mmap_error);
+        de100_mmap_file(buffer->file_fd, total_size, &mmap_error);
 
     if (!buffer->memory_block) {
       buffer->last_error = mmap_error;
@@ -343,7 +343,7 @@ void replay_buffers_shutdown(ReplayBuffer *buffers, uint64 total_size) {
 
     // Unmap memory
     if (buffer->memory_block) {
-      platform_munmap_file(buffer->memory_block, total_size);
+      de100_munmap_file(buffer->memory_block, total_size);
       buffer->memory_block = NULL;
     }
 

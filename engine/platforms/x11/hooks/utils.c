@@ -7,7 +7,7 @@ void de100_set_target_fps(uint32 fps) { g_fps = fps; }
 real32 de100_get_frame_time(void) { return g_frame_timing.total_seconds; }
 
 real64 de100_get_time(void) {
-  return (get_wall_clock() - g_initial_game_time_ms) / 1000.0f;
+  return (de100_get_wall_clock() - g_initial_game_time_ms) / 1000.0f;
 }
 
 uint32 de100_get_fps(void) { return g_fps; }

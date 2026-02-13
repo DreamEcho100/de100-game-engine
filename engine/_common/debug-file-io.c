@@ -36,8 +36,7 @@ de100_file_scoped_global_var __thread char g_last_error_detail[1024];
 // ERROR STRING TRANSLATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-const char *
-de100_debug_platform_de100_file_strerror(De100DebugDe100FileErrorCode code) {
+const char *de100_debug_de100_file_strerror(De100DebugDe100FileErrorCode code) {
   switch (code) {
   case DEBUG_FILE_SUCCESS:
     return "Success";
@@ -132,7 +131,7 @@ de100_file_scoped_fn De100DebugFileWriteResult make_write_success(void) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 De100DebugDe100FileReadResult
-de100_debug_platform_read_entire_file(const char *filename) {
+de100_debug_read_entire_file(const char *filename) {
   De100DebugDe100FileReadResult result = {0};
 
   // ─────────────────────────────────────────────────────────────────────
@@ -242,7 +241,7 @@ de100_debug_platform_read_entire_file(const char *filename) {
 // FREE FILE MEMORY
 // ═══════════════════════════════════════════════════════════════════════════
 
-void de100_debug_platform_free_de100_file_memory(De100MemoryBlock *memory) {
+void de100_debug_free_de100_file_memory(De100MemoryBlock *memory) {
   if (!memory) {
     return;
   }
@@ -262,9 +261,9 @@ void de100_debug_platform_free_de100_file_memory(De100MemoryBlock *memory) {
 // WRITE ENTIRE FILE
 // ═══════════════════════════════════════════════════════════════════════════
 
-De100DebugFileWriteResult
-de100_debug_platform_write_entire_file(const char *filename, uint32 size,
-                                       const void *data) {
+De100DebugFileWriteResult de100_debug_write_entire_file(const char *filename,
+                                                        uint32 size,
+                                                        const void *data) {
   // ─────────────────────────────────────────────────────────────────────
   // Validate inputs
   // ─────────────────────────────────────────────────────────────────────

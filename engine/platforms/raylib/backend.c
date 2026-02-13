@@ -262,7 +262,7 @@ int platform_main() {
   // ═══════════════════════════════════════════════════════════════════
 
   printf("[%.3fs] Exiting, freeing memory...\n",
-         get_wall_clock() - g_initial_game_time_ms);
+         de100_get_wall_clock() - g_initial_game_time_ms);
 #if DE100_SANITIZE_WAVE_1_MEMORY
 
   if (g_game_buffer_meta.has_texture) {
@@ -275,7 +275,8 @@ int platform_main() {
   engine_shutdown(&engine);
 
   printf("✅ Cleanup complete\n");
-  printf("[%.3fs] Memory freed\n", get_wall_clock() - g_initial_game_time_ms);
+  printf("[%.3fs] Memory freed\n",
+         de100_get_wall_clock() - g_initial_game_time_ms);
 
 #if DE100_INTERNAL
   frame_stats_print();

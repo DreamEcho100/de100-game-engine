@@ -17,7 +17,7 @@ int engine_init(EngineState *engine) {
   EnginePlatformState *platform = &engine->platform;
   EngineAllocations *allocations = &engine->allocations;
 
-  g_initial_game_time_ms = get_wall_clock();
+  g_initial_game_time_ms = de100_get_wall_clock();
 
   // ─────────────────────────────────────────────────────────────────────
   // ZERO INITIALIZE
@@ -31,19 +31,19 @@ int engine_init(EngineState *engine) {
   // LOAD GAME CODE
   // ─────────────────────────────────────────────────────────────────────
 
-  PathResult exe_full_path = path_get_executable();
+  De100PathResult exe_full_path = de100_path_get_executable();
   if (!exe_full_path.success) {
     fprintf(stderr, "❌ Failed to get executable directory: %s\n",
-            path_strerror(exe_full_path.error_code));
+            de100_path_strerror(exe_full_path.error_code));
     return 1;
   }
 
   printf("✅ Executable path: %s\n", exe_full_path.path);
 
-  PathResult exe_directory = path_get_executable_directory();
+  De100PathResult exe_directory = de100_path_get_executable_directory();
   if (!exe_directory.success) {
     fprintf(stderr, "❌ Failed to get executable directory: %s\n",
-            path_strerror(exe_directory.error_code));
+            de100_path_strerror(exe_directory.error_code));
     return 1;
   }
 
@@ -55,8 +55,8 @@ int engine_init(EngineState *engine) {
       .game_startup_lib_tmp_path = DE100_GAME_STARTUP_TMP_SHARED_LIB_PATH,
       .game_init_lib_path = DE100_GAME_INIT_SHARED_LIB_PATH,
       .game_init_lib_tmp_path = DE100_GAME_INIT_TMP_SHARED_LIB_PATH,
-      .exe_full_path = path_get_executable(),
-      .exe_directory = path_get_executable_directory(),
+      .exe_full_path = de100_path_get_executable(),
+      .exe_directory = de100_path_get_executable_directory(),
   };
 
   load_game_code(&platform->code, &platform->paths, GAME_CODE_CATEGORY_ANY);

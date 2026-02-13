@@ -5,9 +5,9 @@
 #include "../../_common/time.h"
 
 typedef struct {
-  PlatformTimeSpec frame_start;
-  PlatformTimeSpec work_end;
-  PlatformTimeSpec frame_end;
+  De100TimeSpec frame_start;
+  De100TimeSpec work_end;
+  De100TimeSpec frame_end;
   real32 work_seconds;
   real32 total_seconds;
   // real32 total_ms;

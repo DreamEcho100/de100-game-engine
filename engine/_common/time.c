@@ -72,7 +72,7 @@ de100_file_scoped_fn inline CachedTimebase macos_get_timebase(void) {
 // GET WALL CLOCK TIME
 // ═══════════════════════════════════════════════════════════════════════════
 
-real64 get_wall_clock(void) {
+real64 de100_get_wall_clock(void) {
 #if defined(_WIN32)
   // ─────────────────────────────────────────────────────────────────────
   // WINDOWS: QueryPerformanceCounter
@@ -125,7 +125,7 @@ real64 get_wall_clock(void) {
 // SLEEP FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-void platform_sleep_seconds(real64 seconds) {
+void de100_sleep_seconds(real64 seconds) {
   if (seconds <= 0.0) {
     return;
   }
@@ -163,23 +163,23 @@ void platform_sleep_seconds(real64 seconds) {
   }
 
 #else
-#error "platform_sleep_seconds() not implemented for this platform"
+#error "de100_sleep_seconds() not implemented for this platform"
 
 #endif
 }
 
-void platform_sleep_ms(uint32 milliseconds) {
+void de100_sleep_ms(uint32 milliseconds) {
   if (milliseconds == 0) {
     return;
   }
-  platform_sleep_seconds((real64)milliseconds / 1000.0);
+  de100_sleep_seconds((real64)milliseconds / 1000.0);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GET TIMESPEC
 // ═══════════════════════════════════════════════════════════════════════════
 
-void platform_get_timespec(PlatformTimeSpec *out_time) {
+void de100_get_timespec(De100TimeSpec *out_time) {
   if (!out_time) {
     return;
   }
@@ -223,7 +223,7 @@ void platform_get_timespec(PlatformTimeSpec *out_time) {
   out_time->nanoseconds = (int64)ts.tv_nsec;
 
 #else
-#error "platform_get_timespec() not implemented for this platform"
+#error "de100_get_timespec() not implemented for this platform"
 #endif
 }
 
@@ -231,15 +231,15 @@ void platform_get_timespec(PlatformTimeSpec *out_time) {
 // TIMESPEC UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════
 
-real64 platform_timespec_to_seconds(const PlatformTimeSpec *time) {
+real64 de100_timespec_to_seconds(const De100TimeSpec *time) {
   if (!time) {
     return 0.0;
   }
   return (real64)time->seconds + (real64)time->nanoseconds / 1000000000.0;
 }
 
-real64 platform_timespec_diff_seconds(const PlatformTimeSpec *start,
-                                      const PlatformTimeSpec *end) {
+real64 de100_timespec_diff_seconds(const De100TimeSpec *start,
+                                   const De100TimeSpec *end) {
   if (!start || !end) {
     return 0.0;
   }
@@ -257,8 +257,8 @@ real64 platform_timespec_diff_seconds(const PlatformTimeSpec *start,
   return (real64)sec_diff + (real64)nsec_diff / 1000000000.0;
 }
 
-real64 platform_timespec_diff_milliseconds(const PlatformTimeSpec *start,
-                                           const PlatformTimeSpec *end) {
+real64 de100_timespec_diff_milliseconds(const De100TimeSpec *start,
+                                        const De100TimeSpec *end) {
   if (!start || !end) {
     return 0.0;
   }
@@ -270,8 +270,7 @@ real64 platform_timespec_diff_milliseconds(const PlatformTimeSpec *start,
   return (real64)ms_diff;
 }
 
-int32 platform_timespec_compare(const PlatformTimeSpec *a,
-                                const PlatformTimeSpec *b) {
+int32 de100_timespec_compare(const De100TimeSpec *a, const De100TimeSpec *b) {
   if (!a || !b) {
     // Treat NULL as "zero time" for comparison purposes
     if (!a && !b)

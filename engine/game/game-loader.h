@@ -1,12 +1,12 @@
 #ifndef DE100_GAME_LOADER_H
 #define DE100_GAME_LOADER_H
 
-#include "base.h"
-#include "thread.h"
 #include "../_common/dll.h"
 #include "../_common/path.h"
 #include "../_common/time.h"
+#include "base.h"
 #include "config.h"
+#include "thread.h"
 
 #ifndef DE100_SHARED_LIB_PREFIX
 #if defined(_WIN32)
@@ -110,12 +110,14 @@ typedef GAME_STARTUP(game_startup_t);
 // Can be used for per-session or per-level initialization, possibly with access
 // to memory arenas or engine services.
 #define GAME_INIT(name)                                                        \
-  void name(ThreadContext *thread_context, GameMemory *memory, GameInput *inputs, GameBackBuffer *buffer)
+  void name(ThreadContext *thread_context, GameMemory *memory,                 \
+            GameInput *inputs, GameBackBuffer *buffer)
 typedef GAME_INIT(game_init_t);
 
 // Called once per frame - updates game logic and renders graphics
 #define GAME_UPDATE_AND_RENDER(name)                                           \
-  void name(ThreadContext *thread_context, GameMemory *memory, GameInput *inputs, GameBackBuffer *buffer)
+  void name(ThreadContext *thread_context, GameMemory *memory,                 \
+            GameInput *inputs, GameBackBuffer *buffer)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render_t);
 
 // Called to fill audio buffer - may be called multiple times per frame
@@ -134,13 +136,13 @@ typedef struct {
   char *game_init_lib_path;
   char *game_init_lib_tmp_path;
 
-  PathResult exe_full_path; // Full path to executable
-  PathResult exe_directory; // Directory containing executable
+  De100PathResult exe_full_path; // Full path to executable
+  De100PathResult exe_directory; // Directory containing executable
 } GameCodePaths;
 
 typedef struct {
   De100DllHandle game_code_lib;
-  PlatformTimeSpec last_write_time;
+  De100TimeSpec last_write_time;
 
   game_update_and_render_t *update_and_render;
   game_get_audio_samples_t *get_audio_samples;

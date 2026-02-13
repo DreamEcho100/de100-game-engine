@@ -8,15 +8,15 @@
 FrameTiming g_frame_timing = {0};
 
 void frame_timing_begin() {
-  platform_get_timespec(&g_frame_timing.frame_start);
+  de100_get_timespec(&g_frame_timing.frame_start);
 #if DE100_INTERNAL
   g_frame_timing.start_cycles = __rdtsc();
 #endif
 }
 
 void frame_timing_mark_work_done() {
-  platform_get_timespec(&g_frame_timing.work_end);
-  g_frame_timing.work_seconds = (real32)platform_timespec_diff_seconds(
+  de100_get_timespec(&g_frame_timing.work_end);
+  g_frame_timing.work_seconds = (real32)de100_timespec_diff_seconds(
       &g_frame_timing.frame_start, &g_frame_timing.work_end);
 }
 
@@ -28,36 +28,36 @@ void frame_timing_sleep_until_target(real32 target_seconds) {
 
     // Phase 1: Coarse sleep
     while (seconds_elapsed < sleep_threshold) {
-      platform_sleep_ms(1);
+      de100_sleep_ms(1);
 
-      PlatformTimeSpec current;
-      platform_get_timespec(&current);
-      seconds_elapsed = (real32)platform_timespec_diff_seconds(
+      De100TimeSpec current;
+      de100_get_timespec(&current);
+      seconds_elapsed = (real32)de100_timespec_diff_seconds(
           &g_frame_timing.frame_start, &current);
     }
 
     // Phase 2: Spin-wait
     while (seconds_elapsed < target_seconds) {
-      PlatformTimeSpec current;
-      platform_get_timespec(&current);
-      seconds_elapsed = (real32)platform_timespec_diff_seconds(
+      De100TimeSpec current;
+      de100_get_timespec(&current);
+      seconds_elapsed = (real32)de100_timespec_diff_seconds(
           &g_frame_timing.frame_start, &current);
     }
   }
 }
 
 void frame_timing_end() {
-  platform_get_timespec(&g_frame_timing.frame_end);
+  de100_get_timespec(&g_frame_timing.frame_end);
 #if DE100_INTERNAL
   g_frame_timing.end_cycles = __rdtsc();
 #endif
 
-  g_frame_timing.total_seconds = (real32)platform_timespec_diff_seconds(
+  g_frame_timing.total_seconds = (real32)de100_timespec_diff_seconds(
       &g_frame_timing.frame_start, &g_frame_timing.frame_end);
   g_frame_timing.sleep_seconds =
       g_frame_timing.total_seconds - g_frame_timing.work_seconds;
 
-  // g_frame_timing.total_ms = (real32)platform_timespec_diff_milliseconds(
+  // g_frame_timing.total_ms = (real32)de100_timespec_diff_milliseconds(
   //     &g_frame_timing.frame_start, &g_frame_timing.frame_end);
 }
 

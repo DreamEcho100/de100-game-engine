@@ -665,7 +665,7 @@ void *de100_mem_zero_secure(void *dest, size_t size) {
 //  * @note This is a secure implementation that won't be optimized away
 //  *       by the compiler, making it suitable for clearing sensitive data.
 //  */
-// void *platform_memset(void *dest, int value, size_t size) {
+// void *de100_memset(void *dest, int value, size_t size) {
 //   if (!dest || size == 0) {
 //     return dest;
 //   }
@@ -717,7 +717,7 @@ void *de100_mem_zero_secure(void *dest, size_t size) {
 //  * @param size Number of bytes to zero
 //  * @return Pointer to dest, or NULL if dest is NULL
 //  */
-// void *platform_secure_zero(void *dest, size_t size) {
+// void *de100_secure_zero(void *dest, size_t size) {
 //   if (!dest || size == 0) {
 //     return dest;
 //   }
@@ -750,10 +750,10 @@ void *de100_mem_zero_secure(void *dest, size_t size) {
 //  * @param size Number of bytes to copy
 //  * @return Pointer to dest, or NULL on error
 //  *
-//  * @note Behavior is undefined if regions overlap. Use platform_memmove for
+//  * @note Behavior is undefined if regions overlap. Use de100_memmove for
 //  *       overlapping regions.
 //  */
-// void *platform_memcpy(void *dest, const void *src, size_t size) {
+// void *de100_memcpy(void *dest, const void *src, size_t size) {
 //   if (!dest || !src || size == 0) {
 //     return dest;
 //   }
@@ -774,7 +774,7 @@ void *de100_mem_zero_secure(void *dest, size_t size) {
 //  * @param size Number of bytes to copy
 //  * @return Pointer to dest, or NULL on error
 //  */
-// void *platform_memmove(void *dest, const void *src, size_t size) {
+// void *de100_memmove(void *dest, const void *src, size_t size) {
 //   if (!dest || !src || size == 0) {
 //     return dest;
 //   }

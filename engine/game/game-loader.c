@@ -18,9 +18,9 @@ de100_file_scoped_fn inline GameCode create_stub_game_main_code(void) {
   result.startup = game_startup_stub;
   result.init = game_init_stub;
   result.is_valid = false;
-  result.last_write_time = (PlatformTimeSpec){0};
+  result.last_write_time = (De100TimeSpec){0};
   result.game_code_lib.handle = NULL;
-  result.game_code_lib.error_code = DLL_SUCCESS;
+  result.game_code_lib.error_code = DE100_DLL_SUCCESS;
 
   return result;
 }
@@ -30,9 +30,9 @@ de100_file_scoped_fn inline GameCode create_stub_pre_game_main_code(void) {
   result.startup = game_startup_stub;
   result.init = game_init_stub;
   result.is_valid = false;
-  result.last_write_time = (PlatformTimeSpec){0};
+  result.last_write_time = (De100TimeSpec){0};
   result.game_code_lib.handle = NULL;
-  result.game_code_lib.error_code = DLL_SUCCESS;
+  result.game_code_lib.error_code = DE100_DLL_SUCCESS;
 
   return result;
 }
@@ -81,7 +81,7 @@ de100_file_scoped_fn inline int load_game_assets(GameCode *game_code,
 
   stub_game_code->last_write_time = mod_time.value;
   printf("📅 Source file last modified: %0.2f\n",
-         platform_timespec_to_seconds(&stub_game_code->last_write_time));
+         de100_timespec_to_seconds(&stub_game_code->last_write_time));
 
   // ─────────────────────────────────────────────────────────────────────
   // Copy library file
@@ -324,7 +324,7 @@ void unload_game_code(GameCode *game_code) {
   // Close the library
   De100DllErrorCode result = de100_dll_close(&game_code->game_code_lib);
 
-  if (result != DLL_SUCCESS) {
+  if (result != DE100_DLL_SUCCESS) {
     fprintf(stderr, "⚠️  Failed to unload library\n");
     fprintf(stderr, "   Code: %s\n", de100_dll_strerror(result));
     // Continue anyway - we'll reset to stubs
@@ -375,23 +375,23 @@ bool32 game_main_code_needs_reload(GameCode *game_code, char *source_lib_name) {
 #if DE100_INTERNAL
   if (FRAME_LOG_EVERY_FIVE_SECONDS_CHECK) {
     printf("[RELOAD CHECK] Old: %0.2f, New: %0.2f, Changed: %s\n",
-           platform_timespec_to_seconds(&game_code->last_write_time),
-           platform_timespec_to_seconds(&current_mod_time.value),
-           platform_timespec_diff_seconds(&game_code->last_write_time,
-                                          &current_mod_time.value) > 0.0
+           de100_timespec_to_seconds(&game_code->last_write_time),
+           de100_timespec_to_seconds(&current_mod_time.value),
+           de100_timespec_diff_seconds(&game_code->last_write_time,
+                                       &current_mod_time.value) > 0.0
                ? "YES"
                : "NO");
   }
 #endif
 
   // Compare modification times
-  if (platform_timespec_diff_seconds(&game_code->last_write_time,
-                                     &current_mod_time.value) > 0.0) {
+  if (de100_timespec_diff_seconds(&game_code->last_write_time,
+                                  &current_mod_time.value) > 0.0) {
     printf("🔄 File modification detected\n");
     printf("   Old time: %0.2f\n",
-           platform_timespec_to_seconds(&game_code->last_write_time));
+           de100_timespec_to_seconds(&game_code->last_write_time));
     printf("   New time: %0.2f\n",
-           platform_timespec_to_seconds(&current_mod_time.value));
+           de100_timespec_to_seconds(&current_mod_time.value));
     return true;
   }
 

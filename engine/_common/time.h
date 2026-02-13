@@ -14,7 +14,7 @@
 typedef struct {
   int64 seconds;
   int64 nanoseconds;
-} PlatformTimeSpec;
+} De100TimeSpec;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HIGH-LEVEL TIME FUNCTIONS
@@ -28,19 +28,19 @@ typedef struct {
  *
  * @return Current time in seconds with high precision (typically ~1ns)
  */
-real64 get_wall_clock(void);
+real64 de100_get_wall_clock(void);
 
 /**
  * Calculate elapsed time between two wall clock readings.
  *
- * @param start Start time from get_wall_clock()
- * @param end End time from get_wall_clock()
+ * @param start Start time from de100_get_wall_clock()
+ * @param end End time from de100_get_wall_clock()
  * @return Elapsed time in seconds (end - start)
  *
  * Note: This is a trivial subtraction, provided for API symmetry.
  */
-de100_file_scoped_fn inline real64 get_seconds_elapsed(real64 start,
-                                                       real64 end) {
+de100_file_scoped_fn inline real64 de100_get_seconds_elapsed(real64 start,
+                                                             real64 end) {
   return end - start;
 }
 
@@ -58,16 +58,16 @@ de100_file_scoped_fn inline real64 get_seconds_elapsed(real64 start,
  *   1. Sleep for most of the time (coarse)
  *   2. Spin-wait for the remainder (precise)
  */
-void platform_sleep_seconds(real64 seconds);
+void de100_sleep_seconds(real64 seconds);
 
 /**
  * Sleep for approximately the specified number of milliseconds.
  *
  * @param milliseconds Time to sleep in milliseconds
  *
- * Convenience wrapper around platform_sleep_seconds().
+ * Convenience wrapper around de100_sleep_seconds().
  */
-void platform_sleep_ms(uint32 milliseconds);
+void de100_sleep_ms(uint32 milliseconds);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LOW-LEVEL TIMESPEC FUNCTIONS
@@ -78,22 +78,22 @@ void platform_sleep_ms(uint32 milliseconds);
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Get current time as PlatformTimeSpec.
+ * Get current time as De100TimeSpec.
  *
  * @param out_time Pointer to store the current time (must not be NULL)
  */
-void platform_get_timespec(PlatformTimeSpec *out_time);
+void de100_get_timespec(De100TimeSpec *out_time);
 
 /**
- * Convert PlatformTimeSpec to seconds.
+ * Convert De100TimeSpec to seconds.
  *
  * @param time Pointer to time structure (NULL returns 0.0)
  * @return Time in seconds as real64
  */
-real64 platform_timespec_to_seconds(const PlatformTimeSpec *time);
+real64 de100_timespec_to_seconds(const De100TimeSpec *time);
 
 /**
- * Calculate difference between two PlatformTimeSpec values.
+ * Calculate difference between two De100TimeSpec values.
  *
  * @param start Start time
  * @param end End time
@@ -101,20 +101,19 @@ real64 platform_timespec_to_seconds(const PlatformTimeSpec *time);
  *
  * Note: Returns 0.0 if either pointer is NULL.
  */
-real64 platform_timespec_diff_seconds(const PlatformTimeSpec *start,
-                                      const PlatformTimeSpec *end);
+real64 de100_timespec_diff_seconds(const De100TimeSpec *start,
+                                   const De100TimeSpec *end);
 
-real64 platform_timespec_diff_milliseconds(const PlatformTimeSpec *start,
-                                           const PlatformTimeSpec *end);
+real64 de100_timespec_diff_milliseconds(const De100TimeSpec *start,
+                                        const De100TimeSpec *end);
 
 /**
- * Compare two PlatformTimeSpec values.
+ * Compare two De100TimeSpec values.
  *
  * @param a First time
  * @param b Second time
  * @return -1 if a < b, 0 if a == b, 1 if a > b
  */
-int32 platform_timespec_compare(const PlatformTimeSpec *a,
-                                const PlatformTimeSpec *b);
+int32 de100_timespec_compare(const De100TimeSpec *a, const De100TimeSpec *b);
 
 #endif // DE100_COMMON_TIME_H

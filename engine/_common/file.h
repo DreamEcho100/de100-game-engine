@@ -40,7 +40,7 @@ typedef struct {
 } De100FileResult;
 
 typedef struct {
-  PlatformTimeSpec value;
+  De100TimeSpec value;
   bool success;
   De100FileErrorCode error_code;
 } De100FileTimeResult;
@@ -103,8 +103,7 @@ De100FileTimeResult de100_file_get_mod_time(const char *filename);
 /**
  * Compare two file modification times.
  */
-real64 de100_file_time_diff(const PlatformTimeSpec *a,
-                            const PlatformTimeSpec *b);
+real64 de100_file_time_diff(const De100TimeSpec *a, const De100TimeSpec *b);
 
 /**
  * Copy a file from source to destination.

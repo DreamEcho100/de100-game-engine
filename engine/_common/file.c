@@ -301,14 +301,13 @@ De100FileTimeResult de100_file_get_mod_time(const char *filename) {
 // COMPARE FILE MODIFICATION TIMES
 // ═══════════════════════════════════════════════════════════════════════════
 
-real64 de100_file_time_diff(const PlatformTimeSpec *a,
-                            const PlatformTimeSpec *b) {
+real64 de100_file_time_diff(const De100TimeSpec *a, const De100TimeSpec *b) {
   if (!a || !b) {
     return 0.0;
   }
   // Returns (a - b) in seconds
   // Positive = a is newer, Negative = b is newer
-  return platform_timespec_diff_seconds(b, a);
+  return de100_timespec_diff_seconds(b, a);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

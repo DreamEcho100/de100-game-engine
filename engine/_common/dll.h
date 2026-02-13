@@ -8,15 +8,15 @@
 // PLATFORM-SPECIFIC INCLUDES
 // ═══════════════════════════════════════════════════════════════════════════
 
-#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || \
+#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) ||        \
     defined(__unix__) || defined(__MACH__)
-    #include <dlfcn.h>
+#include <dlfcn.h>
 #elif defined(_WIN32)
-    #define WIN32_LEAN_AND_MEAN
-    #define NOMINMAX
-    #include <windows.h>
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
 #else
-    #error "Unsupported platform for DLL operations"
+#error "Unsupported platform for DLL operations"
 #endif
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -24,17 +24,17 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 typedef enum {
-    DLL_SUCCESS = 0,
-    DLL_ERROR_FILE_NOT_FOUND,
-    DLL_ERROR_INVALID_FORMAT,
-    DLL_ERROR_SYMBOL_NOT_FOUND,
-    DLL_ERROR_ALREADY_LOADED,
-    DLL_ERROR_ACCESS_DENIED,
-    DLL_ERROR_OUT_OF_MEMORY,
-    DLL_ERROR_INVALID_HANDLE,
-    DLL_ERROR_UNKNOWN,
-    
-    DLL_ERROR_COUNT  // Sentinel for validation
+  DE100_DLL_SUCCESS = 0,
+  DE100_DLL_ERROR_FILE_NOT_FOUND,
+  DE100_DLL_ERROR_INVALID_FORMAT,
+  DE100_DLL_ERROR_SYMBOL_NOT_FOUND,
+  DE100_DLL_ERROR_ALREADY_LOADED,
+  DE100_DLL_ERROR_ACCESS_DENIED,
+  DE100_DLL_ERROR_OUT_OF_MEMORY,
+  DE100_DLL_ERROR_INVALID_HANDLE,
+  DE100_DLL_ERROR_UNKNOWN,
+
+  DE100_DLL_ERROR_COUNT // Sentinel for validation
 } De100DllErrorCode;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -43,12 +43,12 @@ typedef enum {
 
 typedef struct {
 #if defined(_WIN32)
-    HMODULE handle;
+  HMODULE handle;
 #else
-    void *handle;
+  void *handle;
 #endif
-    De100DllErrorCode error_code;
-    bool is_valid;
+  De100DllErrorCode error_code;
+  bool is_valid;
 } De100DllHandle;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -91,7 +91,7 @@ void *de100_dll_sym(De100DllHandle *dll, const char *symbol_name);
  * Close a dynamic library.
  *
  * @param dll Pointer to De100DllHandle to close
- * @return Error code (DLL_SUCCESS on success)
+ * @return Error code (DE100_DLL_SUCCESS on success)
  *
  * After closing, dll->handle is set to NULL and is_valid to false.
  * Safe to call multiple times (idempotent).
@@ -105,7 +105,8 @@ De100DllErrorCode de100_dll_close(De100DllHandle *dll);
  * @return true if valid and loaded, false otherwise
  */
 de100_file_scoped_fn inline bool de100_dll_is_valid(De100DllHandle dll) {
-    return dll.is_valid && dll.handle != NULL && dll.error_code == DLL_SUCCESS;
+  return dll.is_valid && dll.handle != NULL &&
+         dll.error_code == DE100_DLL_SUCCESS;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

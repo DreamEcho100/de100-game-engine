@@ -25,10 +25,10 @@
 //
 // Casey's Day 15 pattern:
 //   De100DebugDe100FileReadResult file =
-//   de100_debug_platform_read_entire_file(__FILE__); if (file.size > 0) {
-//       de100_debug_platform_write_entire_file("test.out", file.size,
+//   de100_debug_read_entire_file(__FILE__); if (file.size > 0) {
+//       de100_debug_write_entire_file("test.out", file.size,
 //       file.memory.base);
-//       de100_debug_platform_free_de100_file_memory(&file.memory);
+//       de100_debug_free_de100_file_memory(&file.memory);
 //   }
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -82,22 +82,22 @@ typedef struct {
  * @return Result with memory block and size, or size=0 on failure
  *
  * The returned memory must be freed with
- * de100_debug_platform_free_de100_file_memory().
+ * de100_debug_free_de100_file_memory().
  *
  * Example:
  *   De100DebugDe100FileReadResult file =
- * de100_debug_platform_read_entire_file("test.txt"); if (file.size > 0 &&
+ * de100_debug_read_entire_file("test.txt"); if (file.size > 0 &&
  * de100_memory_is_valid(file.memory)) {
  *       // Use file.memory.base, file.size
- *       de100_debug_platform_free_de100_file_memory(&file.memory);
+ *       de100_debug_free_de100_file_memory(&file.memory);
  *   }
  */
 De100DebugDe100FileReadResult
-de100_debug_platform_read_entire_file(ThreadContext *thread_context,
-                                      const char *filename);
+de100_debug_read_entire_file(ThreadContext *thread_context,
+                             const char *filename);
 
 /**
- * Free memory allocated by de100_debug_platform_read_entire_file().
+ * Free memory allocated by de100_debug_read_entire_file().
  *
  * Uses de100_memory_free() internally.
  *
@@ -105,8 +105,8 @@ de100_debug_platform_read_entire_file(ThreadContext *thread_context,
  *
  * Safe to call multiple times (idempotent).
  */
-void de100_debug_platform_free_de100_file_memory(ThreadContext *thread_context,
-                                                 De100MemoryBlock *memory);
+void de100_debug_free_de100_file_memory(ThreadContext *thread_context,
+                                        De100MemoryBlock *memory);
 
 /**
  * Write data to a file (creates or overwrites).
@@ -119,15 +119,15 @@ void de100_debug_platform_free_de100_file_memory(ThreadContext *thread_context,
  * Example:
  *   const char *data = "Hello, World!";
  *   De100DebugFileWriteResult r =
- * de100_debug_platform_write_entire_file("out.txt", 13, data); if (!r.success)
+ * de100_debug_write_entire_file("out.txt", 13, data); if (!r.success)
  * { printf("Error: %s\n",
- * de100_debug_platform_de100_file_strerror(r.error_code));
+ * de100_debug_de100_file_strerror(r.error_code));
  *   }
  */
 De100DebugFileWriteResult
-de100_debug_platform_write_entire_file(ThreadContext *thread_context,
-                                       const char *filename, uint32 size,
-                                       const void *data);
+de100_debug_write_entire_file(ThreadContext *thread_context,
+                              const char *filename, uint32 size,
+                              const void *data);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ERROR HANDLING
@@ -139,8 +139,7 @@ de100_debug_platform_write_entire_file(ThreadContext *thread_context,
  * @param code Error code from any debug file operation
  * @return Static string describing the error (never NULL)
  */
-const char *
-de100_debug_platform_de100_file_strerror(De100DebugDe100FileErrorCode code);
+const char *de100_debug_de100_file_strerror(De100DebugDe100FileErrorCode code);
 
 // #endif // DE100_INTERNAL
 
