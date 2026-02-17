@@ -226,7 +226,8 @@ ReplayBufferInitResult replay_buffers_init(const char *exe_directory,
   // Initialize each buffer
   // ─────────────────────────────────────────────────────────────────────
 
-  for (i32 slot = 0; slot < MAX_REPLAY_BUFFERS; ++slot) {
+  for (i32 slot = VALID_REPLAY_BUFFERS_START_INDEX; slot < MAX_REPLAY_BUFFERS;
+       ++slot) {
     ReplayBuffer *buffer = &out_buffers[slot];
 
     // Initialize to invalid state
@@ -338,7 +339,8 @@ void replay_buffers_shutdown(ReplayBuffer *buffers, u64 total_size) {
   printf("[REPLAY BUFFER] Shutting down...\n");
 #endif
 
-  for (i32 slot = 0; slot < MAX_REPLAY_BUFFERS; ++slot) {
+  for (i32 slot = VALID_REPLAY_BUFFERS_START_INDEX; slot < MAX_REPLAY_BUFFERS;
+       ++slot) {
     ReplayBuffer *buffer = &buffers[slot];
 
     // Unmap memory
@@ -371,7 +373,8 @@ ReplayBuffer *replay_buffer_get(ReplayBuffer *buffers, i32 slot_index) {
     return NULL;
   }
 
-  if (slot_index < 0 || slot_index >= MAX_REPLAY_BUFFERS) {
+  if (slot_index < VALID_REPLAY_BUFFERS_START_INDEX ||
+      slot_index >= MAX_REPLAY_BUFFERS) {
 #if DE100_INTERNAL && DE100_SLOW
     fprintf(stderr, "[REPLAY BUFFER] Invalid slot index: %d (max %d)\n",
             slot_index, MAX_REPLAY_BUFFERS - 1);

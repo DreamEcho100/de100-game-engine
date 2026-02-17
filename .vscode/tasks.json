@@ -1,0 +1,96 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Handmade Hero - Build Dev (X11)",
+      "type": "shell",
+      "command": "./build-dev.sh",
+      "args": ["--backend=x11"],
+      "options": {
+        "cwd": "${workspaceFolder}/games/handmade-hero-game"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Handmade Hero - Build Dev (Raylib)",
+      "type": "shell",
+      "command": "./build-dev.sh",
+      "args": ["--backend=raylib"],
+      "options": {
+        "cwd": "${workspaceFolder}/games/handmade-hero-game"
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Handmade Hero - Build Dev - Game Only (X11)",
+      "type": "shell",
+      "command": "./build-dev.sh",
+      "args": ["--backend=x11", "--build-game"],
+      "options": {
+        "cwd": "${workspaceFolder}/games/handmade-hero-game"
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Handmade Hero - Build Dev - Platform Only (X11)",
+      "type": "shell",
+      "command": "./build-dev.sh",
+      "args": ["--backend=x11", "--build-platform"],
+      "options": {
+        "cwd": "${workspaceFolder}/games/handmade-hero-game"
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Handmade Hero - Build Dev + Sanitizers (X11)",
+      "type": "shell",
+      "command": "./build-dev.sh",
+      "args": ["--backend=x11", "--sanitize"],
+      "options": {
+        "cwd": "${workspaceFolder}/games/handmade-hero-game"
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Handmade Hero - Build Prod (X11)",
+      "type": "shell",
+      "command": "./build-dev.sh",
+      "args": ["--prod", "--backend=x11"],
+      "options": {
+        "cwd": "${workspaceFolder}/games/handmade-hero-game"
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Handmade Hero - Build Prod (Raylib)",
+      "type": "shell",
+      "command": "./build-dev.sh",
+      "args": ["--prod", "--backend=raylib"],
+      "options": {
+        "cwd": "${workspaceFolder}/games/handmade-hero-game"
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Handmade Hero - Clean Build",
+      "type": "shell",
+      "command": "rm -rf build/* && ./build-dev.sh",
+      "args": ["--backend=x11"],
+      "options": {
+        "cwd": "${workspaceFolder}/games/handmade-hero-game"
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    }
+  ]
+}

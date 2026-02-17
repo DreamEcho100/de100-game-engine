@@ -17,6 +17,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 #define MAX_REPLAY_BUFFERS 4
+#define VALID_REPLAY_BUFFERS_START_INDEX 1
 #define REPLAY_BUFFER_FILENAME_MAX 256
 
 // ═══════════════════════════════════════════════════════════════════════════

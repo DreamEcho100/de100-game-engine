@@ -8,11 +8,15 @@ out/
 *.out
 
 # IDE files
-.vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# VSCode workspace files (personal state)
+.vscode/*.code-workspace
+.vscode/ipch/
+.vscode/.ropeproject/
 
 # OS files
 .DS_Store

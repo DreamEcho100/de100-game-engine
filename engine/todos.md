@@ -2,7 +2,8 @@
 
 ## Urgent TODOs
 
-- [ ] Move `games/handmade-hero` to a private submodule repo and link it to the main repo. This improves organization and separation between the engine and game, allows multiple games to share the same engine, avoids licensing issues with Handmade Hero code, and enables collaboration on the game without affecting the engine.
+- [ ] Instead of resolving platform hook implementations at engine build time (engine/platforms/[platform]/hooks/_), move the responsibility to engine/game/hooks/_ so the game selects and includes the desired platform implementation directly. This allows small platform functions to be defined as static inline in headers, eliminating the need for thin wrapper layers, reducing indirection, and potentially improving DX and performance by avoiding unnecessary abstraction overhead.
+- Check the use of `calloc` and `mmap`
 - [ ] Remove the `audio_samples` from the `EngineAllocations`
 - [ ] Implement proper detection window focus/active/inactive/minimized, by making the platform detect it and the game is what handles it.
 - [ ] Implement proper error handling and reporting for all functions. and refactor what's needed to be on internal/dev mode only or/and every range of time.
@@ -21,6 +22,7 @@
 
 ## Done TODOs
 
+- [x] Move `games/handmade-hero` to a private submodule repo and link it to the main repo. This improves organization and separation between the engine and game, allows multiple games to share the same engine, avoids licensing issues with Handmade Hero code, and enables collaboration on the game without affecting the engine.
 - [x] [X11] Audio on has several issues:
   - [x] When connecting to a bluetooth headphones and starting the the sound is low and have small ticks from time to time.
   - [x] And if connecting and disconnecting during the game, the audio just stops

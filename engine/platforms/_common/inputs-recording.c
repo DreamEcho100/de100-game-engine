@@ -397,7 +397,9 @@ input_recording_toggle(const char *exe_directory, GameMemoryState *state) {
     return INPUT_RECORDING_TOGGLE_SWITCHED_TO_PLAYBACK;
   } else {
     printf("[INPUT RECORDING] ⏺️ Starting recording\n");
-    input_recording_begin(exe_directory, state, 1); // Use slot 1 by default
+    input_recording_begin(
+        exe_directory, state,
+        VALID_REPLAY_BUFFERS_START_INDEX); // Use slot 1 by default
     return INPUT_RECORDING_TOGGLE_STARTTED_RECORDING;
   }
 }

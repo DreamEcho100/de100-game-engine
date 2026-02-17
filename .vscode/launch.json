@@ -1,0 +1,100 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Handmade Hero - Debug Dev (X11)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/games/handmade-hero-game/build/game",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/games/handmade-hero-game",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "text": "-enable-pretty-printing" },
+        { "text": "handle SIGFPE stop print" },
+        { "text": "set breakpoint pending on" }
+      ],
+      "preLaunchTask": "Handmade Hero - Build Dev (X11)",
+      "miDebuggerPath": "/usr/bin/gdb"
+    },
+    {
+      "name": "Handmade Hero - Debug Dev (Raylib)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/games/handmade-hero-game/build/game",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/games/handmade-hero-game",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "text": "-enable-pretty-printing" },
+        { "text": "handle SIGFPE stop print" },
+        { "text": "set breakpoint pending on" }
+      ],
+      "preLaunchTask": "Handmade Hero - Build Dev (Raylib)",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "logging": {
+        "engineLogging": false
+      }
+    },
+    {
+      "name": "Handmade Hero - Debug Dev + Sanitizers (X11)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/games/handmade-hero-game/build/game",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/games/handmade-hero-game",
+      "environment": [
+        { "name": "ASAN_OPTIONS", "value": "detect_leaks=1:halt_on_error=0" }
+      ],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "text": "-enable-pretty-printing" },
+        { "text": "handle SIGFPE stop print" },
+        { "text": "set breakpoint pending on" }
+      ],
+      "preLaunchTask": "Handmade Hero - Build Dev + Sanitizers (X11)",
+      "miDebuggerPath": "/usr/bin/gdb"
+    },
+    {
+      "name": "Handmade Hero - Debug Prod (X11)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/games/handmade-hero-game/build/game",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/games/handmade-hero-game",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "text": "-enable-pretty-printing" },
+        { "text": "handle SIGFPE stop print" }
+      ],
+      "preLaunchTask": "Handmade Hero - Build Prod (X11)",
+      "miDebuggerPath": "/usr/bin/gdb"
+    },
+    {
+      "name": "Handmade Hero - Run Dev (X11) - No Debug",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/games/handmade-hero-game/build/game",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/games/handmade-hero-game",
+      "environment": [],
+      "externalConsole": true,
+      "MIMode": "gdb",
+      "setupCommands": [],
+      "preLaunchTask": "Handmade Hero - Build Dev (X11)",
+      "miDebuggerPath": "/usr/bin/gdb"
+    }
+  ]
+}
