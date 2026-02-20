@@ -1,3 +1,5 @@
+> Stopped at "7. Step-by-Step: How Recanonicalizing Works"
+
 # 🗺️ World Coordinate System: The Complete Mental Model
 
 **Your Goal**: Understand coordinate systems so deeply you could rebuild them from scratch.

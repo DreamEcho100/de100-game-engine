@@ -55,6 +55,7 @@
  * ───────────────────────────────────────────────────────────────
  */
 typedef struct {
+  // De100MemoryBlock backing_block;
   // A permanent block of memory that the game can use between calls to
   // `game_update_and_render`. This is where you should store all your game
   // state!
