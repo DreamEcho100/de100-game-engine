@@ -338,15 +338,16 @@ de100_file_scoped_fn inline int x11_init(EngineState *engine) {
   Colormap colormap =
       XCreateColormap(x11->display, root, visual->visual, AllocNone);
 
-  XSetWindowAttributes attrs = {0};
-  attrs.colormap = colormap;
-  attrs.event_mask =
-      ExposureMask | StructureNotifyMask | KeyPressMask |
-      KeyReleaseMask |    // Keyboard events
-      ButtonPressMask |   // Mouse button press
-      ButtonReleaseMask | // Mouse button release
-      // NOTE: PointerMotionMask is NOT needed - we poll with XQueryPointer!
-      FocusChangeMask; // Window focus
+  XSetWindowAttributes attrs = {
+      .colormap = colormap,
+      .event_mask =
+          ExposureMask | StructureNotifyMask | KeyPressMask |
+          KeyReleaseMask |    // Keyboard events
+          ButtonPressMask |   // Mouse button press
+          ButtonReleaseMask | // Mouse button release
+          // NOTE: PointerMotionMask is NOT needed - we poll with XQueryPointer!
+          FocusChangeMask, // Window focus
+  };
 
   x11->window = XCreateWindow(
       x11->display, root, 0, 0, engine->game.config.window_width,
