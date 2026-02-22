@@ -613,7 +613,8 @@ bool de100_memory_is_valid(De100MemoryBlock block) {
 // ═══════════════════════════════════════════════════════════════════════════
 // MEMORY OPERATIONS
 // ═══════════════════════════════════════════════════════════════════════════
-
+// TODO: Add proper error handling to these functions (e.g. check for NULL
+// pointers, size limits, etc.)
 void *de100_mem_set(void *dest, int value, size_t size) {
   if (!dest || size == 0)
     return dest;
