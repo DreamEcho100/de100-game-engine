@@ -1,3 +1,8 @@
+asteroid
+Improve the course builder prompt:
+
+-
+
 # Course Builder Prompt
 
 Use this file with the Copilot CLI agent to convert a source file or project into a build-along course.

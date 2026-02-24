@@ -1,7 +1,9 @@
 #include "tetris.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 const char TETROMINO_I[TETROMINO_SIZE] =
@@ -32,11 +34,18 @@ const char *TETROMINOES[TETROMINOS_COUNT] = {
 void game_init(GameState *state, GameInput *input) {
   state->score = 0;
   state->game_over = false;
-  state->pieces_count = 0;
+  state->pieces_count = 1;
+  state->level = 0;
+
+  state->completed_lines.count = 0;
+  state->completed_lines.flash_timer.timer = 0;
+  state->completed_lines.flash_timer.interval = 0.4f;
+  memset(&state->completed_lines.indexes, 0,
+         sizeof(int) * TETROMINO_LAYER_COUNT);
 
   // Time-based dropping
   state->tetromino_drop.timer = 0.0f;
-  state->tetromino_drop.interval = 1.0f; // 1 second between drops initially
+  state->tetromino_drop.interval = 0.8f; // 1 second between drops initially
 
   /* Configure auto-repeat intervals */
   input->move_left.repeat.interval = 0.05f;
@@ -60,10 +69,10 @@ void game_init(GameState *state, GameInput *input) {
   srand((unsigned int)time(NULL));
   state->current_piece = (CurrentPiece){
       /*  center-ish, start in the middle of the field */
-      .col = (FIELD_WIDTH * 0.5) - (TETROMINO_LAYER_COUNT * 0.5),
-      .row = 0,
+      .x = (FIELD_WIDTH * 0.5) - (TETROMINO_LAYER_COUNT * 0.5),
+      .y = 0,
       .index = rand() % TETROMINOS_COUNT,
-      .nextIndex = rand() % TETROMINOS_COUNT,
+      .next_index = rand() % TETROMINOS_COUNT,
       .rotation = TETROMINO_R_0,
   };
 }
@@ -203,8 +212,8 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
       }
     }
     int does_piece_fit = tetromino_does_piece_fit(
-        state, state->current_piece.index, new_rotation,
-        state->current_piece.col, state->current_piece.row);
+        state, state->current_piece.index, new_rotation, state->current_piece.x,
+        state->current_piece.y);
 
     if (does_piece_fit) {
       state->current_piece.rotation = new_rotation;
@@ -224,16 +233,16 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
   if (should_move_left &&
       tetromino_does_piece_fit(
           state, state->current_piece.index, state->current_piece.rotation,
-          state->current_piece.col - 1, state->current_piece.row)) {
-    state->current_piece.col--;
+          state->current_piece.x - 1, state->current_piece.y)) {
+    state->current_piece.x--;
   }
 
   /* Move right: try current_piece.col + 1 */
   if (should_move_right &&
       tetromino_does_piece_fit(
           state, state->current_piece.index, state->current_piece.rotation,
-          state->current_piece.col + 1, state->current_piece.row)) {
-    state->current_piece.col++;
+          state->current_piece.x + 1, state->current_piece.y)) {
+    state->current_piece.x++;
   }
 
   /* ── Soft drop: independent auto-repeat (faster interval) ── */
@@ -244,8 +253,8 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
   if (should_move_down &&
       tetromino_does_piece_fit(
           state, state->current_piece.index, state->current_piece.rotation,
-          state->current_piece.col, state->current_piece.row + 1)) {
-    state->current_piece.row++;
+          state->current_piece.x, state->current_piece.y + 1)) {
+    state->current_piece.y++;
   }
 }
 
@@ -253,30 +262,94 @@ void tetris_update(GameState *state, GameInput *input, float delta_time) {
   if (state->game_over)
     return;
 
+  if (state->completed_lines.flash_timer.timer > 0) {
+    state->completed_lines.flash_timer.timer -= delta_time;
+
+    if (state->completed_lines.flash_timer.timer <= 0) {
+      /* timer hit zero: collapse all completed rows now */
+
+      /* IMPORTANT: Process lines from bottom to top (highest row index first).
+       * Why? When we collapse a row, everything ABOVE it shifts down by 1.
+       * If we processed top-to-bottom, the stored indices would become stale.
+       *
+       * Example: lines[0]=14, lines[1]=15 (two adjacent complete rows)
+       * If we collapse row 14 first, row 15 shifts to row 14.
+       * But lines[1] still says 15 — wrong!
+       *
+       * By processing bottom-to-top (row 15 first), we avoid this problem.
+       * After collapsing row 15, row 14 is still at row 14.
+       */
+      for (int i = state->completed_lines.count - 1; i >= 0; i--) {
+        int line_index = state->completed_lines.indexes[i];
+
+        /* Collapse this row: copy each row above it down by one.
+         * Start at the completed row, work upward to row 1.
+         * We skip row 0 in the copy (nothing above it to copy from).
+         */
+        for (int py = line_index; py > 0; --py) {
+          for (int px = 1; px < FIELD_WIDTH - 1; ++px) {
+            state->field[py * FIELD_WIDTH + px] =
+                state->field[(py - 1) * FIELD_WIDTH + px];
+          }
+        }
+
+        /* Clear the top row (row 0) — it has no row above to copy from */
+        for (int px = 1; px < FIELD_WIDTH - 1; px++) {
+          state->field[px] = TETRIS_FIELD_EMPTY;
+        }
+
+        /* Adjust remaining line indices.
+         * All lines we haven't processed yet (indices 0 to i-1) are
+         * ABOVE the line we just collapsed. They've all shifted down
+         * by 1 row, so increment their stored indices.
+         */
+        for (int j = i - 1; j >= 0; --j) {
+          if (state->completed_lines.indexes[j] < line_index) {
+            state->completed_lines.indexes[j]++;
+          }
+        }
+      }
+
+      state->completed_lines.count = 0;
+    }
+    return; /* freeze all game logic while flashing */
+  }
+
   /* ── Handle player input (always responsive) ── */
   tetris_apply_input(state, input, delta_time);
 
   /* ── Accumulate time for gravity ── */
   state->tetromino_drop.timer += delta_time;
 
+  int game_speed = state->level - 1 < 0 ? 0 : state->level;
+  float tetromino_drop_interval =
+      state->tetromino_drop.interval + (0.01f + game_speed * 0.01f);
+  if (tetromino_drop_interval < 0.1f) {
+    tetromino_drop_interval = 0.1f; /* cap at 100ms per drop */
+  }
+
   /* ── Check if it's time to drop the piece ── */
-  if (state->tetromino_drop.timer >= state->tetromino_drop.interval) {
+  if (state->tetromino_drop.timer >= tetromino_drop_interval) {
     // Reset timer, keeping remainder for precision
-    state->tetromino_drop.timer -= state->tetromino_drop.interval;
+    // float drop_interval = 0.1f + state->speed * 0.01f;
+    // if (drop_interval > 0.8f) {
+    //   drop_interval = 0.8f;
+    // }
+    state->tetromino_drop.timer -= tetromino_drop_interval;
 
     /* Try to move the piece down one row */
     if (tetromino_does_piece_fit(
             state, state->current_piece.index, state->current_piece.rotation,
-            state->current_piece.col, state->current_piece.row + 1)) {
-      state->current_piece.row++;
+            state->current_piece.x, state->current_piece.y + 1)) {
+      state->current_piece.y++;
     } else {
       /* If it doesn't fit, piece has landed - locking in lesson 09 */
       for (int px = 0; px < TETROMINO_LAYER_COUNT; ++px) {
         for (int py = 0; py < TETROMINO_LAYER_COUNT; ++py) {
           int pi = tetromino_pos_value(px, py, state->current_piece.rotation);
           if (TETROMINOES[state->current_piece.index][pi] != TETROMINO_SPAN) {
-            int fx = state->current_piece.col + px;
-            int fy = state->current_piece.row + py;
+            int fx = state->current_piece.x + px;
+            int fy = state->current_piece.y + py;
             if (fx >= 0 && fx < FIELD_WIDTH && fy >= 0 && fy < FIELD_HEIGHT) {
               state->field[fy * FIELD_WIDTH + fx] =
                   state->current_piece.index +
@@ -286,27 +359,64 @@ void tetris_update(GameState *state, GameInput *input, float delta_time) {
         }
       }
 
-      /* 2. Score and difficulty */
-      state->score += 25;
+      state->completed_lines.count = 0;
+
+      for (int py = 0; py < TETROMINO_LAYER_COUNT; ++py) {
+        int row_y = state->current_piece.y + py;
+
+        /* Skip if outside playable area (above top or at/below floor) */
+        if (row_y < 0 || row_y >= FIELD_HEIGHT - 1) {
+          continue;
+        }
+
+        bool completed = 1;
+        for (int px = 1; px < FIELD_WIDTH - 1; ++px) {
+          /* Tag this row: value `TETRIS_FIELD_EMPTY` = white in the renderer */
+          if (state->field[(row_y)*FIELD_WIDTH + px] == TETRIS_FIELD_EMPTY) {
+            completed = false;
+            break;
+          }
+        }
+
+        if (completed) {
+          for (int px = 1; px < FIELD_WIDTH - 1; ++px) {
+            state->field[(row_y)*FIELD_WIDTH + px] = TETRIS_FIELD_TMP_FLASH;
+          }
+
+          state->completed_lines.indexes[state->completed_lines.count++] =
+              row_y;
+        }
+      }
+
+      if (state->completed_lines.count > 0) {
+        state->completed_lines.flash_timer.timer =
+            state->completed_lines.flash_timer.interval;
+      }
+
+      /* Score and difficulty */
       state->pieces_count++;
-      if (state->pieces_count % 50 == 0 &&
-          state->tetromino_drop.interval > 0.2f) {
-        state->tetromino_drop.interval -= 0.05f;
+      state->score += 25; /* 25 points for every piece locked */
+      if (state->completed_lines.count > 0) {
+        state->score += (1 << state->completed_lines.count) * 100;
+      }
+
+      if (state->pieces_count % 25 == 0) {
+        state->level++; // Increment for display purposes
       }
 
       // reset drop-timer and current piece for next round
       state->tetromino_drop.timer = 0.0f;
       state->current_piece = (CurrentPiece){
-          .col = (FIELD_WIDTH * 0.5) - (TETROMINO_LAYER_COUNT * 0.5),
-          .row = 0,
-          .index = state->current_piece.nextIndex,
-          .nextIndex = rand() % TETROMINOS_COUNT,
+          .x = (FIELD_WIDTH * 0.5) - (TETROMINO_LAYER_COUNT * 0.5),
+          .y = 0,
+          .index = state->current_piece.next_index,
+          .next_index = rand() % TETROMINOS_COUNT,
           .rotation = TETROMINO_R_0,
       };
 
       if (!tetromino_does_piece_fit(
               state, state->current_piece.index, state->current_piece.rotation,
-              state->current_piece.col, state->current_piece.row)) {
+              state->current_piece.x, state->current_piece.y)) {
         state->game_over = true;
       }
     }

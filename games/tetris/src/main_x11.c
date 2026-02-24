@@ -201,6 +201,12 @@ void platform_get_input(GameState *state, GameInput *input) {
       case XK_Q:
       case XK_Escape: {
         g_is_game_running = false;
+        input->quit = 1;
+        break;
+      }
+      case XK_r:
+      case XK_R: {
+        input->restart = 1;
         break;
       }
       case XK_x:
@@ -245,6 +251,11 @@ void platform_get_input(GameState *state, GameInput *input) {
                             // (for non-modified keys), and `1` would be for the
                             // second keysym (for Shift-modified keys), etc.
       switch (key) {
+      case XK_r:
+      case XK_R: {
+        input->restart = 0;
+        break;
+      }
       case XK_x:
       case XK_X: {
         UPDATE_BUTTON(input->rotate_x.button, 0);
@@ -284,6 +295,7 @@ void platform_get_input(GameState *state, GameInput *input) {
      */
     case (ClientMessage): {
       g_is_game_running = true;
+      input->quit = 1;
       break;
     }
     }
@@ -294,7 +306,8 @@ void platform_render(GameState *state) {
 
   XSetForeground(g_x11.display, g_x11.gc, g_x11.alloc_colors.black);
   XFillRectangle(g_x11.display, g_x11.window, g_x11.gc, 0, 0,
-                 FIELD_WIDTH * CELL_SIZE, FIELD_HEIGHT * CELL_SIZE);
+                 (FIELD_WIDTH * CELL_SIZE) + SIDEBAR_WIDTH,
+                 FIELD_HEIGHT * CELL_SIZE);
 
   for (int row = 0; row < FIELD_HEIGHT; row++) {
     for (int col = 0; col < FIELD_WIDTH; col++) {
@@ -324,40 +337,90 @@ void platform_render(GameState *state) {
         draw_cell(col, row, g_x11.alloc_colors.gray); // Draw walls in gray
         break;
       }
+
+      case TETRIS_FIELD_TMP_FLASH: {
+        draw_cell(col, row, g_x11.alloc_colors.white);
+        break;
+      }
       }
     }
   }
 
-  draw_piece(state->current_piece.index, state->current_piece.col,
-             state->current_piece.row,
+  draw_piece(state->current_piece.index, state->current_piece.x,
+             state->current_piece.y,
              get_tetromino_color_by_index(state->current_piece.index),
              state->current_piece.rotation);
 
-  int font_size = 16;
-  int sx = FIELD_WIDTH * CELL_SIZE - font_size * 6;
-  int base_pos_y = 95;
-  char buf[32];
-  XSetForeground(g_x11.display, g_x11.gc, g_x11.alloc_colors.white);
-  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, base_pos_y, "PIECES",
-              6);
-  XSetForeground(g_x11.display, g_x11.gc, g_x11.alloc_colors.yellow);
-  snprintf(buf, sizeof(buf), "%d", state->pieces_count);
-  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, base_pos_y + font_size,
-              buf, (int)strlen(buf));
+  /* ── HUD SIDEBAR ─────────────────────────────────────────────────── */
+  char buf[64];
+  int sx = FIELD_WIDTH * CELL_SIZE + 10;
+  XSetForeground(g_x11.display, g_x11.gc,
+                 WhitePixel(g_x11.display, g_x11.screen));
 
+  /* Score */
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, 20, "SCORE", 5);
+  snprintf(buf, sizeof(buf), "%d", state->score);
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, 36, buf,
+              (int)strlen(buf));
+
+  /* Level */
+  int level = state->level;
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, 58, "LEVEL", 5);
+  snprintf(buf, sizeof(buf), "%d", level);
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, 74, buf,
+              (int)strlen(buf));
+
+  /* Pieces */
+  int pieces_count = state->pieces_count;
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx + 50, 58, "PIECES", 6);
+  snprintf(buf, sizeof(buf), "%d", pieces_count);
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx + 50, 74, buf,
+              (int)strlen(buf));
+
+  /* Next piece preview */
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, 100, "NEXT", 4);
+  int px, py;
+  int prev_col = FIELD_WIDTH + 1;
+  int prev_row = 4;
+  for (px = 0; px < 4; px++) {
+    for (py = 0; py < 4; py++) {
+      int pi = tetromino_pos_value(px, py, 0);
+      if (TETROMINOES[state->current_piece.next_index][pi] != TETROMINO_SPAN)
+        draw_cell(
+            prev_col + px, prev_row + py,
+            get_tetromino_color_by_index(state->current_piece.next_index));
+    }
+  }
+
+  /* Controls hint */
+  XSetForeground(g_x11.display, g_x11.gc, g_x11.alloc_colors.gray);
+  int WINDOW_HEIGHT = FIELD_HEIGHT * CELL_SIZE;
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, WINDOW_HEIGHT - 90,
+              "Controls:", 9);
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, WINDOW_HEIGHT - 74,
+              "← →  Move", 9);
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, WINDOW_HEIGHT - 58,
+              "↓   Drop", 8);
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, WINDOW_HEIGHT - 42,
+              "Z   Rotate", 10);
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, WINDOW_HEIGHT - 26,
+              "R   Restart", 11);
+  XDrawString(g_x11.display, g_x11.window, g_x11.gc, sx, WINDOW_HEIGHT - 10,
+              "Q   Quit", 8);
+
+  /* 5. Game over overlay */
   if (state->game_over) {
     int cx = FIELD_WIDTH * CELL_SIZE / 2;
     int cy = FIELD_HEIGHT * CELL_SIZE / 2;
-    /* Dark background box */
-    XSetForeground(g_x11.display, g_x11.gc, g_x11.alloc_colors.black);
+    XSetForeground(g_x11.display, g_x11.gc,
+                   BlackPixel(g_x11.display, g_x11.screen));
     XFillRectangle(g_x11.display, g_x11.window, g_x11.gc, cx - 60, cy - 30, 120,
                    60);
-    /* "GAME OVER" in red */
-    XSetForeground(g_x11.display, g_x11.gc, g_x11.alloc_colors.red);
+    XSetForeground(g_x11.display, g_x11.gc, alloc_color("red"));
     XDrawString(g_x11.display, g_x11.window, g_x11.gc, cx - 28, cy - 8,
                 "GAME OVER", 9);
-    /* Restart hint in white */
-    XSetForeground(g_x11.display, g_x11.gc, g_x11.alloc_colors.white);
+    XSetForeground(g_x11.display, g_x11.gc,
+                   WhitePixel(g_x11.display, g_x11.screen));
     XDrawString(g_x11.display, g_x11.window, g_x11.gc, cx - 42, cy + 12,
                 "R=Restart  Q=Quit", 17);
   }
@@ -373,7 +436,7 @@ void platform_shutdown(void) {
 
 int main(void) {
 
-  int screen_width = FIELD_WIDTH * CELL_SIZE;
+  int screen_width = (FIELD_WIDTH * CELL_SIZE) + SIDEBAR_WIDTH;
   int screen_height = FIELD_HEIGHT * CELL_SIZE;
 
   if (platform_init("Tetris", screen_width, screen_height) != 0) {
@@ -391,7 +454,17 @@ int main(void) {
 
     prepare_input_frame(&game_input);
     platform_get_input(&game_state, &game_input);
-    tetris_update(&game_state, &game_input, (float)delta_time);
+
+    if (game_input.quit) {
+      break;
+    }
+
+    if (game_state.game_over && game_input.restart) {
+      game_init(&game_state, &game_input);
+    } else {
+      tetris_update(&game_state, &game_input, delta_time);
+    }
+
     platform_render(&game_state);
 
     double frame_time = platform_get_time() - current_time;

@@ -3,7 +3,6 @@
 
 #include <raylib.h>
 #include <stdio.h>
-#include <string.h>
 
 static void draw_cell(int col, int row, Color color) {
   int x = col * CELL_SIZE + 1;
@@ -63,14 +62,13 @@ static void draw_piece(int piece_index, int field_col, int field_row,
 }
 
 int platform_init(const char *title, int width, int height) {
-  InitWindow(FIELD_WIDTH * CELL_SIZE, FIELD_HEIGHT * CELL_SIZE, "Tetris");
+  InitWindow(width, height, title);
   SetTargetFPS(60);
   return 0;
 }
 void platform_get_input(GameState *state, GameInput *input) {
-  if (IsKeyPressed(KEY_Q) || IsKeyPressed(KEY_ESCAPE)) {
-    WindowShouldClose();
-  }
+  input->restart = IsKeyPressed(KEY_R);
+  input->quit = IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_Q);
 
   /* Rotation — set value based on which key */
   if (IsKeyDown(KEY_X)) {
@@ -124,26 +122,62 @@ void platform_render(GameState *state) {
         draw_cell(col, row, (Color){128, 128, 128, 255}); // Draw walls in gray
         break;
       }
+
+      case TETRIS_FIELD_TMP_FLASH: {
+        draw_cell(col, row, (Color){255, 255, 255, 255});
+        break;
+      }
       }
     }
   }
 
-  // TETROMINO_I_IDX,
-  draw_piece(state->current_piece.index, state->current_piece.col,
-             state->current_piece.row,
+  draw_piece(state->current_piece.index, state->current_piece.x,
+             state->current_piece.y,
              get_tetromino_color_by_index(state->current_piece.index),
              state->current_piece.rotation);
 
-  int font_size = 16;
-  int sx = FIELD_WIDTH * CELL_SIZE - font_size * 6;
-  int base_pos_y = 95;
-  char buf[32];
-  DrawText("PIECES", sx, base_pos_y, font_size, WHITE);
-  snprintf(buf, sizeof(buf), "%d", state->pieces_count);
-  DrawText(buf, sx, base_pos_y + font_size * 1.25, font_size,
-           (Color){255, 255, 0, 255});
+  /* ── HUD SIDEBAR ─────────────────────────────────────────────────── */
+  int sx = FIELD_WIDTH * CELL_SIZE + 10;
+  char buf[64];
 
-  /* Game over overlay */
+  DrawText("SCORE", sx, 10, 16, WHITE);
+  snprintf(buf, sizeof(buf), "%d", state->score);
+  DrawText(buf, sx, 30, 20, YELLOW);
+
+  int level = state->level;
+  DrawText("LEVEL", sx, 60, 16, WHITE);
+  snprintf(buf, sizeof(buf), "%d", level);
+  DrawText(buf, sx, 80, 20, GREEN);
+
+  int pieces_count = state->pieces_count;
+  DrawText("PIECES", sx + 100, 60, 16, WHITE);
+  snprintf(buf, sizeof(buf), "%d", pieces_count);
+  DrawText(buf, sx + 100, 80, 20, GREEN);
+
+  DrawText("NEXT", sx, 115, 16, WHITE);
+  int px, py;
+  int prev_col = FIELD_WIDTH + 1;
+  int prev_row = 5;
+  for (px = 0; px < 4; px++) {
+    for (py = 0; py < 4; py++) {
+      int pi = tetromino_pos_value(px, py, 0);
+      if (TETROMINOES[state->current_piece.next_index][pi] != TETROMINO_SPAN)
+        draw_cell(
+            prev_col + px, prev_row + py,
+            get_tetromino_color_by_index(state->current_piece.next_index));
+    }
+  }
+
+  /* Controls hint */
+  int WINDOW_HEIGHT = FIELD_HEIGHT * CELL_SIZE;
+  DrawText("Controls:", sx, WINDOW_HEIGHT - 100, 12, GRAY);
+  DrawText("← →    Move", sx, WINDOW_HEIGHT - 84, 12, GRAY);
+  DrawText("↓      Drop", sx, WINDOW_HEIGHT - 68, 12, GRAY);
+  DrawText("Z/X  Rotate", sx, WINDOW_HEIGHT - 52, 12, GRAY);
+  DrawText("R   Restart", sx, WINDOW_HEIGHT - 36, 12, GRAY);
+  DrawText("Q/Esc  Quit", sx, WINDOW_HEIGHT - 20, 12, GRAY);
+
+  /* ── Game over overlay ── */
   if (state->game_over) {
     int cx = FIELD_WIDTH * CELL_SIZE / 2;
     int cy = FIELD_HEIGHT * CELL_SIZE / 2;
@@ -159,7 +193,7 @@ void platform_shutdown(void) { CloseWindow(); }
 
 int main(void) {
 
-  int screen_width = FIELD_WIDTH * CELL_SIZE;
+  int screen_width = (FIELD_WIDTH * CELL_SIZE) + SIDEBAR_WIDTH;
   int screen_height = FIELD_HEIGHT * CELL_SIZE;
   if (platform_init("Tetris", screen_width, screen_height) != 0) {
     return 1;
@@ -174,7 +208,16 @@ int main(void) {
 
     prepare_input_frame(&game_input);
     platform_get_input(&game_state, &game_input);
-    tetris_update(&game_state, &game_input, delta_time);
+
+    if (game_input.quit) {
+      break;
+    }
+
+    if (game_state.game_over && game_input.restart) {
+      game_init(&game_state, &game_input);
+    } else {
+      tetris_update(&game_state, &game_input, delta_time);
+    }
 
     platform_render(&game_state);
   }

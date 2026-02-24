@@ -7,6 +7,8 @@
 #define FIELD_HEIGHT 18
 #define CELL_SIZE 30
 
+#define SIDEBAR_WIDTH 200 /* extra pixels to the right of the field */
+
 #define TETROMINO_SPAN '.'
 #define TETROMINO_BLOCK 'X'
 #define TETROMINO_LAYER_COUNT 4
@@ -33,6 +35,7 @@ typedef enum {
   TETRIS_FIELD_T,
   TETRIS_FIELD_Z,
   TETRIS_FIELD_WALL,
+  TETRIS_FIELD_TMP_FLASH, /* Used to mark completed lines for flashing effect */
 } TETRIS_FIELD_CELL;
 
 typedef enum {
@@ -51,11 +54,11 @@ typedef struct {
 } GameActionRepeat;
 
 typedef struct {
-  int col;                    /* starting column */
-  int row;                    /* starting row    */
-  TETROMINO_BY_IDX index;     /* which tetromino */
-  TETROMINO_BY_IDX nextIndex; /* next tetromino */
-  TETROMINO_R_DIR rotation;   /* current rotation: 0, 1, 2, or 3 */
+  int x;                       /* starting column */
+  int y;                       /* starting row    */
+  TETROMINO_BY_IDX index;      /* which tetromino */
+  TETROMINO_BY_IDX next_index; /* next tetromino */
+  TETROMINO_R_DIR rotation;    /* current rotation: 0, 1, 2, or 3 */
 } CurrentPiece;
 typedef struct {
   unsigned char field[FIELD_WIDTH * FIELD_HEIGHT]; /* the play field */
@@ -63,6 +66,15 @@ typedef struct {
   int score;
   int pieces_count; /* total pieces locked — used for difficulty scaling */
   bool game_over;
+  int level;
+
+  struct {
+    int indexes[TETROMINO_LAYER_COUNT]; /* row indices of completed lines this
+                                           lock */
+    int count;                    /* how many entries in lines[] are valid */
+    GameActionRepeat flash_timer; /* countdown: while > 0, game is paused
+                                        showing white flash */
+  } completed_lines;
 
   // Replace speed/speed_count with time-based fields
   GameActionRepeat tetromino_drop;
@@ -147,8 +159,9 @@ typedef struct {
      * For rotation: 1 = clockwise, -1 = counter-clockwise, 0 = no rotation
      */
     TETROMINO_ROTATE_X_VALUE value;
-  } rotate_x; /* 1 if X/Z pressed this frame */
-  // int quit;               /* 1 if window closed or Escape pressed */
+  } rotate_x;  /* 1 if X/Z pressed this frame */
+  int quit;    /* 1 if window closed or Escape pressed */
+  int restart; /* 1 if R pressed this frame */
 } GameInput;
 
 /* Helper macro to update button state.
