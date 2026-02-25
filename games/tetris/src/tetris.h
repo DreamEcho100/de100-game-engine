@@ -2,6 +2,7 @@
 #define TETRIS_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #define FIELD_WIDTH 12
 #define FIELD_HEIGHT 18
@@ -14,6 +15,42 @@
 #define TETROMINO_LAYER_COUNT 4
 #define TETROMINO_SIZE 16
 #define TETROMINOS_COUNT 7
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Backbuffer - Platform Independent Rendering Target
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+typedef struct {
+  uint32_t *pixels; /* RGBA pixel data (0xAARRGGBB format) */
+  int width;
+  int height;
+  int pitch; /* Bytes per row (usually width * 4) */
+} TetrisBackbuffer;
+/* Color helper - pack RGBA into uint32 */
+#define TETRIS_RGBA(r, g, b, a)                                                \
+  (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) |      \
+   (uint32_t)(b))
+
+#define TETRIS_RGB(r, g, b) TETRIS_RGBA(r, g, b, 255)
+
+/* Predefined colors */
+#define COLOR_BLACK TETRIS_RGB(0, 0, 0)
+#define COLOR_WHITE TETRIS_RGB(255, 255, 255)
+#define COLOR_GRAY TETRIS_RGB(128, 128, 128)
+#define COLOR_DARK_GRAY TETRIS_RGB(64, 64, 64)
+#define COLOR_CYAN TETRIS_RGB(0, 255, 255)
+#define COLOR_BLUE TETRIS_RGB(0, 0, 255)
+#define COLOR_ORANGE TETRIS_RGB(255, 165, 0)
+#define COLOR_YELLOW TETRIS_RGB(255, 255, 0)
+#define COLOR_GREEN TETRIS_RGB(0, 255, 0)
+#define COLOR_MAGENTA TETRIS_RGB(255, 0, 255)
+#define COLOR_RED TETRIS_RGB(255, 0, 0)
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Tetromino Types
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 typedef enum {
   TETROMINO_I_IDX,
@@ -186,16 +223,24 @@ void prepare_input_frame(GameInput *input);
    "trust me, it exists somewhere else." */
 extern const char *TETROMINOES[7];
 
+/* Initialization */
 void game_init(GameState *state, GameInput *input);
+void prepare_input_frame(GameInput *input);
 
-/* ── Function declarations ──────────────────────────── */
-
-/* Returns the index into a 4×4 piece string for rotation r.
-   px = column (0–3), py = row (0–3), r = rotation counter. */
+/* Game Logic */
 int tetromino_pos_value(int px, int py, TETROMINO_R_DIR r);
-
 int tetromino_does_piece_fit(GameState *state, int piece, int rotation,
                              int pos_x, int pos_y);
 void tetris_update(GameState *state, GameInput *input, float delta_time);
+
+/* Rendering - Platform Independent! */
+void tetris_render(TetrisBackbuffer *backbuffer, GameState *state);
+
+/* Drawing Primitives (used by tetris_render, but can be used by platform too)
+ */
+void draw_rect(TetrisBackbuffer *bb, int x, int y, int w, int h,
+               uint32_t color);
+void draw_text(TetrisBackbuffer *bb, int x, int y, const char *text,
+               uint32_t color, int scale);
 
 #endif // TETRIS_H

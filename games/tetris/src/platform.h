@@ -6,7 +6,7 @@
 /* These are declared here and implemented in main_x11.c / main_raylib.c */
 
 int platform_init(const char *title, int width, int height);
-void platform_get_input(GameState *state, GameInput *input);
+void platform_get_input(GameInput *input);
 void platform_render(GameState *state);
 // void platform_sleep_ms(int ms);
 // int platform_should_quit(void);
