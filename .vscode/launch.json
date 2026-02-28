@@ -1,6 +1,7 @@
 {
   "version": "0.2.0",
   "configurations": [
+    // Handmade Hero
     {
       "name": "Handmade Hero - Debug Dev (X11)",
       "type": "cppdbg",
@@ -42,17 +43,19 @@
         "engineLogging": false
       }
     },
+
+    //
+    // Tetris
+    //
     {
-      "name": "Handmade Hero - Debug Dev + Sanitizers (X11)",
+      "name": "Tetris - Debug (X11)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/games/handmade-hero-game/build/game",
+      "program": "${workspaceFolder}/games/tetris/build/game",
       "args": [],
       "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/games/handmade-hero-game",
-      "environment": [
-        { "name": "ASAN_OPTIONS", "value": "detect_leaks=1:halt_on_error=0" }
-      ],
+      "cwd": "${workspaceFolder}/games/tetris",
+      "environment": [],
       "externalConsole": false,
       "MIMode": "gdb",
       "setupCommands": [
@@ -60,40 +63,68 @@
         { "text": "handle SIGFPE stop print" },
         { "text": "set breakpoint pending on" }
       ],
-      "preLaunchTask": "Handmade Hero - Build Dev + Sanitizers (X11)",
+      "preLaunchTask": "Tetris - Build/Run (X11)",
       "miDebuggerPath": "/usr/bin/gdb"
     },
     {
-      "name": "Handmade Hero - Debug Prod (X11)",
+      "name": "Tetris - Debug (Raylib)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/games/handmade-hero-game/build/game",
+      "program": "${workspaceFolder}/games/tetris/build/game",
       "args": [],
       "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/games/handmade-hero-game",
+      "cwd": "${workspaceFolder}/games/tetris",
       "environment": [],
       "externalConsole": false,
       "MIMode": "gdb",
       "setupCommands": [
         { "text": "-enable-pretty-printing" },
-        { "text": "handle SIGFPE stop print" }
+        { "text": "handle SIGFPE stop print" },
+        { "text": "set breakpoint pending on" }
       ],
-      "preLaunchTask": "Handmade Hero - Build Prod (X11)",
+      "preLaunchTask": "Tetris - Build/Run (Raylib)",
+      "miDebuggerPath": "/usr/bin/gdb"
+    },
+
+    //
+    // Snake
+    //
+    {
+      "name": "Snake - Debug (X11)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/games/snake/build/game",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/games/snake",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "text": "-enable-pretty-printing" },
+        { "text": "handle SIGFPE stop print" },
+        { "text": "set breakpoint pending on" }
+      ],
+      "preLaunchTask": "Snake - Build/Run (X11)",
       "miDebuggerPath": "/usr/bin/gdb"
     },
     {
-      "name": "Handmade Hero - Run Dev (X11) - No Debug",
+      "name": "Snake - Debug (Raylib)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/games/handmade-hero-game/build/game",
+      "program": "${workspaceFolder}/games/snake/build/game",
       "args": [],
       "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/games/handmade-hero-game",
+      "cwd": "${workspaceFolder}/games/snake",
       "environment": [],
-      "externalConsole": true,
+      "externalConsole": false,
       "MIMode": "gdb",
-      "setupCommands": [],
-      "preLaunchTask": "Handmade Hero - Build Dev (X11)",
+      "setupCommands": [
+        { "text": "-enable-pretty-printing" },
+        { "text": "handle SIGFPE stop print" },
+        { "text": "set breakpoint pending on" }
+      ],
+      "preLaunchTask": "Snake - Build/Run (Raylib)",
       "miDebuggerPath": "/usr/bin/gdb"
     }
   ]

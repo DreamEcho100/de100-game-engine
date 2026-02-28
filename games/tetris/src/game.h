@@ -26,7 +26,7 @@ typedef struct {
   int width;
   int height;
   int pitch; /* Bytes per row (usually width * 4) */
-} TetrisBackbuffer;
+} Backbuffer;
 /* Color helper - pack RGBA into uint32 */
 #define TETRIS_RGBA(r, g, b, a)                                                \
   (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) |      \
@@ -88,7 +88,7 @@ typedef struct {
 
   /** Time between auto-repeats (e.g., 0.1 = 100ms) */
   float interval;
-} GameActionRepeat;
+} AutoRepeatInterval;
 
 typedef struct {
   int x;                       /* starting column */
@@ -108,13 +108,13 @@ typedef struct {
   struct {
     int indexes[TETROMINO_LAYER_COUNT]; /* row indices of completed lines this
                                            lock */
-    int count;                    /* how many entries in lines[] are valid */
-    GameActionRepeat flash_timer; /* countdown: while > 0, game is paused
+    int count;                      /* how many entries in lines[] are valid */
+    AutoRepeatInterval flash_timer; /* countdown: while > 0, game is paused
                                         showing white flash */
   } completed_lines;
 
   // Replace speed/speed_count with time-based fields
-  GameActionRepeat tetromino_drop;
+  AutoRepeatInterval tetromino_drop;
 } GameState;
 
 /* ── Input System ─────────────────────────────────────── */
@@ -154,7 +154,7 @@ typedef struct {
  */
 typedef struct {
   GameButtonState button;
-  GameActionRepeat repeat;
+  AutoRepeatInterval repeat;
 } GameActionWithRepeat;
 
 // /**
@@ -231,16 +231,15 @@ void prepare_input_frame(GameInput *input);
 int tetromino_pos_value(int px, int py, TETROMINO_R_DIR r);
 int tetromino_does_piece_fit(GameState *state, int piece, int rotation,
                              int pos_x, int pos_y);
-void tetris_update(GameState *state, GameInput *input, float delta_time);
+void game_update(GameState *state, GameInput *input, float delta_time);
 
 /* Rendering - Platform Independent! */
-void tetris_render(TetrisBackbuffer *backbuffer, GameState *state);
+void game_reder(Backbuffer *backbuffer, GameState *state);
 
-/* Drawing Primitives (used by tetris_render, but can be used by platform too)
+/* Drawing Primitives (used by game_reder, but can be used by platform too)
  */
-void draw_rect(TetrisBackbuffer *bb, int x, int y, int w, int h,
-               uint32_t color);
-void draw_text(TetrisBackbuffer *bb, int x, int y, const char *text,
-               uint32_t color, int scale);
+void draw_rect(Backbuffer *bb, int x, int y, int w, int h, uint32_t color);
+void draw_text(Backbuffer *bb, int x, int y, const char *text, uint32_t color,
+               int scale);
 
 #endif // TETRIS_H

@@ -559,3 +559,8 @@ The platform layer shouldn't have the game logic in general, as much as possible
 This mean that every thing/game we build the course could have new things that we will consider either that the platform layer should handle, or the game layer, and we will try to be consistent with that across all the courses, and if we find something that we think should be handled by the platform layer, we will refactor the previous courses to move that responsibility to the platform layer, and if we find something that should be handled by the game layer, we will refactor the previous courses to move that responsibility to the game layer.
 
 And if we found a new idea/thought/perspective that we think could be useful for the courses, we will add it to the "course-builder.md" prompt, and we will also keep track/updating of these ideas in the "course-builder.md" document _when needed_.
+
+Amany Dentist
+X Fri/Thur
+2-5
+8-11

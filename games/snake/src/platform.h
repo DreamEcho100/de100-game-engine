@@ -19,31 +19,36 @@ typedef struct {
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
-#define TITLE ("Tetris (" TOSTRING(BACKEND) ") - yt/@javidx9")
+#define TITLE ("Snake (" STRINGIFY(BACKEND) ") - yt/@javidx9")
 
 static int platform_game_props_init(PlatformGameProps *platform_game_props) {
-  int screen_width = (FIELD_WIDTH * CELL_SIZE) + SIDEBAR_WIDTH;
-  int screen_height = FIELD_HEIGHT * CELL_SIZE;
+  printf("Initializing platform game properties...\n");
+  platform_game_props->title = TITLE;
+  platform_game_props->width = SCREEN_INITIAL_WIDTH;
+  platform_game_props->height = SCREEN_INITIAL_HEIGHT;
 
   platform_game_props->is_running = true;
 
-  platform_game_props->title = TITLE;
-  platform_game_props->width = screen_width;
-  platform_game_props->height = screen_height;
+  printf("Initializing backbuffer...\n");
 
   /* Allocate backbuffer */
   platform_game_props->backbuffer.width = platform_game_props->width;
   platform_game_props->backbuffer.height = platform_game_props->height;
   platform_game_props->backbuffer.pitch =
       platform_game_props->width * sizeof(uint32_t);
+  printf("Allocating backbuffer pixels...\n");
   platform_game_props->backbuffer.pixels =
       (uint32_t *)malloc(platform_game_props->width *
                          platform_game_props->height * sizeof(uint32_t));
+
+  printf("Backbuffer initialized successfully.\n");
 
   if (!platform_game_props->backbuffer.pixels) {
     fprintf(stderr, "Failed to allocate backbuffer\n");
     return 1;
   }
+
+  printf("✓ Platform game properties initialized successfully.\n");
 
   return 0;
 }

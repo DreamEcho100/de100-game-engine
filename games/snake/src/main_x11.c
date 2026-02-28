@@ -199,6 +199,7 @@ void platform_shutdown(void) {
 
 void platform_get_input(GameInput *input,
                         PlatformGameProps *platform_game_props) {
+  (void)input;
   XEvent event;
 
   while (XPending(g_x11.display) > 0) {
@@ -212,78 +213,54 @@ void platform_get_input(GameInput *input,
       case XK_Q:
       case XK_Escape:
         platform_game_props->is_running = false;
-        input->quit = 1;
+        input->quit = true;
         break;
       case XK_r:
       case XK_R:
+      case XK_space:
         input->restart = 1;
         break;
-      case XK_x:
-      case XK_X:
-        UPDATE_BUTTON(input->rotate_x.button, 1);
-        input->rotate_x.value = TETROMINO_ROTATE_X_GO_RIGHT;
-        break;
-      case XK_z:
-      case XK_Z:
-        UPDATE_BUTTON(input->rotate_x.button, 1);
-        input->rotate_x.value = TETROMINO_ROTATE_X_GO_LEFT;
-        break;
       case XK_Left:
-      case XK_A:
       case XK_a:
-        UPDATE_BUTTON(input->move_left.button, 1);
+      case XK_A:
+        UPDATE_BUTTON(input->turn_left, 1);
         break;
       case XK_Right:
-      case XK_D:
       case XK_d:
-        UPDATE_BUTTON(input->move_right.button, 1);
-        break;
-      case XK_Down:
-      case XK_S:
-      case XK_s:
-        UPDATE_BUTTON(input->move_down.button, 1);
+      case XK_D:
+        UPDATE_BUTTON(input->turn_right, 1);
         break;
       }
       break;
     }
-
     case KeyRelease: {
       KeySym key = XLookupKeysym(&event.xkey, 0);
       switch (key) {
-      case XK_r:
-      case XK_R:
-        input->restart = 0;
-        break;
-      case XK_x:
-      case XK_X:
-      case XK_z:
-      case XK_Z:
-        UPDATE_BUTTON(input->rotate_x.button, 0);
-        input->rotate_x.value = TETROMINO_ROTATE_X_NONE;
-        break;
       case XK_Left:
-      case XK_A:
       case XK_a:
-        UPDATE_BUTTON(input->move_left.button, 0);
+      case XK_A:
+        UPDATE_BUTTON(input->turn_left, 0);
         break;
       case XK_Right:
-      case XK_D:
       case XK_d:
-        UPDATE_BUTTON(input->move_right.button, 0);
-        break;
-      case XK_Down:
-      case XK_S:
-      case XK_s:
-        UPDATE_BUTTON(input->move_down.button, 0);
+      case XK_D:
+        UPDATE_BUTTON(input->turn_right, 0);
         break;
       }
       break;
     }
 
-    case ClientMessage:
-      platform_game_props->is_running = false;
-      input->quit = 1;
+    case ClientMessage: {
+      printf("Received ClientMessage event\n");
+      Atom wm_delete_window =
+          XInternAtom(g_x11.display, "WM_DELETE_WINDOW", False);
+      if ((Atom)event.xclient.data.l[0] == wm_delete_window) {
+        platform_game_props->is_running = false;
+        // input->quit = 1;
+        break;
+      }
       break;
+    }
 
     case ConfigureNotify:
       if (event.xconfigure.width != g_x11.width ||
@@ -344,9 +321,9 @@ int main(void) {
     return 1;
   }
 
-  GameInput game_input = {0};
-  GameState game_state = {0};
-  game_init(&game_state, &game_input);
+  GameInput game_input = (GameInput){};
+  GameState game_state = (GameState){};
+  game_init(&game_state);
 
   g_last_frame_time = get_time();
 
@@ -358,17 +335,19 @@ int main(void) {
     prepare_input_frame(&game_input);
     platform_get_input(&game_input, &platform_game_props);
 
-    if (game_input.quit)
-      break;
+    // if (game_input.quit)
+    //   break;
 
-    if (game_state.game_over && game_input.restart) {
-      game_init(&game_state, &game_input);
-    } else {
-      game_update(&game_state, &game_input, delta_time);
-    }
+    // if (game_state.game_over && game_input.restart) {
+    //   game_init(&game_state, &game_input);
+    // } else {
+    game_update(&game_state, &game_input, delta_time);
+    // }
 
-    /* Game renders to backbuffer - platform independent! */
-    game_reder(&platform_game_props.backbuffer, &game_state);
+    // /* Game renders to backbuffer - platform independent! */
+    // game_reder(&backbuffer, &game_state);
+
+    game_render(&game_state, &platform_game_props.backbuffer);
 
     /* Platform displays the backbuffer */
     platform_display_backbuffer(&platform_game_props.backbuffer);

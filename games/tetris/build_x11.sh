@@ -1,7 +1,0 @@
-#!/bin/bash
-set -e
-mkdir -p build
-clang src/main_x11.c src/tetris.c -o build/x11 -lX11 -lxkbcommon -lGL -lGLX
-echo "Build OK -> ./build/x11"
-
-# ./build_x11.sh && ./build/tetris_x11;

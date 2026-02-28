@@ -1,42 +1,48 @@
-#include "tetris.h"
+#include "game.h"
+#include "platform.h"
 
 #include <raylib.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Main
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-int main(void) {
-  int screen_width = (FIELD_WIDTH * CELL_SIZE) + SIDEBAR_WIDTH;
-  int screen_height = FIELD_HEIGHT * CELL_SIZE;
+typedef struct {
+  Texture2D texture;
+} RaylibState;
 
-  InitWindow(screen_width, screen_height, "Tetris");
+RaylibState g_raylib = {0};
+
+int platform_init(PlatformGameProps *props) {
+  InitWindow(props->width, props->height, props->title);
   SetTargetFPS(60);
 
-  /* Allocate backbuffer */
-  TetrisBackbuffer backbuffer;
-  backbuffer.width = screen_width;
-  backbuffer.height = screen_height;
-  backbuffer.pitch = screen_width * sizeof(uint32_t);
-  backbuffer.pixels =
-      (uint32_t *)malloc(screen_width * screen_height * sizeof(uint32_t));
+  /* Create Raylib texture to display backbuffer */
+  Image img = {.data = props->backbuffer.pixels,
+               .width = props->backbuffer.width,
+               .height = props->backbuffer.height,
+               .mipmaps = 1,
+               .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
+  g_raylib.texture = LoadTextureFromImage(img);
 
-  if (!backbuffer.pixels) {
-    fprintf(stderr, "Failed to allocate backbuffer\n");
-    CloseWindow();
+  return 0;
+}
+
+void platform_shutdown(void) {
+  UnloadTexture(g_raylib.texture);
+  CloseWindow();
+}
+
+int main(void) {
+  PlatformGameProps platform_game_props = {0};
+  if (platform_game_props_init(&platform_game_props) != 0) {
     return 1;
   }
 
-  /* Create Raylib texture to display backbuffer */
-  Image img = {.data = backbuffer.pixels,
-               .width = screen_width,
-               .height = screen_height,
-               .mipmaps = 1,
-               .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
-  Texture2D texture = LoadTextureFromImage(img);
+  if (platform_init(&platform_game_props) != 0) {
+    return 1;
+  }
 
   GameInput input = {0};
   GameState state = {0};
@@ -85,27 +91,26 @@ int main(void) {
     if (state.game_over && input.restart) {
       game_init(&state, &input);
     } else {
-      tetris_update(&state, &input, delta_time);
+      game_update(&state, &input, delta_time);
     }
 
     /* ═══════════════════════════════════════════════════════════════════
      * Render - Game draws to backbuffer (platform independent!)
      * ═══════════════════════════════════════════════════════════════════ */
-    tetris_render(&backbuffer, &state);
+    game_reder(&platform_game_props.backbuffer, &state);
 
     /* ═══════════════════════════════════════════════════════════════════
      * Display - Platform uploads backbuffer to screen
-     * ═══════════════════════════════════════════════════════════════════ */
-    UpdateTexture(texture, backbuffer.pixels);
+     * ═════════��═════════════════════════════════════════════════════════ */
+    UpdateTexture(g_raylib.texture, platform_game_props.backbuffer.pixels);
 
     BeginDrawing();
     ClearBackground(BLACK);
-    DrawTexture(texture, 0, 0, WHITE);
+    DrawTexture(g_raylib.texture, 0, 0, WHITE);
     EndDrawing();
   }
 
-  UnloadTexture(texture);
-  free(backbuffer.pixels);
-  CloseWindow();
+  platform_game_props_free(&platform_game_props);
+  platform_shutdown();
   return 0;
 }

@@ -1,4 +1,4 @@
-#include "tetris.h"
+#include "game.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -154,8 +154,7 @@ static const unsigned char *find_special_char(char c) {
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-void draw_rect(TetrisBackbuffer *bb, int x, int y, int w, int h,
-               uint32_t color) {
+void draw_rect(Backbuffer *bb, int x, int y, int w, int h, uint32_t color) {
   /* Clip to backbuffer bounds */
   int x0 = x < 0 ? 0 : x;
   int y0 = y < 0 ? 0 : y;
@@ -170,7 +169,7 @@ void draw_rect(TetrisBackbuffer *bb, int x, int y, int w, int h,
   }
 }
 
-void draw_rect_blend(TetrisBackbuffer *bb, int x, int y, int w, int h,
+void draw_rect_blend(Backbuffer *bb, int x, int y, int w, int h,
                      uint32_t color) {
   /* Extract alpha */
   uint8_t alpha = (color >> 24) & 0xFF;
@@ -208,8 +207,8 @@ void draw_rect_blend(TetrisBackbuffer *bb, int x, int y, int w, int h,
   }
 }
 
-static void draw_char(TetrisBackbuffer *bb, int x, int y, char c,
-                      uint32_t color, int scale) {
+static void draw_char(Backbuffer *bb, int x, int y, char c, uint32_t color,
+                      int scale) {
   const unsigned char *bitmap = NULL;
 
   if (c >= '0' && c <= '9') {
@@ -264,7 +263,7 @@ static uint32_t get_tetromino_color(TETROMINO_BY_IDX index) {
   }
 }
 
-static void draw_cell(TetrisBackbuffer *bb, int col, int row, uint32_t color) {
+static void draw_cell(Backbuffer *bb, int col, int row, uint32_t color) {
   int x = col * CELL_SIZE + 1;
   int y = row * CELL_SIZE + 1;
   int w = CELL_SIZE - 2;
@@ -272,7 +271,7 @@ static void draw_cell(TetrisBackbuffer *bb, int col, int row, uint32_t color) {
   draw_rect(bb, x, y, w, h, color);
 }
 
-static void draw_piece(TetrisBackbuffer *bb, int piece_index, int field_col,
+static void draw_piece(Backbuffer *bb, int piece_index, int field_col,
                        int field_row, uint32_t color,
                        TETROMINO_R_DIR rotation) {
   for (int py = 0; py < TETROMINO_LAYER_COUNT; py++) {
@@ -285,8 +284,8 @@ static void draw_piece(TetrisBackbuffer *bb, int piece_index, int field_col,
   }
 }
 
-void draw_text(TetrisBackbuffer *bb, int x, int y, const char *text,
-               uint32_t color, int scale) {
+void draw_text(Backbuffer *bb, int x, int y, const char *text, uint32_t color,
+               int scale) {
   int cursor_x = x;
   while (*text) {
     draw_char(bb, cursor_x, y, *text, color, scale);
@@ -300,7 +299,7 @@ void draw_text(TetrisBackbuffer *bb, int x, int y, const char *text,
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-void tetris_render(TetrisBackbuffer *backbuffer, GameState *state) {
+void game_reder(Backbuffer *backbuffer, GameState *state) {
   /* Clear to black */
   for (int i = 0; i < backbuffer->width * backbuffer->height; i++) {
     backbuffer->pixels[i] = COLOR_BLACK;
@@ -651,7 +650,7 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
   }
 }
 
-void tetris_update(GameState *state, GameInput *input, float delta_time) {
+void game_update(GameState *state, GameInput *input, float delta_time) {
   if (state->game_over)
     return;
 
@@ -840,13 +839,13 @@ void tetris_update(GameState *state, GameInput *input, float delta_time) {
 // ```c
 // // Just multiply delta_time
 // float slow_mo_factor = 0.5f;  // Half speed
-// tetris_update(&game_state, &input, delta_time * slow_mo_factor);
+// game_update(&game_state, &input, delta_time * slow_mo_factor);
 // ```
 
 // 4. Pause is Trivial
 // ```c
 // if (!paused) {
-//   tetris_update(&game_state, &input, delta_time);
+//   game_update(&game_state, &input, delta_time);
 // }
 // // When paused, just don't call update - timer doesn't advance
 // ```

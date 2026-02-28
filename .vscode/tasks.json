@@ -1,6 +1,7 @@
 {
   "version": "2.0.0",
   "tasks": [
+    // Handmade Hero
     {
       "label": "Handmade Hero - Build Dev (X11)",
       "type": "shell",
@@ -37,57 +38,54 @@
       "group": "build",
       "problemMatcher": ["$gcc"]
     },
+
+    //
+    // Tetris
+    //
     {
-      "label": "Handmade Hero - Build Dev - Platform Only (X11)",
+      "label": "Tetris - Build/Run (X11)",
       "type": "shell",
       "command": "./build-dev.sh",
-      "args": ["--backend=x11", "--build-platform"],
-      "options": {
-        "cwd": "${workspaceFolder}/games/handmade-hero-game"
-      },
-      "group": "build",
-      "problemMatcher": ["$gcc"]
-    },
-    {
-      "label": "Handmade Hero - Build Dev + Sanitizers (X11)",
-      "type": "shell",
-      "command": "./build-dev.sh",
-      "args": ["--backend=x11", "--sanitize"],
-      "options": {
-        "cwd": "${workspaceFolder}/games/handmade-hero-game"
-      },
-      "group": "build",
-      "problemMatcher": ["$gcc"]
-    },
-    {
-      "label": "Handmade Hero - Build Prod (X11)",
-      "type": "shell",
-      "command": "./build-dev.sh",
-      "args": ["--prod", "--backend=x11"],
-      "options": {
-        "cwd": "${workspaceFolder}/games/handmade-hero-game"
-      },
-      "group": "build",
-      "problemMatcher": ["$gcc"]
-    },
-    {
-      "label": "Handmade Hero - Build Prod (Raylib)",
-      "type": "shell",
-      "command": "./build-dev.sh",
-      "args": ["--prod", "--backend=raylib"],
-      "options": {
-        "cwd": "${workspaceFolder}/games/handmade-hero-game"
-      },
-      "group": "build",
-      "problemMatcher": ["$gcc"]
-    },
-    {
-      "label": "Handmade Hero - Clean Build",
-      "type": "shell",
-      "command": "rm -rf build/* && ./build-dev.sh",
       "args": ["--backend=x11"],
       "options": {
-        "cwd": "${workspaceFolder}/games/handmade-hero-game"
+        "cwd": "${workspaceFolder}/games/tetris"
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Tetris - Build/Run (Raylib)",
+      "type": "shell",
+      "command": "./build-dev.sh",
+      "args": ["--backend=raylib"],
+      "options": {
+        "cwd": "${workspaceFolder}/games/tetris"
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+
+    //
+    // Snake
+    //
+    {
+      "label": "Snake - Build/Run (X11)",
+      "type": "shell",
+      "command": "./build-dev.sh",
+      "args": ["--backend=x11"],
+      "options": {
+        "cwd": "${workspaceFolder}/games/snake"
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Snake - Build/Run (Raylib)",
+      "type": "shell",
+      "command": "./build-dev.sh",
+      "args": ["--backend=raylib"],
+      "options": {
+        "cwd": "${workspaceFolder}/games/snake"
       },
       "group": "build",
       "problemMatcher": ["$gcc"]
