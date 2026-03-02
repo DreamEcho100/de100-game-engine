@@ -28,7 +28,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 BACKEND_LIBS="-lm"
-SOURCES="src/game.c"
+SOURCES="src/game.c src/utils/draw-shapes.c src/utils/draw-text.c"
 
 
 DETECTED_OS=""

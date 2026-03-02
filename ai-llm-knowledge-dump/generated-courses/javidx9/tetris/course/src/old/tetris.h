@@ -28,24 +28,24 @@ typedef struct {
   int pitch; /* Bytes per row (usually width * 4) */
 } TetrisBackbuffer;
 /* Color helper - pack RGBA into uint32 */
-#define TETRIS_RGBA(r, g, b, a)                                                \
+#define GAME_RGBA(r, g, b, a)                                                  \
   (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) |      \
    (uint32_t)(b))
 
-#define TETRIS_RGB(r, g, b) TETRIS_RGBA(r, g, b, 255)
+#define GAME_RGB(r, g, b) GAME_RGBA(r, g, b, 255)
 
 /* Predefined colors */
-#define COLOR_BLACK TETRIS_RGB(0, 0, 0)
-#define COLOR_WHITE TETRIS_RGB(255, 255, 255)
-#define COLOR_GRAY TETRIS_RGB(128, 128, 128)
-#define COLOR_DARK_GRAY TETRIS_RGB(64, 64, 64)
-#define COLOR_CYAN TETRIS_RGB(0, 255, 255)
-#define COLOR_BLUE TETRIS_RGB(0, 0, 255)
-#define COLOR_ORANGE TETRIS_RGB(255, 165, 0)
-#define COLOR_YELLOW TETRIS_RGB(255, 255, 0)
-#define COLOR_GREEN TETRIS_RGB(0, 255, 0)
-#define COLOR_MAGENTA TETRIS_RGB(255, 0, 255)
-#define COLOR_RED TETRIS_RGB(255, 0, 0)
+#define COLOR_BLACK GAME_RGB(0, 0, 0)
+#define COLOR_WHITE GAME_RGB(255, 255, 255)
+#define COLOR_GRAY GAME_RGB(128, 128, 128)
+#define COLOR_DARK_GRAY GAME_RGB(64, 64, 64)
+#define COLOR_CYAN GAME_RGB(0, 255, 255)
+#define COLOR_BLUE GAME_RGB(0, 0, 255)
+#define COLOR_ORANGE GAME_RGB(255, 165, 0)
+#define COLOR_YELLOW GAME_RGB(255, 255, 0)
+#define COLOR_GREEN GAME_RGB(0, 255, 0)
+#define COLOR_MAGENTA GAME_RGB(255, 0, 255)
+#define COLOR_RED GAME_RGB(255, 0, 0)
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Tetromino Types

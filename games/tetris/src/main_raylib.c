@@ -88,16 +88,12 @@ int main(void) {
     /* ═══════════════════════════════════════════════════════════════════
      * Update
      * ═══════════════════════════════════════════════════════════════════ */
-    if (state.game_over && input.restart) {
-      game_init(&state, &input);
-    } else {
-      game_update(&state, &input, delta_time);
-    }
+    game_update(&state, &input, delta_time);
 
     /* ═══════════════════════════════════════════════════════════════════
      * Render - Game draws to backbuffer (platform independent!)
      * ═══════════════════════════════════════════════════════════════════ */
-    game_reder(&platform_game_props.backbuffer, &state);
+    game_render(&platform_game_props.backbuffer, &state);
 
     /* ═══════════════════════════════════════════════════════════════════
      * Display - Platform uploads backbuffer to screen

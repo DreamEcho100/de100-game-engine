@@ -1,4 +1,6 @@
 #include "game.h"
+#include "utils/draw-shapes.h"
+#include "utils/draw-text.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,209 +36,6 @@ const char *TETROMINOES[TETROMINOS_COUNT] = {
     TETROMINO_T, //
     TETROMINO_Z, //
 };
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Bitmap Font Data (5x7 pixels per character)
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * Each row is 5 bits wide (bits 4-0), packed into a byte.
- * Bit 4 = leftmost pixel, Bit 0 = rightmost pixel.
- *
- * Example: Letter 'A' = {0x0E,0x11,0x11,0x1F,0x11,0x11,0x11}
- *
- *   0x0E = 01110 =  .###.
- *   0x11 = 10001 =  #...#
- *   0x11 = 10001 =  #...#
- *   0x1F = 11111 =  #####
- *   0x11 = 10001 =  #...#
- *   0x11 = 10001 =  #...#
- *   0x11 = 10001 =  #...#
- */
-
-static const unsigned char FONT_DIGITS[10][7] = {
-    {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, /* 0 */
-    {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}, /* 1 */
-    {0x0E, 0x11, 0x01, 0x0E, 0x10, 0x10, 0x1F}, /* 2 */
-    {0x0E, 0x11, 0x01, 0x06, 0x01, 0x11, 0x0E}, /* 3 */
-    {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, /* 4 */
-    {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}, /* 5 */
-    {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, /* 6 */
-    {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}, /* 7 */
-    {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, /* 8 */
-    {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}, /* 9 */
-};
-
-static const unsigned char FONT_LETTERS[26][7] = {
-    {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}, /* A */
-    {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E}, /* B */
-    {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E}, /* C */
-    {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E}, /* D */
-    {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F}, /* E */
-    {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10}, /* F */
-    {0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F}, /* G */
-    {0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}, /* H */
-    {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E}, /* I */
-    {0x01, 0x01, 0x01, 0x01, 0x01, 0x11, 0x0E}, /* J */
-    {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11}, /* K */
-    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F}, /* L */
-    {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11}, /* M */
-    {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11}, /* N */
-    {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}, /* O */
-    {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10}, /* P */
-    {0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D}, /* Q */
-    {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11}, /* R */
-    {0x0E, 0x11, 0x10, 0x0E, 0x01, 0x11, 0x0E}, /* S */
-    {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}, /* T */
-    {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}, /* U */
-    {0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04}, /* V */
-    {0x11, 0x11, 0x11, 0x15, 0x15, 0x1B, 0x11}, /* W */
-    {0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11}, /* X */
-    {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04}, /* Y */
-    {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F}, /* Z */
-};
-
-/* ADD THIS: Special characters lookup table */
-typedef struct {
-  char character;
-  unsigned char bitmap[7];
-} FontSpecialChar;
-
-static const FontSpecialChar FONT_SPECIAL[] = {
-    {'.', {0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C}},  /* period */
-    {',', {0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0x08}},  /* comma */
-    {':', {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00}},  /* colon */
-    {';', {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x04, 0x08}},  /* semicolon */
-    {'!', {0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04}},  /* exclamation */
-    {'?', {0x0E, 0x11, 0x01, 0x06, 0x04, 0x00, 0x04}},  /* question */
-    {'-', {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00}},  /* dash/minus */
-    {'+', {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00}},  /* plus */
-    {'=', {0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00}},  /* equals */
-    {'/', {0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10}},  /* slash */
-    {'\\', {0x10, 0x08, 0x08, 0x04, 0x02, 0x02, 0x01}}, /* backslash */
-    {'(', {0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02}},  /* left paren */
-    {')', {0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08}},  /* right paren */
-    {'[', {0x0E, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0E}},  /* left bracket */
-    {']', {0x0E, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0E}},  /* right bracket */
-    {'<', {0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02}},  /* less than */
-    {'>', {0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08}},  /* greater than */
-    {'_', {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F}},  /* underscore */
-    {'*', {0x00, 0x15, 0x0E, 0x1F, 0x0E, 0x15, 0x00}},  /* asterisk */
-    {'#', {0x0A, 0x0A, 0x1F, 0x0A, 0x1F, 0x0A, 0x0A}},  /* hash */
-    {'@', {0x0E, 0x11, 0x17, 0x15, 0x17, 0x10, 0x0E}},  /* at sign */
-    {'%', {0x19, 0x19, 0x02, 0x04, 0x08, 0x13, 0x13}},  /* percent */
-    {'&', {0x08, 0x14, 0x14, 0x08, 0x15, 0x12, 0x0D}},  /* ampersand */
-    {'\'', {0x04, 0x04, 0x08, 0x00, 0x00, 0x00, 0x00}}, /* single quote */
-    {'"', {0x0A, 0x0A, 0x14, 0x00, 0x00, 0x00, 0x00}},  /* double quote */
-    /* Arrow symbols using extended ASCII or custom mapping */
-    {'^', {0x00, 0x04, 0x0E, 0x15, 0x04, 0x04, 0x00}}, /* up arrow ↑ */
-    {'v',
-     {0x00, 0x04, 0x04, 0x15, 0x0E, 0x04,
-      0x00}}, /* down arrow ↓ (use lowercase v) */
-    {'{',
-     {0x00, 0x04, 0x08, 0x1E, 0x08, 0x04, 0x00}}, /* left arrow ← (use {) */
-    {'}',
-     {0x00, 0x04, 0x02, 0x0F, 0x02, 0x04, 0x00}}, /* right arrow → (use }) */
-    {0, {0}}                                      /* Terminator */
-};
-
-/* Helper function to find special character bitmap */
-static const unsigned char *find_special_char(char c) {
-  for (int i = 0; FONT_SPECIAL[i].character != 0; i++) {
-    if (FONT_SPECIAL[i].character == c) {
-      return FONT_SPECIAL[i].bitmap;
-    }
-  }
-  return NULL;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Drawing Primitives
- * ═══════════════════════════════════════════════════════════════════════════
- */
-
-void draw_rect(Backbuffer *bb, int x, int y, int w, int h, uint32_t color) {
-  /* Clip to backbuffer bounds */
-  int x0 = x < 0 ? 0 : x;
-  int y0 = y < 0 ? 0 : y;
-  int x1 = (x + w) > bb->width ? bb->width : (x + w);
-  int y1 = (y + h) > bb->height ? bb->height : (y + h);
-
-  for (int py = y0; py < y1; py++) {
-    uint32_t *row = bb->pixels + py * (bb->pitch / 4);
-    for (int px = x0; px < x1; px++) {
-      row[px] = color;
-    }
-  }
-}
-
-void draw_rect_blend(Backbuffer *bb, int x, int y, int w, int h,
-                     uint32_t color) {
-  /* Extract alpha */
-  uint8_t alpha = (color >> 24) & 0xFF;
-  if (alpha == 255) {
-    draw_rect(bb, x, y, w, h, color);
-    return;
-  }
-  if (alpha == 0)
-    return;
-
-  uint8_t src_r = (color >> 16) & 0xFF;
-  uint8_t src_g = (color >> 8) & 0xFF;
-  uint8_t src_b = color & 0xFF;
-
-  int x0 = x < 0 ? 0 : x;
-  int y0 = y < 0 ? 0 : y;
-  int x1 = (x + w) > bb->width ? bb->width : (x + w);
-  int y1 = (y + h) > bb->height ? bb->height : (y + h);
-
-  for (int py = y0; py < y1; py++) {
-    uint32_t *row = bb->pixels + py * (bb->pitch / 4);
-    for (int px = x0; px < x1; px++) {
-      uint32_t dst = row[px];
-      uint8_t dst_r = (dst >> 16) & 0xFF;
-      uint8_t dst_g = (dst >> 8) & 0xFF;
-      uint8_t dst_b = dst & 0xFF;
-
-      /* Simple alpha blend: out = src * alpha + dst * (1 - alpha) */
-      uint8_t out_r = (src_r * alpha + dst_r * (255 - alpha)) / 255;
-      uint8_t out_g = (src_g * alpha + dst_g * (255 - alpha)) / 255;
-      uint8_t out_b = (src_b * alpha + dst_b * (255 - alpha)) / 255;
-
-      row[px] = TETRIS_RGB(out_r, out_g, out_b);
-    }
-  }
-}
-
-static void draw_char(Backbuffer *bb, int x, int y, char c, uint32_t color,
-                      int scale) {
-  const unsigned char *bitmap = NULL;
-
-  if (c >= '0' && c <= '9') {
-    bitmap = FONT_DIGITS[c - '0'];
-  } else if (c >= 'A' && c <= 'Z') {
-    bitmap = FONT_LETTERS[c - 'A'];
-  } else if (c >= 'a' && c <= 'z') {
-    bitmap = FONT_LETTERS[c - 'a']; /* Lowercase maps to uppercase */
-  } else if (c == ' ') {
-    return; /* Space - just advance cursor, draw nothing */
-  } else {
-    /* Try special characters */
-    bitmap = find_special_char(c);
-    if (!bitmap) {
-      return; /* Unknown character - skip */
-    }
-  }
-
-  /* Draw the 5x7 bitmap */
-  for (int row = 0; row < 7; row++) {
-    for (int col = 0; col < 5; col++) {
-      if (bitmap[row] & (0x10 >> col)) {
-        draw_rect(bb, x + col * scale, y + row * scale, scale, scale, color);
-      }
-    }
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game-Specific Drawing
  * ═══════════════════════════════════════════════════════════════════════════
@@ -284,22 +83,12 @@ static void draw_piece(Backbuffer *bb, int piece_index, int field_col,
   }
 }
 
-void draw_text(Backbuffer *bb, int x, int y, const char *text, uint32_t color,
-               int scale) {
-  int cursor_x = x;
-  while (*text) {
-    draw_char(bb, cursor_x, y, *text, color, scale);
-    cursor_x += 6 * scale;
-    text++;
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
  * Main Render Function - Called by Platform Layer
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-void game_reder(Backbuffer *backbuffer, GameState *state) {
+void game_render(Backbuffer *backbuffer, GameState *state) {
   /* Clear to black */
   for (int i = 0; i < backbuffer->width * backbuffer->height; i++) {
     backbuffer->pixels[i] = COLOR_BLACK;
@@ -403,7 +192,7 @@ void game_reder(Backbuffer *backbuffer, GameState *state) {
 
     /* Semi-transparent overlay */
     draw_rect_blend(backbuffer, cx - 80, cy - 50, 160, 100,
-                    TETRIS_RGBA(0, 0, 0, 200));
+                    GAME_RGBA(0, 0, 0, 200));
 
     /* Red border */
     draw_rect(backbuffer, cx - 80, cy - 50, 160, 3, COLOR_RED);
@@ -651,8 +440,12 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
 }
 
 void game_update(GameState *state, GameInput *input, float delta_time) {
-  if (state->game_over)
+  if (state->game_over) {
+    if (input->restart) {
+      game_init(state, input);
+    }
     return;
+  }
 
   if (state->completed_lines.flash_timer.timer > 0) {
     state->completed_lines.flash_timer.timer -= delta_time;

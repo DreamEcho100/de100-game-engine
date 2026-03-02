@@ -11,6 +11,7 @@ A semi-transparent black overlay that dims the field when the game is over, a re
 `draw_rect` does solid fills. Every pixel becomes exactly the color you specify.
 
 The game-over overlay needs to:
+
 1. Darken the existing field (which already has pieces drawn)
 2. Allow the text to read clearly over it
 3. Not completely hide the final field state
@@ -28,6 +29,7 @@ out = (src * alpha + dst * (255 - alpha)) / 255
 ```
 
 Where:
+
 - `src` is the overlay pixel color (0–255 per channel)
 - `dst` is what's already in the backbuffer
 - `alpha` is the overlay opacity (0 = fully transparent, 255 = fully opaque)
@@ -90,7 +92,7 @@ void draw_rect_blend(TetrisBackbuffer *backbuffer,
             int out_g = (src_g * alpha + dst_g * inv_a) / 255;
             int out_b = (src_b * alpha + dst_b * inv_a) / 255;
 
-            *dst_pixel = TETRIS_RGB(out_r, out_g, out_b);
+            *dst_pixel = GAME_RGB(out_r, out_g, out_b);
         }
     }
 }
@@ -102,6 +104,7 @@ Our color format is `0xAARRGGBB`. Shifting right 24 bits brings the `AA` byte to
 **Precompute `inv_a = 255 - alpha`** outside the loop — it's constant for the whole rectangle, no need to recalculate per pixel.
 
 **New C concept — bit-shifting for channel extraction:**
+
 ```c
 (color >> 24) & 0xFF   /* alpha */
 (color >> 16) & 0xFF   /* red   */
@@ -123,7 +126,7 @@ if (state->game_over) {
     /* 1. Semi-transparent black overlay */
     draw_rect_blend(backbuffer,
                     0, 0, field_px_w, field_px_h,
-                    TETRIS_RGBA(0, 0, 0, 200));
+                    GAME_RGBA(0, 0, 0, 200));
 
     /* 2. Red border: 4 thin rectangles (top, bottom, left, right) */
     int border_thickness = 4;
@@ -153,32 +156,35 @@ if (state->game_over) {
 `draw_rect` fills solid rectangles. To draw a border, draw the top edge, bottom edge, left edge, right edge — each is a thin, full-width or full-height rectangle. This is a common pattern in software renderers.
 
 **Centering formula:**
+
 ```
 text_x = (total_width - text_pixel_width) / 2
 ```
+
 `text_pixel_width = character_count × (5 glyphs + 1 gap) × scale = char_count × 6 × scale`
 
 "GAME OVER" is 9 characters (including space). At scale 3: `9 × 6 × 3 = 162px`. Field is `360px`. `(360 - 162) / 2 = 99px`.
 
 ---
 
-## Step 4 — `TETRIS_RGBA` macro
+## Step 4 — `GAME_RGBA` macro
 
 Defined in `tetris.h`:
 
 ```c
-#define TETRIS_RGBA(r, g, b, a) \
+#define GAME_RGBA(r, g, b, a) \
     (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | \
      ((uint32_t)(g) << 8)  |  (uint32_t)(b))
 ```
 
-`TETRIS_RGB` just uses `0xFF` as alpha:
+`GAME_RGB` just uses `0xFF` as alpha:
 
 ```c
-#define TETRIS_RGB(r, g, b) TETRIS_RGBA(r, g, b, 0xFF)
+#define GAME_RGB(r, g, b) GAME_RGBA(r, g, b, 0xFF)
 ```
 
-For `TETRIS_RGBA(0, 0, 0, 200)`:
+For `GAME_RGBA(0, 0, 0, 200)`:
+
 - alpha = 200 → `0xC8000000`
 - red = 0 → `0x00000000`
 - green = 0 → `0x00000000`
@@ -194,6 +200,7 @@ For `TETRIS_RGBA(0, 0, 0, 200)`:
 At 360×540 pixels (the full field), that's 194,400 pixels per frame. At 60fps, that's ~11 million blend operations per second.
 
 On modern hardware this is fast enough. But you can optimize with the fast paths:
+
 - `alpha == 255` → call `draw_rect` (memset-like write, no read-modify)
 - `alpha == 0` → return immediately
 

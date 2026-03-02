@@ -1,6 +1,7 @@
-#ifndef TETRIS_H
-#define TETRIS_H
+#ifndef GAME_H
+#define GAME_H
 
+#include "utils/backbuffer.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -16,36 +17,18 @@
 #define TETROMINO_SIZE 16
 #define TETROMINOS_COUNT 7
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Backbuffer - Platform Independent Rendering Target
- * ═══════════════════════════════════════════════════════════════════════════
- */
-
-typedef struct {
-  uint32_t *pixels; /* RGBA pixel data (0xAARRGGBB format) */
-  int width;
-  int height;
-  int pitch; /* Bytes per row (usually width * 4) */
-} Backbuffer;
-/* Color helper - pack RGBA into uint32 */
-#define TETRIS_RGBA(r, g, b, a)                                                \
-  (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) |      \
-   (uint32_t)(b))
-
-#define TETRIS_RGB(r, g, b) TETRIS_RGBA(r, g, b, 255)
-
 /* Predefined colors */
-#define COLOR_BLACK TETRIS_RGB(0, 0, 0)
-#define COLOR_WHITE TETRIS_RGB(255, 255, 255)
-#define COLOR_GRAY TETRIS_RGB(128, 128, 128)
-#define COLOR_DARK_GRAY TETRIS_RGB(64, 64, 64)
-#define COLOR_CYAN TETRIS_RGB(0, 255, 255)
-#define COLOR_BLUE TETRIS_RGB(0, 0, 255)
-#define COLOR_ORANGE TETRIS_RGB(255, 165, 0)
-#define COLOR_YELLOW TETRIS_RGB(255, 255, 0)
-#define COLOR_GREEN TETRIS_RGB(0, 255, 0)
-#define COLOR_MAGENTA TETRIS_RGB(255, 0, 255)
-#define COLOR_RED TETRIS_RGB(255, 0, 0)
+#define COLOR_BLACK GAME_RGB(0, 0, 0)
+#define COLOR_WHITE GAME_RGB(255, 255, 255)
+#define COLOR_GRAY GAME_RGB(128, 128, 128)
+#define COLOR_DARK_GRAY GAME_RGB(64, 64, 64)
+#define COLOR_CYAN GAME_RGB(0, 255, 255)
+#define COLOR_BLUE GAME_RGB(0, 0, 255)
+#define COLOR_ORANGE GAME_RGB(255, 165, 0)
+#define COLOR_YELLOW GAME_RGB(255, 255, 0)
+#define COLOR_GREEN GAME_RGB(0, 255, 0)
+#define COLOR_MAGENTA GAME_RGB(255, 0, 255)
+#define COLOR_RED GAME_RGB(255, 0, 0)
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Tetromino Types
@@ -234,12 +217,12 @@ int tetromino_does_piece_fit(GameState *state, int piece, int rotation,
 void game_update(GameState *state, GameInput *input, float delta_time);
 
 /* Rendering - Platform Independent! */
-void game_reder(Backbuffer *backbuffer, GameState *state);
+void game_render(Backbuffer *backbuffer, GameState *state);
 
-/* Drawing Primitives (used by game_reder, but can be used by platform too)
+/* Drawing Primitives (used by game_render, but can be used by platform too)
  */
 void draw_rect(Backbuffer *bb, int x, int y, int w, int h, uint32_t color);
 void draw_text(Backbuffer *bb, int x, int y, const char *text, uint32_t color,
                int scale);
 
-#endif // TETRIS_H
+#endif // GAMEH

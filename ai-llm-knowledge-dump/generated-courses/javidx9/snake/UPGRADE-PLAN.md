@@ -9,19 +9,19 @@ Reference implementation pattern: `ai-llm-knowledge-dump/Javidx9-courses/tetris/
 The current snake course was built before the tetris upgrade established the professional
 architecture. Every pattern from that upgrade must now be applied to snake:
 
-| Area | Current (old) | Target (upgraded) |
-|------|---------------|-------------------|
-| Platform contract | 6 functions: init, get_input, render, sleep_ms, should_quit, shutdown | 4 functions: init, get_time, get_input, display_backbuffer |
-| Rendering | Platform draws cells (X11/Raylib API calls in platform) | Game renders to `SnakeBackbuffer`; platform uploads pixels |
-| Color system | X11 named colors / Raylib `Color` struct | `uint32_t` + `SNAKE_RGB`/`SNAKE_RGBA` macros (`0xAARRGGBB`) |
-| Input | Simple booleans (`turn_left`, `turn_right`) | `GameButtonState` (`half_transition_count` + `ended_down`) |
-| Direction | `#define DIR_UP 0` etc. | `typedef enum { SNAKE_DIR_UP, ... } SNAKE_DIR` |
-| Game timing | `platform_sleep_ms(BASE_TICK_MS)` + `tick_count/speed` | Delta-time accumulator (`move_timer += dt`; trigger when ≥ interval) |
-| Build tool | `gcc` | `clang` |
-| X11 backend | `XCreateSimpleWindow`, no OpenGL, nanosleep | GLX/OpenGL backbuffer upload, VSync, `XkbSetDetectableAutoRepeat` |
-| Raylib backend | Native `DrawRectangle` calls | Upload `SnakeBackbuffer` as `Texture2D` each frame |
-| HUD rendering | Done in platform (X11/Raylib draw calls) | Done in `snake.c` via bitmap font + draw primitives |
-| Lessons | 10 lessons, old API patterns | 12 lessons, new architecture taught incrementally |
+| Area              | Current (old)                                                         | Target (upgraded)                                                    |
+| ----------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Platform contract | 6 functions: init, get_input, render, sleep_ms, should_quit, shutdown | 4 functions: init, get_time, get_input, display_backbuffer           |
+| Rendering         | Platform draws cells (X11/Raylib API calls in platform)               | Game renders to `SnakeBackbuffer`; platform uploads pixels           |
+| Color system      | X11 named colors / Raylib `Color` struct                              | `uint32_t` + `GAME_RGB`/`GAME_RGBA` macros (`0xAARRGGBB`)            |
+| Input             | Simple booleans (`turn_left`, `turn_right`)                           | `GameButtonState` (`half_transition_count` + `ended_down`)           |
+| Direction         | `#define DIR_UP 0` etc.                                               | `typedef enum { SNAKE_DIR_UP, ... } SNAKE_DIR`                       |
+| Game timing       | `platform_sleep_ms(BASE_TICK_MS)` + `tick_count/speed`                | Delta-time accumulator (`move_timer += dt`; trigger when ≥ interval) |
+| Build tool        | `gcc`                                                                 | `clang`                                                              |
+| X11 backend       | `XCreateSimpleWindow`, no OpenGL, nanosleep                           | GLX/OpenGL backbuffer upload, VSync, `XkbSetDetectableAutoRepeat`    |
+| Raylib backend    | Native `DrawRectangle` calls                                          | Upload `SnakeBackbuffer` as `Texture2D` each frame                   |
+| HUD rendering     | Done in platform (X11/Raylib draw calls)                              | Done in `snake.c` via bitmap font + draw primitives                  |
+| Lessons           | 10 lessons, old API patterns                                          | 12 lessons, new architecture taught incrementally                    |
 
 ---
 
@@ -50,7 +50,7 @@ architecture. Every pattern from that upgrade must now be applied to snake:
                     ↓ types / API
 ┌──────────────────────────────────────────────────────┐
 │                     snake.h                          │
-│  SnakeBackbuffer, SNAKE_RGB/A, color constants       │
+│  SnakeBackbuffer, GAME_RGB/A, color constants       │
 │  SNAKE_DIR enum, GameButtonState, GameInput          │
 │  GameState, public function declarations             │
 └──────────────────────────────────────────────────────┘
@@ -63,6 +63,7 @@ architecture. Every pattern from that upgrade must now be applied to snake:
 Move all existing lesson files to `lessons/old/` (preserve original work).
 
 Files to back up:
+
 - `lessons/lesson-01.md` through `lessons/lesson-10.md` (10 files)
 
 ---
@@ -82,20 +83,20 @@ typedef struct {
 } SnakeBackbuffer;
 
 /* Color macros — 0xAARRGGBB */
-#define SNAKE_RGBA(r, g, b, a) \
+#define GAME_RGBA(r, g, b, a) \
     (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | \
      ((uint32_t)(g) << 8)  |  (uint32_t)(b))
-#define SNAKE_RGB(r, g, b) SNAKE_RGBA(r, g, b, 0xFF)
+#define GAME_RGB(r, g, b) GAME_RGBA(r, g, b, 0xFF)
 
 /* Named colors */
-#define COLOR_BLACK      SNAKE_RGB(  0,   0,   0)
-#define COLOR_WHITE      SNAKE_RGB(255, 255, 255)
-#define COLOR_RED        SNAKE_RGB(220,  50,  50)
-#define COLOR_DARK_RED   SNAKE_RGB(139,   0,   0)
-#define COLOR_GREEN      SNAKE_RGB( 50, 205,  50)
-#define COLOR_YELLOW     SNAKE_RGB(255, 215,   0)
-#define COLOR_DARK_GRAY  SNAKE_RGB( 80,  80,  80)
-#define COLOR_GRAY       SNAKE_RGB(128, 128, 128)
+#define COLOR_BLACK      GAME_RGB(  0,   0,   0)
+#define COLOR_WHITE      GAME_RGB(255, 255, 255)
+#define COLOR_RED        GAME_RGB(220,  50,  50)
+#define COLOR_DARK_RED   GAME_RGB(139,   0,   0)
+#define COLOR_GREEN      GAME_RGB( 50, 205,  50)
+#define COLOR_YELLOW     GAME_RGB(255, 215,   0)
+#define COLOR_DARK_GRAY  GAME_RGB( 80,  80,  80)
+#define COLOR_GRAY       GAME_RGB(128, 128, 128)
 
 /* Direction enum */
 typedef enum {
@@ -172,11 +173,13 @@ void prepare_input_frame(GameInput *input);
 5. **`draw_cell`** — render one grid cell (inset by 1px) at grid coordinates
 
 **Rewrite:**
+
 - `snake_init` — use `SNAKE_DIR_RIGHT`, `move_interval` instead of `speed`
 - `snake_update` — delta-time accumulator replaces `tick_count`; typed `SNAKE_DIR`
 - Add `snake_render` — move ALL drawing out of platform into this function
 
 **`snake_render` draws (in order):**
+
 1. Clear backbuffer to `COLOR_BLACK`
 2. Header background (`COLOR_DARK_GRAY`)
 3. Header separator line (`COLOR_GREEN`)
@@ -188,6 +191,7 @@ void prepare_input_frame(GameInput *input);
 9. Game over overlay (`draw_rect_blend` + border + text)
 
 **`snake_update` — delta-time pattern:**
+
 ```c
 void snake_update(GameState *s, const GameInput *input, float delta_time) {
     if (s->game_over) {
@@ -230,6 +234,7 @@ void   platform_display_backbuffer(const SnakeBackbuffer *backbuffer);
 Pattern: identical to tetris `main_x11.c` but for snake.
 
 Key changes:
+
 - `XCreateWindow` (not `XCreateSimpleWindow`) — required for GLX visual
 - `XkbSetDetectableAutoRepeat` — suppress X11 key-repeat synthetic events
 - `XPending` + non-blocking drain (not `XNextEvent`)
@@ -249,6 +254,7 @@ Key changes:
 Pattern: identical to tetris `main_raylib.c` but for snake.
 
 Key changes:
+
 - `platform_init`: `InitWindow` + `SetTargetFPS(60)`
 - `platform_display_backbuffer`: `UpdateTexture` + `DrawTextureEx`
 - `platform_get_time`: `GetTime()`
@@ -290,20 +296,20 @@ echo "Done! Run with: ./build/snake_raylib"
 
 ## Phase 3 — Lesson Rewrites (12 lessons)
 
-| # | Title | Key content |
-|---|-------|-------------|
-| 01 | Window + GLX/OpenGL Context | `XCreateWindow`, GLX init, `glXSwapBuffers`, VSync setup |
-| 02 | SnakeBackbuffer: Platform-Independent Canvas | `uint32_t *pixels`, `malloc`/`free`, `glTexImage2D` upload |
-| 03 | Color System: `uint32_t`, `SNAKE_RGB`, Named Constants | `0xAARRGGBB` bit-packing, pre-defined color names |
-| 04 | Typed Enums: `SNAKE_DIR` | `typedef enum`, why not `#define` ints, direction math `(dir+1)%4` |
-| 05 | GameState + Ring Buffer + `snake_init` | `Segment[]`, head/tail/length, `move_interval`, `memset` |
-| 06 | Drawing Primitives: `draw_rect`, `draw_cell` | Pixel math, bounds clamping, grid→pixel formula |
-| 07 | `snake_render`: The Drawing Function | Rendering order, draw_rect for all game elements |
-| 08 | Delta-Time Game Loop + Move Timer | `platform_get_time`, `move_timer += dt`, `timer -= interval` trick |
-| 09 | Input System: `GameButtonState` + `UPDATE_BUTTON` | half_transition_count, `prepare_input_frame`, turn-once behavior |
-| 10 | Collision Detection: Walls + Self | Ring buffer iteration, wall bounds, self-overlap check |
-| 11 | Food, Growth, Score, Speed Scaling | `snake_spawn_food`, `grow_pending`, `move_interval` reduction |
-| 12 | Bitmap Font + HUD + Game Over Overlay | 5×7 glyphs, `draw_text`, `draw_rect_blend`, alpha compositing, final integration |
+| #   | Title                                                 | Key content                                                                      |
+| --- | ----------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 01  | Window + GLX/OpenGL Context                           | `XCreateWindow`, GLX init, `glXSwapBuffers`, VSync setup                         |
+| 02  | SnakeBackbuffer: Platform-Independent Canvas          | `uint32_t *pixels`, `malloc`/`free`, `glTexImage2D` upload                       |
+| 03  | Color System: `uint32_t`, `GAME_RGB`, Named Constants | `0xAARRGGBB` bit-packing, pre-defined color names                                |
+| 04  | Typed Enums: `SNAKE_DIR`                              | `typedef enum`, why not `#define` ints, direction math `(dir+1)%4`               |
+| 05  | GameState + Ring Buffer + `snake_init`                | `Segment[]`, head/tail/length, `move_interval`, `memset`                         |
+| 06  | Drawing Primitives: `draw_rect`, `draw_cell`          | Pixel math, bounds clamping, grid→pixel formula                                  |
+| 07  | `snake_render`: The Drawing Function                  | Rendering order, draw_rect for all game elements                                 |
+| 08  | Delta-Time Game Loop + Move Timer                     | `platform_get_time`, `move_timer += dt`, `timer -= interval` trick               |
+| 09  | Input System: `GameButtonState` + `UPDATE_BUTTON`     | half_transition_count, `prepare_input_frame`, turn-once behavior                 |
+| 10  | Collision Detection: Walls + Self                     | Ring buffer iteration, wall bounds, self-overlap check                           |
+| 11  | Food, Growth, Score, Speed Scaling                    | `snake_spawn_food`, `grow_pending`, `move_interval` reduction                    |
+| 12  | Bitmap Font + HUD + Game Over Overlay                 | 5×7 glyphs, `draw_text`, `draw_rect_blend`, alpha compositing, final integration |
 
 ---
 
@@ -320,5 +326,6 @@ echo "Done! Run with: ./build/snake_raylib"
 ## Window Dimensions
 
 `CELL_SIZE` changes from 14 → 20 to match PLAN.md design:
+
 - `WINDOW_WIDTH  = GRID_WIDTH  * CELL_SIZE = 60 * 20 = 1200px`
 - `WINDOW_HEIGHT = (GRID_HEIGHT + HEADER_ROWS) * CELL_SIZE = 23 * 20 = 460px`

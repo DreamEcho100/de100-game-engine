@@ -33,9 +33,9 @@ by the user as intermediate upgrades between earlier commits and the final
 refactor. They are high-quality source material that the new lesson series
 must fully incorporate:
 
-| File | Topic | Covers |
-|------|-------|--------|
-| `lesson-8-v2.md` | Delta Time Game Loop | Replacing tick-based speed with `drop_timer += delta_time`; `platform_get_time()`; non-blocking X11 input; `platform_sleep_ms()`; `tetris_update(state, input, delta_time)` |
+| File               | Topic                     | Covers                                                                                                                                                                                         |
+| ------------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lesson-8-v2.md`   | Delta Time Game Loop      | Replacing tick-based speed with `drop_timer += delta_time`; `platform_get_time()`; non-blocking X11 input; `platform_sleep_ms()`; `tetris_update(state, input, delta_time)`                    |
 | `lesson-9.5-v2.md` | Professional Input System | `GameButtonState` (half_transition_count, ended_down); `GameActionRepeat` (timer, interval); `GameActionWithRepeat`; `UPDATE_BUTTON` macro; independent auto-repeat per action; DAS/ARR tuning |
 
 ### 3. Final Implementation (commit c499c31)
@@ -76,6 +76,7 @@ typedef struct {
 ### ADDED: Color System in tetris.h
 
 **Before (course):** Colors were platform-specific types.
+
 - X11: `unsigned long pixel` allocated per-color with `XAllocNamedColor`
 - Raylib: `Color` struct `{R, G, B, A}` defined per backend
 
@@ -83,21 +84,21 @@ typedef struct {
 once in `tetris.h`, available to any backend:
 
 ```c
-#define TETRIS_RGBA(r, g, b, a) \
+#define GAME_RGBA(r, g, b, a) \
   (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
-#define TETRIS_RGB(r, g, b)  TETRIS_RGBA(r, g, b, 255)
+#define GAME_RGB(r, g, b)  GAME_RGBA(r, g, b, 255)
 
-#define COLOR_BLACK     TETRIS_RGB(0,   0,   0)
-#define COLOR_WHITE     TETRIS_RGB(255, 255, 255)
-#define COLOR_GRAY      TETRIS_RGB(128, 128, 128)
-#define COLOR_DARK_GRAY TETRIS_RGB(64,  64,  64)
-#define COLOR_CYAN      TETRIS_RGB(0,   255, 255)
-#define COLOR_BLUE      TETRIS_RGB(0,   0,   255)
-#define COLOR_ORANGE    TETRIS_RGB(255, 165, 0)
-#define COLOR_YELLOW    TETRIS_RGB(255, 255, 0)
-#define COLOR_GREEN     TETRIS_RGB(0,   255, 0)
-#define COLOR_MAGENTA   TETRIS_RGB(255, 0,   255)
-#define COLOR_RED       TETRIS_RGB(255, 0,   0)
+#define COLOR_BLACK     GAME_RGB(0,   0,   0)
+#define COLOR_WHITE     GAME_RGB(255, 255, 255)
+#define COLOR_GRAY      GAME_RGB(128, 128, 128)
+#define COLOR_DARK_GRAY GAME_RGB(64,  64,  64)
+#define COLOR_CYAN      GAME_RGB(0,   255, 255)
+#define COLOR_BLUE      GAME_RGB(0,   0,   255)
+#define COLOR_ORANGE    GAME_RGB(255, 165, 0)
+#define COLOR_YELLOW    GAME_RGB(255, 255, 0)
+#define COLOR_GREEN     GAME_RGB(0,   255, 0)
+#define COLOR_MAGENTA   GAME_RGB(255, 0,   255)
+#define COLOR_RED       GAME_RGB(255, 0,   0)
 ```
 
 ---
@@ -109,14 +110,14 @@ once in `tetris.h`, available to any backend:
 
 **After (user's):** Drawing functions live entirely in `tetris.c`:
 
-| Function | Signature | Purpose |
-|----------|-----------|---------|
-| `draw_rect` | `(TetrisBackbuffer *, x, y, w, h, color)` | Fill a rectangle with bounds clipping |
-| `draw_rect_blend` | `(TetrisBackbuffer *, x, y, w, h, color)` | Alpha-blended rectangle |
-| `draw_char` _(static)_ | `(TetrisBackbuffer *, x, y, char, color, scale)` | Draw one 5×7 bitmap glyph |
-| `draw_cell` _(static)_ | `(TetrisBackbuffer *, col, row, color)` | Draw one grid cell (pixel coords from grid coords) |
-| `draw_piece` _(static)_ | `(TetrisBackbuffer *, piece, col, row, color, rotation)` | Draw a full tetromino |
-| `draw_text` | `(TetrisBackbuffer *, x, y, text, color, scale)` | Draw a string using bitmap font |
+| Function                | Signature                                                | Purpose                                            |
+| ----------------------- | -------------------------------------------------------- | -------------------------------------------------- |
+| `draw_rect`             | `(TetrisBackbuffer *, x, y, w, h, color)`                | Fill a rectangle with bounds clipping              |
+| `draw_rect_blend`       | `(TetrisBackbuffer *, x, y, w, h, color)`                | Alpha-blended rectangle                            |
+| `draw_char` _(static)_  | `(TetrisBackbuffer *, x, y, char, color, scale)`         | Draw one 5×7 bitmap glyph                          |
+| `draw_cell` _(static)_  | `(TetrisBackbuffer *, col, row, color)`                  | Draw one grid cell (pixel coords from grid coords) |
+| `draw_piece` _(static)_ | `(TetrisBackbuffer *, piece, col, row, color, rotation)` | Draw a full tetromino                              |
+| `draw_text`             | `(TetrisBackbuffer *, x, y, text, color, scale)`         | Draw a string using bitmap font                    |
 
 All functions are declared in `tetris.h` (public ones) or `static` in `tetris.c`
 (internal helpers).
@@ -184,7 +185,7 @@ out_r = (src_r * alpha + dst_r * (255 - alpha)) / 255;
 /* repeated for G and B channels */
 ```
 
-Applied with `TETRIS_RGBA(0, 0, 0, 200)` — a semi-transparent black box over
+Applied with `GAME_RGBA(0, 0, 0, 200)` — a semi-transparent black box over
 the field — creating a dim-and-overlay effect without any OS blending API.
 
 ---
@@ -192,11 +193,13 @@ the field — creating a dim-and-overlay effect without any OS blending API.
 ### CHANGED: platform_get_input API — GameState Dependency Removed
 
 **Before (course):**
+
 ```c
 void platform_get_input(PlatformInput *input);
 ```
 
 **After (user's):**
+
 ```c
 void platform_get_input(GameInput *input);
 ```
@@ -304,6 +307,7 @@ typedef struct {
 ```
 
 **Removed from X11 backend:**
+
 - `GC gc` (Graphics Context)
 - `XEvent event` (now local to input loop)
 - Per-color `unsigned long` fields (`alloc_colors` struct)
@@ -380,11 +384,11 @@ clang src/main_x11.c src/tetris.c -o build/tetris_x11 \
   -lX11 -lxkbcommon -lGL -lGLX
 ```
 
-| Flag | Reason |
-|------|--------|
-| `-lGL` | OpenGL functions (`glGenTextures`, `glTexImage2D`, etc.) |
-| `-lGLX` | GLX context creation and `glXSwapBuffers` |
-| `-lxkbcommon` | `XKBlib.h` for correct keyboard symbol lookup |
+| Flag          | Reason                                                   |
+| ------------- | -------------------------------------------------------- |
+| `-lGL`        | OpenGL functions (`glGenTextures`, `glTexImage2D`, etc.) |
+| `-lGLX`       | GLX context creation and `glXSwapBuffers`                |
+| `-lxkbcommon` | `XKBlib.h` for correct keyboard symbol lookup            |
 
 Also: compiler changed from `gcc` to `clang`; `build/` output directory created
 via `mkdir -p build`.
@@ -481,15 +485,15 @@ New constants: `TETROMINOS_COUNT 7` and `SIDEBAR_WIDTH 200` now in `tetris.h`
 
 ### CHANGED: Function Names and Signatures
 
-| Old (course) | New (user's) | Note |
-|-------------|-------------|------|
-| `tetris_init(state)` | `game_init(state, input)` | Also takes `GameInput *` to set repeat intervals |
-| `tetris_tick(state, input)` | `tetris_update(state, input, delta_time)` | Delta time added |
-| `tetris_rotate(px, py, r)` | `tetromino_pos_value(px, py, r)` | Renamed for clarity |
-| `tetris_does_piece_fit(...)` | `tetromino_does_piece_fit(...)` | Renamed |
-| _(new)_ | `prepare_input_frame(GameInput *)` | Resets transition counts each frame |
-| _(new)_ | `handle_action_with_repeat(...)` _(static)_ | Auto-repeat logic in tetris.c |
-| _(new)_ | `tetris_apply_input(state, input, delta_time)` _(static)_ | Input → state logic |
+| Old (course)                 | New (user's)                                              | Note                                             |
+| ---------------------------- | --------------------------------------------------------- | ------------------------------------------------ |
+| `tetris_init(state)`         | `game_init(state, input)`                                 | Also takes `GameInput *` to set repeat intervals |
+| `tetris_tick(state, input)`  | `tetris_update(state, input, delta_time)`                 | Delta time added                                 |
+| `tetris_rotate(px, py, r)`   | `tetromino_pos_value(px, py, r)`                          | Renamed for clarity                              |
+| `tetris_does_piece_fit(...)` | `tetromino_does_piece_fit(...)`                           | Renamed                                          |
+| _(new)_                      | `prepare_input_frame(GameInput *)`                        | Resets transition counts each frame              |
+| _(new)_                      | `handle_action_with_repeat(...)` _(static)_               | Auto-repeat logic in tetris.c                    |
+| _(new)_                      | `tetris_apply_input(state, input, delta_time)` _(static)_ | Input → state logic                              |
 
 ---
 
@@ -597,7 +601,7 @@ ai-llm-knowledge-dump/Javidx9-courses/tetris/course/lessons/old/
 ai-llm-knowledge-dump/Javidx9-courses/tetris/course/lessons/
 ├── lesson-01.md   Window + GLX/OpenGL context (X11) and Raylib window
 ├── lesson-02.md   TetrisBackbuffer: platform-independent pixel canvas
-├── lesson-03.md   Color system: uint32_t, TETRIS_RGB macros, predefined colors
+├── lesson-03.md   Color system: uint32_t, GAME_RGB macros, predefined colors
 ├── lesson-04.md   Typed enums: TETROMINO_BY_IDX, TETROMINO_R_DIR, TETRIS_FIELD_CELL
 ├── lesson-05.md   GameState with CurrentPiece substruct; game_init()
 ├── lesson-06.md   Collision: tetromino_pos_value, tetromino_does_piece_fit
@@ -651,6 +655,7 @@ typedef struct {
 
 Students allocate it in `main()` with `malloc(width * height * sizeof(uint32_t))`.
 They learn:
+
 - The platform **owns** the buffer lifetime (`malloc`/`free` in `main`)
 - `tetris.c` **writes** into it but never allocates or frees it
 - `pitch = width * 4` — bytes per row (useful for image libraries that may pad rows)
@@ -661,13 +666,13 @@ creates the canvas; the game layer paints it.
 
 ---
 
-### Lesson 03 — Color System: uint32_t, TETRIS_RGB, Predefined Colors
+### Lesson 03 — Color System: uint32_t, GAME_RGB, Predefined Colors
 
 **What's new:** Teaches pixel format from first principles:
 
 - `0xAARRGGBB` bit layout — why alpha is highest byte
-- Bit-packing: `TETRIS_RGBA(r,g,b,a)` macro using `<<` and `|`
-- `TETRIS_RGB(r,g,b)` — shorthand for fully opaque (alpha = 255)
+- Bit-packing: `GAME_RGBA(r,g,b,a)` macro using `<<` and `|`
+- `GAME_RGB(r,g,b)` — shorthand for fully opaque (alpha = 255)
 - Predefined color constants (`COLOR_CYAN`, `COLOR_RED`, etc.)
 - Why one `uint32_t` works on both X11/GL and Raylib (`PIXELFORMAT_UNCOMPRESSED_R8G8B8A8`)
 - Why platform-specific color types (X11 `unsigned long`, Raylib `Color`) are
@@ -817,6 +822,7 @@ enum (GO_LEFT / GO_RIGHT / NONE). `handle_action_with_repeat` is a `static`
 function in `tetris.c`.
 
 Teaches:
+
 - `GameButtonState`: `half_transition_count` + `ended_down` (Handmade Hero origin)
 - Why simple booleans miss sub-frame events (20ms tap in a 33ms frame)
 - `UPDATE_BUTTON` macro: detect transitions, update final state
@@ -861,7 +867,8 @@ void draw_rect_blend(TetrisBackbuffer *bb, int x, int y, int w, int h,
 ```
 
 Applied in `tetris_render` when `state->game_over`:
-1. `draw_rect_blend` with `TETRIS_RGBA(0, 0, 0, 200)` — dim the field
+
+1. `draw_rect_blend` with `GAME_RGBA(0, 0, 0, 200)` — dim the field
 2. Four thin `draw_rect` calls for the red border
 3. `draw_text` for "GAME OVER", "R RESTART", "Q QUIT"
 
@@ -886,37 +893,37 @@ new feature set. Adds:
 
 Updated "where to go next" extensions:
 
-| Extension | New concept introduced |
-|-----------|----------------------|
-| Ghost piece | `tetromino_does_piece_fit` raycast downward |
-| Hard drop | Space bar; same raycast as ghost piece |
-| SDL3 backend | `src/main_sdl3.c` — same backbuffer pattern, third platform |
-| WebAssembly | Compile `tetris.c` unchanged via Emscripten; `main_wasm.c` feeds `tetris_render` into a canvas pixel array |
-| 7-bag randomizer | Fisher-Yates shuffle |
-| Wall kicks | Retry `tetromino_does_piece_fit` at `x-1`, `x+1` before failing rotation |
-| High score to disk | `fopen`, `fprintf`, `fscanf` |
-| Sound effects | Raylib `PlaySound()` |
+| Extension          | New concept introduced                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Ghost piece        | `tetromino_does_piece_fit` raycast downward                                                                |
+| Hard drop          | Space bar; same raycast as ghost piece                                                                     |
+| SDL3 backend       | `src/main_sdl3.c` — same backbuffer pattern, third platform                                                |
+| WebAssembly        | Compile `tetris.c` unchanged via Emscripten; `main_wasm.c` feeds `tetris_render` into a canvas pixel array |
+| 7-bag randomizer   | Fisher-Yates shuffle                                                                                       |
+| Wall kicks         | Retry `tetromino_does_piece_fit` at `x-1`, `x+1` before failing rotation                                   |
+| High score to disk | `fopen`, `fprintf`, `fscanf`                                                                               |
+| Sound effects      | Raylib `PlaySound()`                                                                                       |
 
 ---
 
 ## Lesson Count Summary
 
-| # | Old Title (backup) | New Title | Status |
-|---|--------------------|-----------|--------|
-| 01 | Open a Window | Window + GLX/OpenGL Context | Updated |
-| 02 | The Field | TetrisBackbuffer | New |
-| 03 | Tetrominoes | Color System | New |
-| 04 | Rotation | Typed Enums | New |
-| 05 | Collision | GameState + CurrentPiece + game_init | Restructured |
-| 06 | Piece Locking | Collision Detection | Minor rename |
-| 07 | Line Detection | Delta-Time Loop + GameActionRepeat | Replaces 08+8-v2 |
-| 08 | Game Loop (tick) | Drawing Primitives in tetris.c | New |
-| 09 | Score + Difficulty | Bitmap Font | New |
-| 10 | HUD + Next Piece | tetris_render() | New |
-| 11 | Game Over | Pro Input System | Replaces 9.5-v2 |
-| 12 | Restart + Polish | Full HUD | Updated |
-| 13 | _(new)_ | Game Over Overlay + Alpha Blend | New |
-| 14 | _(was 12)_ | Final Integration | Updated |
+| #   | Old Title (backup) | New Title                            | Status           |
+| --- | ------------------ | ------------------------------------ | ---------------- |
+| 01  | Open a Window      | Window + GLX/OpenGL Context          | Updated          |
+| 02  | The Field          | TetrisBackbuffer                     | New              |
+| 03  | Tetrominoes        | Color System                         | New              |
+| 04  | Rotation           | Typed Enums                          | New              |
+| 05  | Collision          | GameState + CurrentPiece + game_init | Restructured     |
+| 06  | Piece Locking      | Collision Detection                  | Minor rename     |
+| 07  | Line Detection     | Delta-Time Loop + GameActionRepeat   | Replaces 08+8-v2 |
+| 08  | Game Loop (tick)   | Drawing Primitives in tetris.c       | New              |
+| 09  | Score + Difficulty | Bitmap Font                          | New              |
+| 10  | HUD + Next Piece   | tetris_render()                      | New              |
+| 11  | Game Over          | Pro Input System                     | Replaces 9.5-v2  |
+| 12  | Restart + Polish   | Full HUD                             | Updated          |
+| 13  | _(new)_            | Game Over Overlay + Alpha Blend      | New              |
+| 14  | _(was 12)_         | Final Integration                    | Updated          |
 
 **Total: 14 lessons** (all single-numbered, no v2 variants — those are now merged in)
 
@@ -947,41 +954,41 @@ Updated "where to go next" extensions:
 
 ## Codebase Reference Map
 
-| Concept | File | Location |
-|---------|------|----------|
-| TetrisBackbuffer | `games/tetris/src/tetris.h` | Lines 22–29 |
-| TETRIS_RGB/RGBA macros | `games/tetris/src/tetris.h` | Lines 31–44 |
-| Predefined colors | `games/tetris/src/tetris.h` | Lines 35–44 |
-| TETROMINO_BY_IDX enum | `games/tetris/src/tetris.h` | Lines 55–65 |
-| TETROMINO_R_DIR enum | `games/tetris/src/tetris.h` | Lines 67–72 |
-| TETRIS_FIELD_CELL enum | `games/tetris/src/tetris.h` | Lines 73–82 |
-| GameActionRepeat | `games/tetris/src/tetris.h` | Lines 84–93 |
-| CurrentPiece substruct | `games/tetris/src/tetris.h` | Lines 94–102 |
-| GameState (full) | `games/tetris/src/tetris.h` | Lines 103–127 |
-| GameButtonState | `games/tetris/src/tetris.h` | Lines 128–155 |
-| GameActionWithRepeat | `games/tetris/src/tetris.h` | Lines 156–168 |
-| TETROMINO_ROTATE_X_VALUE | `games/tetris/src/tetris.h` | Lines 174–178 |
-| GameInput | `games/tetris/src/tetris.h` | Lines 179–199 |
-| UPDATE_BUTTON macro | `games/tetris/src/tetris.h` | Lines 200–210 |
-| TETROMINOS_COUNT, SIDEBAR_WIDTH | `games/tetris/src/tetris.h` | Lines 9–11, 17 |
-| FONT_DIGITS / FONT_LETTERS | `games/tetris/src/tetris.c` | Lines ~37–90 |
-| FONT_SPECIAL + find_special_char | `games/tetris/src/tetris.c` | Lines ~93–145 |
-| draw_rect | `games/tetris/src/tetris.c` | Lines ~155–172 |
-| draw_rect_blend | `games/tetris/src/tetris.c` | Lines ~174–203 |
-| draw_char (static) | `games/tetris/src/tetris.c` | Lines ~205–232 |
-| get_tetromino_color (static) | `games/tetris/src/tetris.c` | Lines ~244–264 |
-| draw_cell / draw_piece (static) | `games/tetris/src/tetris.c` | Lines ~266–285 |
-| draw_text | `games/tetris/src/tetris.c` | Lines ~287–295 |
-| tetris_render | `games/tetris/src/tetris.c` | Lines ~300–426 |
-| game_init | `games/tetris/src/tetris.c` | Lines ~427–520 |
-| handle_action_with_repeat (static) | `games/tetris/src/tetris.c` | Lines ~541–560 |
-| tetris_apply_input (static) | `games/tetris/src/tetris.c` | Lines ~568–650 |
-| tetris_update | `games/tetris/src/tetris.c` | Lines ~654–850 |
-| GLX context + VSync setup | `games/tetris/src/main_x11.c` | Lines ~21–105 |
-| ConfigureNotify / resize handler | `games/tetris/src/main_x11.c` | Lines ~289–298 |
-| platform_display_backbuffer | `games/tetris/src/main_x11.c` | Lines ~310–342 |
-| X11 backbuffer alloc/main loop | `games/tetris/src/main_x11.c` | Lines ~345–400 |
-| platform_get_input (X11) | `games/tetris/src/main_x11.c` | Lines ~200–310 |
-| Raylib backbuffer pipeline | `games/tetris/src/main_raylib.c` | Full file (~111 lines) |
-| Delta-time teaching material | `lesson-8-v2.md` | Full file (~758 lines) |
-| Pro input teaching material | `lesson-9.5-v2.md` | Full file |
+| Concept                            | File                             | Location               |
+| ---------------------------------- | -------------------------------- | ---------------------- |
+| TetrisBackbuffer                   | `games/tetris/src/tetris.h`      | Lines 22–29            |
+| GAME_RGB/RGBA macros               | `games/tetris/src/tetris.h`      | Lines 31–44            |
+| Predefined colors                  | `games/tetris/src/tetris.h`      | Lines 35–44            |
+| TETROMINO_BY_IDX enum              | `games/tetris/src/tetris.h`      | Lines 55–65            |
+| TETROMINO_R_DIR enum               | `games/tetris/src/tetris.h`      | Lines 67–72            |
+| TETRIS_FIELD_CELL enum             | `games/tetris/src/tetris.h`      | Lines 73–82            |
+| GameActionRepeat                   | `games/tetris/src/tetris.h`      | Lines 84–93            |
+| CurrentPiece substruct             | `games/tetris/src/tetris.h`      | Lines 94–102           |
+| GameState (full)                   | `games/tetris/src/tetris.h`      | Lines 103–127          |
+| GameButtonState                    | `games/tetris/src/tetris.h`      | Lines 128–155          |
+| GameActionWithRepeat               | `games/tetris/src/tetris.h`      | Lines 156–168          |
+| TETROMINO_ROTATE_X_VALUE           | `games/tetris/src/tetris.h`      | Lines 174–178          |
+| GameInput                          | `games/tetris/src/tetris.h`      | Lines 179–199          |
+| UPDATE_BUTTON macro                | `games/tetris/src/tetris.h`      | Lines 200–210          |
+| TETROMINOS_COUNT, SIDEBAR_WIDTH    | `games/tetris/src/tetris.h`      | Lines 9–11, 17         |
+| FONT_DIGITS / FONT_LETTERS         | `games/tetris/src/tetris.c`      | Lines ~37–90           |
+| FONT_SPECIAL + find_special_char   | `games/tetris/src/tetris.c`      | Lines ~93–145          |
+| draw_rect                          | `games/tetris/src/tetris.c`      | Lines ~155–172         |
+| draw_rect_blend                    | `games/tetris/src/tetris.c`      | Lines ~174–203         |
+| draw_char (static)                 | `games/tetris/src/tetris.c`      | Lines ~205–232         |
+| get_tetromino_color (static)       | `games/tetris/src/tetris.c`      | Lines ~244–264         |
+| draw_cell / draw_piece (static)    | `games/tetris/src/tetris.c`      | Lines ~266–285         |
+| draw_text                          | `games/tetris/src/tetris.c`      | Lines ~287–295         |
+| tetris_render                      | `games/tetris/src/tetris.c`      | Lines ~300–426         |
+| game_init                          | `games/tetris/src/tetris.c`      | Lines ~427–520         |
+| handle_action_with_repeat (static) | `games/tetris/src/tetris.c`      | Lines ~541–560         |
+| tetris_apply_input (static)        | `games/tetris/src/tetris.c`      | Lines ~568–650         |
+| tetris_update                      | `games/tetris/src/tetris.c`      | Lines ~654–850         |
+| GLX context + VSync setup          | `games/tetris/src/main_x11.c`    | Lines ~21–105          |
+| ConfigureNotify / resize handler   | `games/tetris/src/main_x11.c`    | Lines ~289–298         |
+| platform_display_backbuffer        | `games/tetris/src/main_x11.c`    | Lines ~310–342         |
+| X11 backbuffer alloc/main loop     | `games/tetris/src/main_x11.c`    | Lines ~345–400         |
+| platform_get_input (X11)           | `games/tetris/src/main_x11.c`    | Lines ~200–310         |
+| Raylib backbuffer pipeline         | `games/tetris/src/main_raylib.c` | Full file (~111 lines) |
+| Delta-time teaching material       | `lesson-8-v2.md`                 | Full file (~758 lines) |
+| Pro input teaching material        | `lesson-9.5-v2.md`               | Full file              |

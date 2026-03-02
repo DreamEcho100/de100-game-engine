@@ -1,6 +1,8 @@
 #ifndef GAME_SNAKE_H
 #define GAME_SNAKE_H
 
+#include "utils/backbuffer.h"
+#include <stdbool.h>
 #include <stdint.h>
 
 #define GRID_WIDTH 60
@@ -35,27 +37,15 @@ typedef struct {
   float interval;
 } GameActionRepeat;
 
-typedef struct {
-  uint32_t *pixels; /* RGBA pixel data (0xAARRGGBB format) */
-  int width;
-  int height;
-  int pitch; /* Bytes per row (usually width * 4) */
-} Backbuffer;
-#define SNAKE_RGBA(r, g, b, a)                                                 \
-  (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) |      \
-   (uint32_t)(b))
-
-#define SNAKE_RGB(r, g, b) SNAKE_RGBA(r, g, b, 0xFF)
-
-#define COLOR_BLACK SNAKE_RGB(0, 0, 0)
-#define COLOR_WHITE SNAKE_RGB(255, 255, 255)
-#define COLOR_RED SNAKE_RGB(220, 50, 50)
-#define COLOR_DARK_RED SNAKE_RGB(139, 0, 0)
-#define COLOR_LIME_GREEN SNAKE_RGB(50, 205, 50)
-#define COLOR_DARK_GREEN SNAKE_RGB(0, 128, 0)
-#define COLOR_YELLOW SNAKE_RGB(255, 215, 0)
-#define COLOR_DARK_GRAY SNAKE_RGB(64, 64, 64)
-#define COLOR_GRAY SNAKE_RGB(128, 128, 128)
+#define COLOR_BLACK GAME_RGB(0, 0, 0)
+#define COLOR_WHITE GAME_RGB(255, 255, 255)
+#define COLOR_RED GAME_RGB(220, 50, 50)
+#define COLOR_DARK_RED GAME_RGB(139, 0, 0)
+#define COLOR_LIME_GREEN GAME_RGB(50, 205, 50)
+#define COLOR_DARK_GREEN GAME_RGB(0, 128, 0)
+#define COLOR_YELLOW GAME_RGB(255, 215, 0)
+#define COLOR_DARK_GRAY GAME_RGB(64, 64, 64)
+#define COLOR_GRAY GAME_RGB(128, 128, 128)
 
 typedef struct {
   int x;
@@ -109,11 +99,14 @@ typedef struct {
   int speed; // TODO: is it needed?!!
 
   GameActionRepeat
-      move_forward; /* auto-repeat for moving forward (always active) */
+      move_repeat; /* auto-repeat for moving forward (always active) */
 } Snake;
 
 typedef struct {
   Snake snake;
+  bool is_game_over;
+  int score;
+  int best_score;
 } GameState;
 
 void prepare_input_frame(GameInput *input);

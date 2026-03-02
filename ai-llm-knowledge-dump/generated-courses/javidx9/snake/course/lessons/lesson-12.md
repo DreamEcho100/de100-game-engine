@@ -95,7 +95,7 @@ static void draw_rect_blend(SnakeBackbuffer *bb, int x, int y, int w, int h,
             uint8_t og  = (uint8_t)((sg * sa + dg * (255 - sa)) / 255);
             uint8_t ob  = (uint8_t)((sb * sa + db * (255 - sa)) / 255);
 
-            bb->pixels[py * bb->width + px] = SNAKE_RGB(or_, og, ob);
+            bb->pixels[py * bb->width + px] = GAME_RGB(or_, og, ob);
         }
     }
 }
@@ -104,13 +104,15 @@ static void draw_rect_blend(SnakeBackbuffer *bb, int x, int y, int w, int h,
 **Alpha math:**
 `out = src * alpha/255 + dst * (1 - alpha/255)`.
 
-For `color = SNAKE_RGBA(0, 0, 0, 180)` (black, ~70% opaque):
+For `color = GAME_RGBA(0, 0, 0, 180)` (black, ~70% opaque):
+
 - A pixel that was `COLOR_GREEN` becomes: `0 * 180/255 + 0x00,0xCC,0x00 * 75/255` → dark green tint
 - The field is still faintly visible through the overlay
 
-**`SNAKE_RGBA` macro:**
+**`GAME_RGBA` macro:**
+
 ```c
-#define SNAKE_RGBA(r, g, b, a) \
+#define GAME_RGBA(r, g, b, a) \
     ((uint32_t)(a) << 24 | (uint32_t)(r) << 16 | (uint32_t)(g) << 8 | (uint32_t)(b))
 ```
 
@@ -163,7 +165,7 @@ void snake_render(const GameState *s, SnakeBackbuffer *bb) {
     /* 7. Game over overlay */
     if (s->game_over) {
         draw_rect_blend(bb, 0, 0, bb->width, bb->height,
-                        SNAKE_RGBA(0, 0, 0, 180));
+                        GAME_RGBA(0, 0, 0, 180));
 
         const char *msg  = "GAME OVER";
         const char *msg2 = "PRESS R TO RESTART";
@@ -180,6 +182,7 @@ void snake_render(const GameState *s, SnakeBackbuffer *bb) {
 ```
 
 **Text centering:**
+
 ```c
 x = center_x - (int)strlen(text) * char_w / 2
 ```
@@ -197,6 +200,7 @@ cd ai-llm-knowledge-dump/Javidx9-courses/snake/course
 ```
 
 Expected output:
+
 ```
 Building snake_x11...
 Done! Run with: ./build/snake_x11
@@ -206,6 +210,7 @@ Done! Run with: ./build/snake_x11
 ```
 
 Both builds should compile with **zero warnings** and produce a playable snake game with:
+
 - Score and best score in the header
 - Smooth movement at 150ms/step, speeding up every 3 points
 - Green walls, white head, yellow body, red food
@@ -228,6 +233,7 @@ free(backbuffer.pixels);
 `GameState` uses a fixed `segments[MAX_SNAKE]` array on the stack — no allocation needed.
 
 Run under Valgrind to verify:
+
 ```sh
 valgrind --leak-check=full ./build/snake_x11
 ```
@@ -238,14 +244,14 @@ Expected: `0 bytes lost in 0 blocks` after closing the window.
 
 ## Build flags summary
 
-| Flag | Purpose |
-|------|---------|
-| `-Wall -Wextra -Wpedantic` | Catch all warnings |
-| `-std=c99` | C99 features (snprintf, `//` comments, designated initializers) |
-| `-lX11 -lxkbcommon` | X11 display + keyboard |
-| `-lGL -lGLX` | OpenGL + GLX context creation |
-| `-lraylib -lm` | Raylib + math library |
-| `-fsanitize=address` | Optional: detect buffer overflows during development |
+| Flag                       | Purpose                                                         |
+| -------------------------- | --------------------------------------------------------------- |
+| `-Wall -Wextra -Wpedantic` | Catch all warnings                                              |
+| `-std=c99`                 | C99 features (snprintf, `//` comments, designated initializers) |
+| `-lX11 -lxkbcommon`        | X11 display + keyboard                                          |
+| `-lGL -lGLX`               | OpenGL + GLX context creation                                   |
+| `-lraylib -lm`             | Raylib + math library                                           |
+| `-fsanitize=address`       | Optional: detect buffer overflows during development            |
 
 ---
 
@@ -255,7 +261,7 @@ Expected: `0 bytes lost in 0 blocks` after closing the window.
 - `draw_char`: 5×7 loop, each set bit → `draw_rect` at glyph pixel × scale
 - `draw_text`: advance `x += (5+1)*scale` per character
 - `draw_rect_blend`: alpha compositing — `out = src*a + dst*(255-a)`, all divided by 255
-- `SNAKE_RGBA(r,g,b,a)` — packs alpha into top byte
+- `GAME_RGBA(r,g,b,a)` — packs alpha into top byte
 - Game-over overlay: `draw_rect_blend` over entire buffer, then centered text on top
 - Text centering: `x = cx - strlen(text) * char_w / 2`
 - Only one heap allocation: `backbuffer.pixels` — `malloc` in main, `free` before exit

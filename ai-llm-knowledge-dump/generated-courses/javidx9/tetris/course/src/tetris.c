@@ -203,7 +203,7 @@ void draw_rect_blend(TetrisBackbuffer *bb, int x, int y, int w, int h,
       uint8_t out_g = (src_g * alpha + dst_g * (255 - alpha)) / 255;
       uint8_t out_b = (src_b * alpha + dst_b * (255 - alpha)) / 255;
 
-      row[px] = TETRIS_RGB(out_r, out_g, out_b);
+      row[px] = GAME_RGB(out_r, out_g, out_b);
     }
   }
 }
@@ -404,7 +404,7 @@ void tetris_render(TetrisBackbuffer *backbuffer, GameState *state) {
 
     /* Semi-transparent overlay */
     draw_rect_blend(backbuffer, cx - 80, cy - 50, 160, 100,
-                    TETRIS_RGBA(0, 0, 0, 200));
+                    GAME_RGBA(0, 0, 0, 200));
 
     /* Red border */
     draw_rect(backbuffer, cx - 80, cy - 50, 160, 3, COLOR_RED);

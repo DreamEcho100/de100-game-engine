@@ -1,4 +1,4 @@
-# Lesson 03 — Color System: uint32_t, TETRIS_RGB, Predefined Colors
+# Lesson 03 — Color System: uint32_t, GAME_RGB, Predefined Colors
 
 ## By the end of this lesson you will have:
 
@@ -11,6 +11,7 @@ A complete color system defined in `tetris.h` — one `uint32_t` type, two packi
 In the original architecture, colors lived in the platform backends:
 
 **X11 original:**
+
 ```c
 unsigned long color_cyan   = /* XAllocNamedColor call */;
 unsigned long color_red    = /* XAllocNamedColor call */;
@@ -18,6 +19,7 @@ unsigned long color_red    = /* XAllocNamedColor call */;
 ```
 
 **Raylib original:**
+
 ```c
 Color piece_colors[] = {
     {0, 255, 255, 255},   /* cyan  */
@@ -46,26 +48,26 @@ Add to `tetris.h`:
  *   Bits 15-8:  Green
  *   Bits  7-0:  Blue
  */
-#define TETRIS_RGBA(r, g, b, a) \
+#define GAME_RGBA(r, g, b, a) \
     (((uint32_t)(a) << 24) | \
      ((uint32_t)(r) << 16) | \
      ((uint32_t)(g) << 8)  | \
       (uint32_t)(b))
 
 /* Shorthand for fully opaque colors (alpha = 255) */
-#define TETRIS_RGB(r, g, b) TETRIS_RGBA(r, g, b, 255)
+#define GAME_RGB(r, g, b) GAME_RGBA(r, g, b, 255)
 ```
 
 **How the bit packing works:**
 
 ```
-TETRIS_RGB(255, 165, 0)   ← orange: R=255, G=165, B=0
+GAME_RGB(255, 165, 0)   ← orange: R=255, G=165, B=0
 
 Step by step:
   (uint32_t)(255) << 16  = 0x00FF0000
   (uint32_t)(165) << 8   = 0x0000A500
   (uint32_t)(0)          = 0x00000000
-  (uint32_t)(255) << 24  = 0xFF000000   ← alpha from TETRIS_RGB shorthand
+  (uint32_t)(255) << 24  = 0xFF000000   ← alpha from GAME_RGB shorthand
   OR all together        = 0xFFFF A500
 ```
 
@@ -84,9 +86,11 @@ Step by step:
 
 **Why alpha is the highest byte:**  
 When we extract alpha in `draw_rect_blend`, we write:
+
 ```c
 uint8_t alpha = (color >> 24) & 0xFF;
 ```
+
 Shifting right by 24 puts the alpha byte in the lowest position. This is a common convention in graphics APIs (OpenGL, Metal, Vulkan all use similar layouts).
 
 ---
@@ -96,30 +100,30 @@ Shifting right by 24 puts the alpha byte in the lowest position. This is a commo
 ```c
 /* ── Predefined colors ─────────────────────────────────────────── */
 
-#define COLOR_BLACK     TETRIS_RGB(0,   0,   0)
-#define COLOR_WHITE     TETRIS_RGB(255, 255, 255)
-#define COLOR_GRAY      TETRIS_RGB(128, 128, 128)
-#define COLOR_DARK_GRAY TETRIS_RGB(64,  64,  64)
-#define COLOR_CYAN      TETRIS_RGB(0,   255, 255)
-#define COLOR_BLUE      TETRIS_RGB(0,   0,   255)
-#define COLOR_ORANGE    TETRIS_RGB(255, 165, 0)
-#define COLOR_YELLOW    TETRIS_RGB(255, 255, 0)
-#define COLOR_GREEN     TETRIS_RGB(0,   255, 0)
-#define COLOR_MAGENTA   TETRIS_RGB(255, 0,   255)
-#define COLOR_RED       TETRIS_RGB(255, 0,   0)
+#define COLOR_BLACK     GAME_RGB(0,   0,   0)
+#define COLOR_WHITE     GAME_RGB(255, 255, 255)
+#define COLOR_GRAY      GAME_RGB(128, 128, 128)
+#define COLOR_DARK_GRAY GAME_RGB(64,  64,  64)
+#define COLOR_CYAN      GAME_RGB(0,   255, 255)
+#define COLOR_BLUE      GAME_RGB(0,   0,   255)
+#define COLOR_ORANGE    GAME_RGB(255, 165, 0)
+#define COLOR_YELLOW    GAME_RGB(255, 255, 0)
+#define COLOR_GREEN     GAME_RGB(0,   255, 0)
+#define COLOR_MAGENTA   GAME_RGB(255, 0,   255)
+#define COLOR_RED       GAME_RGB(255, 0,   0)
 ```
 
 These match the classic Tetris piece colors (Tetris Guideline):
 
-| Piece | Color |
-|-------|-------|
-| I | `COLOR_CYAN` |
-| J | `COLOR_BLUE` |
-| L | `COLOR_ORANGE` |
-| O | `COLOR_YELLOW` |
-| S | `COLOR_GREEN` |
-| T | `COLOR_MAGENTA` |
-| Z | `COLOR_RED` |
+| Piece | Color           |
+| ----- | --------------- |
+| I     | `COLOR_CYAN`    |
+| J     | `COLOR_BLUE`    |
+| L     | `COLOR_ORANGE`  |
+| O     | `COLOR_YELLOW`  |
+| S     | `COLOR_GREEN`   |
+| T     | `COLOR_MAGENTA` |
+| Z     | `COLOR_RED`     |
 
 ---
 
@@ -136,7 +140,7 @@ Actually, both work — `GL_RGBA` with `GL_UNSIGNED_BYTE` reads bytes in memory 
 **Raylib:**  
 `PIXELFORMAT_UNCOMPRESSED_R8G8B8A8` reads memory bytes as R-G-B-A in order. On little-endian, `0xAARRGGBB` stored as `[BB, GG, RR, AA]` means Raylib reads B as R, G as G, R as B, A as A — a channel swap. The implementation works because we always use the same macros and the display pipeline handles it consistently.
 
-**The practical takeaway:** Use the `TETRIS_RGB`/`TETRIS_RGBA` macros everywhere. Never hardcode raw hex color values in game code. If colors look wrong, swap `GL_RGBA` ↔ `GL_BGRA` in `glTexImage2D`.
+**The practical takeaway:** Use the `GAME_RGB`/`GAME_RGBA` macros everywhere. Never hardcode raw hex color values in game code. If colors look wrong, swap `GL_RGBA` ↔ `GL_BGRA` in `glTexImage2D`.
 
 ---
 
@@ -184,8 +188,8 @@ Using `pitch` instead of `width * 4` makes the code portable to padded image buf
 
 - `uint32_t` — one integer per pixel (four 8-bit channels)
 - `0xAARRGGBB` — alpha highest, blue lowest — matches `<< 24`, `<< 16`, `<< 8`, `<< 0`
-- `TETRIS_RGBA(r,g,b,a)` — packs four channel values into one integer using bit shifts and OR
-- `TETRIS_RGB(r,g,b)` — shorthand where alpha = 255
+- `GAME_RGBA(r,g,b,a)` — packs four channel values into one integer using bit shifts and OR
+- `GAME_RGB(r,g,b)` — shorthand where alpha = 255
 - Named constants (`COLOR_CYAN` etc.) — defined once in `tetris.h`, used everywhere
 - Row-major indexing: `pixels[y * width + x]`
 
@@ -193,9 +197,10 @@ Using `pitch` instead of `width * 4` makes the code portable to padded image buf
 
 ## Exercise
 
-Compute by hand what `TETRIS_RGB(0, 128, 255)` equals in hexadecimal.
+Compute by hand what `GAME_RGB(0, 128, 255)` equals in hexadecimal.
 
 Solution:
+
 ```
 alpha = 0xFF → 0xFF000000
 r     = 0x00 → 0x00000000

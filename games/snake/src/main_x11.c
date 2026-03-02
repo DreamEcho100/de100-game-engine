@@ -345,7 +345,7 @@ int main(void) {
     // }
 
     // /* Game renders to backbuffer - platform independent! */
-    // game_reder(&backbuffer, &game_state);
+    // game_render(&backbuffer, &game_state);
 
     game_render(&game_state, &platform_game_props.backbuffer);
 

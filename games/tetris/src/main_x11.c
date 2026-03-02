@@ -358,17 +358,14 @@ int main(void) {
     prepare_input_frame(&game_input);
     platform_get_input(&game_input, &platform_game_props);
 
-    if (game_input.quit)
+    if (game_input.quit) {
       break;
-
-    if (game_state.game_over && game_input.restart) {
-      game_init(&game_state, &game_input);
-    } else {
-      game_update(&game_state, &game_input, delta_time);
     }
 
+    game_update(&game_state, &game_input, delta_time);
+
     /* Game renders to backbuffer - platform independent! */
-    game_reder(&platform_game_props.backbuffer, &game_state);
+    game_render(&platform_game_props.backbuffer, &game_state);
 
     /* Platform displays the backbuffer */
     platform_display_backbuffer(&platform_game_props.backbuffer);
