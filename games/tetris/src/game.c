@@ -129,7 +129,7 @@ void game_render(Backbuffer *backbuffer, GameState *state) {
   draw_piece(backbuffer, state->current_piece.index, state->current_piece.x,
              state->current_piece.y,
              get_tetromino_color(state->current_piece.index),
-             state->current_piece.rotation);
+             state->current_piece.rotate_x_value);
 
   /* ═══════════════════════════════════════════════════════════════════
    * Draw the HUD sidebar
@@ -212,7 +212,7 @@ void game_render(Backbuffer *backbuffer, GameState *state) {
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-void game_init(GameState *state, GameInput *input) {
+void game_init(GameState *state) {
   state->score = 0;
   state->is_game_over = false;
   state->pieces_count = 1;
@@ -225,13 +225,24 @@ void game_init(GameState *state, GameInput *input) {
          sizeof(int) * TETROMINO_LAYER_COUNT);
 
   // Time-based dropping
-  state->tetromino_drop.timer = 0.0f;
-  state->tetromino_drop.interval = 0.8f; // 1 second between drops initially
+  state->input_values.rotate_direction.timer = 0.0f;
+  state->input_values.rotate_direction.interval =
+      0.8f; // 1 second between drops initially
+
+  // DAS = Delayed Auto Shift (initial delay before repeating starts)
+  // Using `initial_delay`
+  // ARR = Auto Repeat Rate (speed of repeating after DAS)
+  // Using `interval`
 
   /* Configure auto-repeat intervals */
-  input->move_left.repeat.interval = 0.07f;
-  input->move_right.repeat.interval = 0.07f;
-  input->move_down.repeat.interval = 0.06f;
+  state->input_repeat.move_left.initial_delay = 0.01f;
+  state->input_repeat.move_left.interval = 0.05f;
+
+  state->input_repeat.move_right.initial_delay = 0.01f;
+  state->input_repeat.move_right.interval = 0.05f;
+
+  state->input_repeat.move_down.initial_delay = 0.0f;
+  state->input_repeat.move_down.interval = 0.03f;
 
   /* Build the boundary walls. */
   for (int y = 0; y < FIELD_HEIGHT; y++) {
@@ -254,7 +265,7 @@ void game_init(GameState *state, GameInput *input) {
       .y = 0,
       .index = rand() % TETROMINOS_COUNT,
       .next_index = rand() % TETROMINOS_COUNT,
-      .rotation = TETROMINO_R_0,
+      .rotate_x_value = TETROMINO_R_0,
   };
 }
 
@@ -269,10 +280,17 @@ int tetromino_pos_value(int px, int py, TETROMINO_R_DIR r) {
   case TETROMINO_R_270:
     return 3 - py + (px * TETROMINO_LAYER_COUNT);
   }
+
+  // TODO: better to use `ASSERT`
+  printf("Invalid rotation: %d\n", r);
+  return 0; /* Should never happen */
 }
 
 int tetromino_does_piece_fit(GameState *state, int piece, int rotation,
                              int pos_x, int pos_y) {
+  // TODO: use `ASSERT`
+  if (piece < 0 || piece >= TETROMINOS_COUNT)
+    return 0;
 
   for (int py = 0; py < 4; py++) {
     for (int px = 0; px < 4; px++) {
@@ -280,7 +298,7 @@ int tetromino_does_piece_fit(GameState *state, int piece, int rotation,
       int pi = tetromino_pos_value(px, py, rotation);
 
       /* Skip empty cells in the piece */
-      if (TETROMINOES[piece][pi] == '.')
+      if (TETROMINOES[piece][pi] == TETROMINO_SPAN)
         continue;
 
       /* Where would this cell land in the field? */
@@ -306,49 +324,85 @@ int tetromino_does_piece_fit(GameState *state, int piece, int rotation,
 }
 
 /* Reset transition counts — they're per-frame */
-void prepare_input_frame(GameInput *input) {
-  input->move_left.button.half_transition_count = 0;
-  input->move_right.button.half_transition_count = 0;
-  input->move_down.button.half_transition_count = 0;
-  input->rotate_x.button.half_transition_count = 0;
-  input->rotate_x.value = 0;
+void prepare_input_frame(GameInput *old_input, GameInput *current_input) {
+  printf("Before\n");
+  // DEBUG: Print what was copied
+  printf("[PREPARE] current_input->current: left=%d right=%d down=%d\n",
+         current_input->move_left.ended_down,
+         current_input->move_right.ended_down,
+         current_input->move_down.half_transition_count);
+  printf("[PREPARE] old_input->current: left=%d right=%d down=%d\n",
+         old_input->move_left.ended_down, old_input->move_right.ended_down,
+         old_input->move_down.half_transition_count);
+  // Copy button state, reset transitions
+  for (int btn = 0; btn < BUTTON_COUNT; btn++) {
+    current_input->buttons[btn].ended_down = old_input->buttons[btn].ended_down;
+    current_input->buttons[btn].half_transition_count = 0;
+  }
+  printf("After\n");
+  // DEBUG: Print what was copied
+  printf("[PREPARE] current_input->current: left=%d right=%d down=%d\n",
+         current_input->move_left.ended_down,
+         current_input->move_right.ended_down,
+         current_input->move_down.half_transition_count);
+  printf("[PREPARE] old_input->current: left=%d right=%d down=%d\n",
+         old_input->move_left.ended_down, old_input->move_right.ended_down,
+         old_input->move_down.half_transition_count);
 };
 
 /**
  * Process an action with auto-repeat behavior.
  *
- * @param action     The action to process (modified in place)
+ * @param button     The button state to process
+ * @param repeat     The repeat interval for this action
  * @param delta_time Seconds since last frame
  * @param should_trigger Output: set to 1 if action should fire this frame
- *
- * Behavior:
- * - Button just pressed → trigger immediately, reset timer
- * - Button held → accumulate time, trigger when timer >= interval
- * - Button released → reset timer, don't trigger
  */
-static void handle_action_with_repeat(GameActionWithRepeat *action,
-                                      float delta_time, int *should_trigger) {
+static void handle_action_with_repeat(GameButtonState *button,
+                                      RepeatInterval *repeat, float delta_time,
+                                      int *should_trigger) {
   *should_trigger = 0;
 
-  if (!action->button.ended_down) {
-    /* Button is up — reset timer, don't trigger */
-    action->repeat.timer = 0.0f;
+  // Button released - reset everything
+  if (!button->ended_down) {
+    repeat->timer = 0.0f;
+    repeat->is_active = false;
     return;
   }
 
-  /* Button is down */
-  if (action->button.half_transition_count > 0) {
-    /* Just pressed this frame — trigger immediately */
-    *should_trigger = 1;
-    action->repeat.timer = 0.0f;
-  } else {
-    /* Held from previous frame — check auto-repeat timer */
-    action->repeat.timer += delta_time;
+  // Just pressed this frame
+  if (button->half_transition_count > 0) {
+    repeat->timer = 0.0f;
+    repeat->is_active = true;
 
-    if (action->repeat.timer >= action->repeat.interval) {
-      /* Timer expired — trigger and reset (keeping remainder for precision) */
-      action->repeat.timer -= action->repeat.interval;
+    // Trigger immediately ONLY if no initial delay
+    if (repeat->initial_delay <= 0.0f) {
       *should_trigger = 1;
+    }
+    return;
+  }
+
+  // Button held from previous frame
+  if (!repeat->is_active) {
+    return;
+  }
+
+  repeat->timer += delta_time;
+
+  // Has initial_delay?
+  if (repeat->initial_delay > 0.0f) {
+    // Crossed the initial_delay threshold?
+    if (repeat->timer >= repeat->initial_delay) {
+      *should_trigger = 1;
+      repeat->timer = 0.0f;         // Reset for interval phase
+      repeat->initial_delay = 0.0f; // Switch to interval mode
+      // Actually, don't mutate initial_delay! Use a flag instead.
+    }
+  } else {
+    // No initial_delay - just use interval
+    if (repeat->timer >= repeat->interval) {
+      *should_trigger = 1;
+      repeat->timer -= repeat->interval; // Keep remainder
     }
   }
 }
@@ -384,13 +438,14 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
   float pan = calculate_piece_pan(state->current_piece.x);
 
   /* Rotate clockwise: try rotation + 1. (% 4 wraps 3 back to 0.) */
-  if (input->rotate_x.button.ended_down &&
-      input->rotate_x.button.half_transition_count != 0 &&
-      input->rotate_x.value != TETROMINO_ROTATE_X_NONE) {
+  if (input->rotate_x.ended_down &&
+      input->rotate_x.half_transition_count != 0 &&
+      state->current_piece.next_rotate_x_value != TETROMINO_ROTATE_X_NONE) {
 
     TETROMINO_R_DIR new_rotation;
-    if (input->rotate_x.value == TETROMINO_ROTATE_X_GO_RIGHT) {
-      switch (state->current_piece.rotation) {
+    if (state->current_piece.next_rotate_x_value ==
+        TETROMINO_ROTATE_X_GO_RIGHT) {
+      switch (state->current_piece.rotate_x_value) {
       case TETROMINO_R_0:
         new_rotation = TETROMINO_R_90;
         break;
@@ -405,7 +460,7 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
         break;
       }
     } else {
-      switch (state->current_piece.rotation) {
+      switch (state->current_piece.rotate_x_value) {
       case TETROMINO_R_0:
         new_rotation = TETROMINO_R_270;
         break;
@@ -425,7 +480,7 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
         state->current_piece.y);
 
     if (does_piece_fit) {
-      state->current_piece.rotation = new_rotation;
+      state->current_piece.rotate_x_value = new_rotation;
       game_play_sound_at(&state->audio, SOUND_ROTATE, pan);
     }
 
@@ -436,23 +491,27 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
   int should_move_left = 0;
   int should_move_right = 0;
 
-  handle_action_with_repeat(&input->move_left, delta_time, &should_move_left);
-  handle_action_with_repeat(&input->move_right, delta_time, &should_move_right);
+  handle_action_with_repeat(&input->move_left, &state->input_repeat.move_left,
+                            delta_time, &should_move_left);
+  handle_action_with_repeat(&input->move_right, &state->input_repeat.move_right,
+                            delta_time, &should_move_right);
 
   /* Move left: try current_piece.col - 1 */
   if (should_move_left &&
-      tetromino_does_piece_fit(
-          state, state->current_piece.index, state->current_piece.rotation,
-          state->current_piece.x - 1, state->current_piece.y)) {
+      tetromino_does_piece_fit(state, state->current_piece.index,
+                               state->current_piece.rotate_x_value,
+                               state->current_piece.x - 1,
+                               state->current_piece.y)) {
     state->current_piece.x--;
     game_play_sound_at(&state->audio, SOUND_MOVE, pan);
   }
 
   /* Move right: try current_piece.col + 1 */
   if (should_move_right &&
-      tetromino_does_piece_fit(
-          state, state->current_piece.index, state->current_piece.rotation,
-          state->current_piece.x + 1, state->current_piece.y)) {
+      tetromino_does_piece_fit(state, state->current_piece.index,
+                               state->current_piece.rotate_x_value,
+                               state->current_piece.x + 1,
+                               state->current_piece.y)) {
     state->current_piece.x++;
     game_play_sound_at(&state->audio, SOUND_MOVE, pan);
   }
@@ -460,12 +519,14 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
   /* ── Soft drop: independent auto-repeat (faster interval) ── */
   int should_move_down = 0;
 
-  handle_action_with_repeat(&input->move_down, delta_time, &should_move_down);
+  handle_action_with_repeat(&input->move_down, &state->input_repeat.move_down,
+                            delta_time, &should_move_down);
   /* Soft drop: try current_piece.row + 1 (down = positive Y) */
   if (should_move_down &&
-      tetromino_does_piece_fit(
-          state, state->current_piece.index, state->current_piece.rotation,
-          state->current_piece.x, state->current_piece.y + 1)) {
+      tetromino_does_piece_fit(state, state->current_piece.index,
+                               state->current_piece.rotate_x_value,
+                               state->current_piece.x,
+                               state->current_piece.y + 1)) {
     state->current_piece.y++;
     game_play_sound_at(&state->audio, SOUND_MOVE, pan);
   }
@@ -477,8 +538,8 @@ void game_update(GameState *state, GameInput *input, float delta_time) {
   game_audio_update(&state->audio, delta_time);
 
   if (state->is_game_over) {
-    if (input->restart) {
-      game_init(state, input);
+    if (state->should_restart) {
+      game_init(state);
       if (state->audio.samples_per_second > 0) {
         game_music_play(&state->audio);
         game_play_sound(&state->audio, SOUND_RESTART);
@@ -550,34 +611,37 @@ void game_update(GameState *state, GameInput *input, float delta_time) {
   tetris_apply_input(state, input, delta_time);
 
   /* ── Accumulate time for gravity ── */
-  state->tetromino_drop.timer += delta_time;
+  state->input_values.rotate_direction.timer += delta_time;
 
   int game_speed = state->level - 1 < 0 ? 0 : state->level;
   float tetromino_drop_interval =
-      state->tetromino_drop.interval + (0.01f + game_speed * 0.01f);
+      state->input_values.rotate_direction.interval +
+      (0.01f + game_speed * 0.01f);
   if (tetromino_drop_interval < 0.1f) {
     tetromino_drop_interval = 0.1f; /* cap at 100ms per drop */
   }
 
   /* ── Check if it's time to drop the piece ── */
-  if (state->tetromino_drop.timer >= tetromino_drop_interval) {
+  if (state->input_values.rotate_direction.timer >= tetromino_drop_interval) {
     // Reset timer, keeping remainder for precision
     // float drop_interval = 0.1f + state->speed * 0.01f;
     // if (drop_interval > 0.8f) {
     //   drop_interval = 0.8f;
     // }
-    state->tetromino_drop.timer -= tetromino_drop_interval;
+    state->input_values.rotate_direction.timer -= tetromino_drop_interval;
 
     /* Try to move the piece down one row */
-    if (tetromino_does_piece_fit(
-            state, state->current_piece.index, state->current_piece.rotation,
-            state->current_piece.x, state->current_piece.y + 1)) {
+    if (tetromino_does_piece_fit(state, state->current_piece.index,
+                                 state->current_piece.rotate_x_value,
+                                 state->current_piece.x,
+                                 state->current_piece.y + 1)) {
       state->current_piece.y++;
     } else {
       /* If it doesn't fit, piece has landed - locking in lesson 09 */
       for (int px = 0; px < TETROMINO_LAYER_COUNT; ++px) {
         for (int py = 0; py < TETROMINO_LAYER_COUNT; ++py) {
-          int pi = tetromino_pos_value(px, py, state->current_piece.rotation);
+          int pi =
+              tetromino_pos_value(px, py, state->current_piece.rotate_x_value);
           if (TETROMINOES[state->current_piece.index][pi] != TETROMINO_SPAN) {
             int fx = state->current_piece.x + px;
             int fy = state->current_piece.y + py;
@@ -639,18 +703,19 @@ void game_update(GameState *state, GameInput *input, float delta_time) {
       }
 
       // reset drop-timer and current piece for next round
-      state->tetromino_drop.timer = 0.0f;
+      state->input_values.rotate_direction.timer = 0.0f;
       state->current_piece = (CurrentPiece){
           .x = (FIELD_WIDTH * 0.5) - (TETROMINO_LAYER_COUNT * 0.5),
           .y = 0,
           .index = state->current_piece.next_index,
           .next_index = rand() % TETROMINOS_COUNT,
-          .rotation = TETROMINO_R_0,
+          .rotate_x_value = TETROMINO_R_0,
       };
 
-      if (!tetromino_does_piece_fit(
-              state, state->current_piece.index, state->current_piece.rotation,
-              state->current_piece.x, state->current_piece.y)) {
+      if (!tetromino_does_piece_fit(state, state->current_piece.index,
+                                    state->current_piece.rotate_x_value,
+                                    state->current_piece.x,
+                                    state->current_piece.y)) {
         state->is_game_over = true;
         game_play_sound(&state->audio, SOUND_GAME_OVER);
         game_music_stop(&state->audio); /* Stop music on game over */

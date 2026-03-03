@@ -42,18 +42,18 @@ void prepare_input_frame(GameInput *old_input, GameInput *new_input) {
       new_ctrl->buttons[btn].ended_down = old_ctrl->buttons[btn].ended_down;
       new_ctrl->buttons[btn].half_transition_count = 0;
     }
-
-    // ─────────────────────────────────────────────────────────────────
-    // ADD: Preserve mouse button states
-    // ─────────────────────────────────────────────────────────────────
-    for (u32 b = 0; b < ArraySize(new_input->mouse_buttons); b++) {
-      new_input->mouse_buttons[b].ended_down =
-          old_input->mouse_buttons[b].ended_down;
-      new_input->mouse_buttons[b].half_transition_count = 0;
-    }
-
-    // Mouse position doesn't need preservation (polled fresh each frame)
-    // Mouse wheel should reset to 0 each frame (it's a delta)
-    new_input->mouse_z = 0;
   }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Preserve mouse button states
+  // ─────────────────────────────────────────────────────────────────
+  for (u32 b = 0; b < ArraySize(new_input->mouse_buttons); b++) {
+    new_input->mouse_buttons[b].ended_down =
+        old_input->mouse_buttons[b].ended_down;
+    new_input->mouse_buttons[b].half_transition_count = 0;
+  }
+
+  // Mouse position doesn't need preservation (polled fresh each frame)
+  // Mouse wheel should reset to 0 each frame (it's a delta)
+  new_input->mouse_z = 0;
 }

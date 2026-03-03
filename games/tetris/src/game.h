@@ -70,39 +70,28 @@ typedef struct {
   /** Accumulates delta time while button is held */
   float timer;
 
+  /** Time before first auto-repeat (e.g., 0.2 = 200ms) */
+  float initial_delay;
+
   /** Time between auto-repeats (e.g., 0.1 = 100ms) */
   float interval;
-} AutoRepeatInterval;
 
+  bool is_active; /* Whether the button is currently active (held down) */
+} RepeatInterval;
+
+typedef enum {
+  TETROMINO_ROTATE_X_NONE,
+  TETROMINO_ROTATE_X_GO_LEFT,
+  TETROMINO_ROTATE_X_GO_RIGHT,
+} TETROMINO_ROTATE_X_VALUE;
 typedef struct {
-  int x;                       /* starting column */
-  int y;                       /* starting row    */
-  TETROMINO_BY_IDX index;      /* which tetromino */
-  TETROMINO_BY_IDX next_index; /* next tetromino */
-  TETROMINO_R_DIR rotation;    /* current rotation: 0, 1, 2, or 3 */
+  int x;                          /* starting column */
+  int y;                          /* starting row    */
+  TETROMINO_BY_IDX index;         /* which tetromino */
+  TETROMINO_BY_IDX next_index;    /* next tetromino */
+  TETROMINO_R_DIR rotate_x_value; /* current rotation: 0, 1, 2, or 3 */
+  TETROMINO_ROTATE_X_VALUE next_rotate_x_value;
 } CurrentPiece;
-typedef struct {
-  unsigned char field[FIELD_WIDTH * FIELD_HEIGHT]; /* the play field */
-  CurrentPiece current_piece;
-  int score;
-  int pieces_count; /* total pieces locked — used for difficulty scaling */
-  bool is_game_over;
-  int level;
-
-  struct {
-    int indexes[TETROMINO_LAYER_COUNT]; /* row indices of completed lines this
-                                           lock */
-    int count;                      /* how many entries in lines[] are valid */
-    AutoRepeatInterval flash_timer; /* countdown: while > 0, game is paused
-                                        showing white flash */
-  } completed_lines;
-
-  // Replace speed/speed_count with time-based fields
-  AutoRepeatInterval tetromino_drop;
-
-  // Audio state
-  GameAudioState audio;
-} GameState;
 
 /* ── Input System ─────────────────────────────────────── */
 
@@ -130,62 +119,24 @@ typedef struct {
   int ended_down;
 } GameButtonState;
 
-/**
- * Action with auto-repeat capability.
- * Used for: move_left, move_right, move_down
- *
- * Behavior:
- * - First press: triggers immediately
- * - Hold: triggers again every repeat_interval seconds
- * - Release: stops triggering, resets timer
- */
-typedef struct {
-  GameButtonState button;
-  AutoRepeatInterval repeat;
-} GameActionWithRepeat;
-
-// /**
-//  * Action with a directional value.
-//  * Used for: rotation
-//  *
-//  * Behavior:
-//  * - Press X: value = 1 (clockwise)
-//  * - Press Z: value = -1 (counter-clockwise)
-//  * - No auto-repeat — only triggers on initial press
-//  */
+#define BUTTON_COUNT 4
 // typedef struct {
-//   GameButtonState button;
-
-//   /**
-//    * Direction or magnitude for this action.
-//    * For rotation: 1 = clockwise, -1 = counter-clockwise, 0 = no rotation
-//    */
-//   int value;
-// } GameActionWithValue;
-
-typedef enum {
-  TETROMINO_ROTATE_X_NONE,
-  TETROMINO_ROTATE_X_GO_LEFT,
-  TETROMINO_ROTATE_X_GO_RIGHT,
-} TETROMINO_ROTATE_X_VALUE;
-
-/* All the inputs the game cares about.
-   platform_get_input() fills this in each frame. */
+// union
+//   GameButtonState buttons[BUTTON_COUNT]; // Iterate
+//   struct {
+//   };
+// }
+// } GameInput;
 typedef struct {
-  GameActionWithRepeat move_left;  /* 1 if left arrow pressed this frame */
-  GameActionWithRepeat move_right; /* 1 if right arrow pressed this frame */
-  GameActionWithRepeat move_down;  /* 1 if down arrow pressed this frame */
-  struct {
-    GameButtonState button;
-
-    /**
-     * Direction or magnitude for this action.
-     * For rotation: 1 = clockwise, -1 = counter-clockwise, 0 = no rotation
-     */
-    TETROMINO_ROTATE_X_VALUE value;
-  } rotate_x;  /* 1 if X/Z pressed this frame */
-  int quit;    /* 1 if window closed or Escape pressed */
-  int restart; /* 1 if R pressed this frame */
+  union {
+    GameButtonState buttons[BUTTON_COUNT];
+    struct {
+      GameButtonState move_left;  /* 1 if left arrow pressed this frame */
+      GameButtonState move_right; /* 1 if right arrow pressed this frame */
+      GameButtonState move_down;  /* 1 if down arrow pressed this frame */
+      GameButtonState rotate_x;   /* 1 if X/Z pressed this frame */
+    };
+  };
 } GameInput;
 
 /* Helper macro to update button state.
@@ -201,7 +152,38 @@ typedef struct {
     }                                                                          \
   } while (0)
 
-void prepare_input_frame(GameInput *input);
+typedef struct {
+  unsigned char field[FIELD_WIDTH * FIELD_HEIGHT]; /* the play field */
+  CurrentPiece current_piece;
+  int score;
+  int pieces_count; /* total pieces locked — used for difficulty scaling */
+  bool is_game_over;
+  int level;
+
+  struct {
+    int indexes[TETROMINO_LAYER_COUNT]; /* row indices of completed lines this
+                                           lock */
+    int count;                  /* how many entries in lines[] are valid */
+    RepeatInterval flash_timer; /* countdown: while > 0, game is paused
+                                        showing white flash */
+  } completed_lines;
+
+  struct {
+    RepeatInterval move_left;  /* 1 if left arrow pressed this frame */
+    RepeatInterval move_right; /* 1 if right arrow pressed this frame */
+    RepeatInterval move_down;  /* 1 if down arrow pressed this frame */
+    /* rotate doesn't need auto-repeat */
+  } input_repeat;
+  // Replace speed/speed_count with time-based fields
+  struct {
+    RepeatInterval rotate_direction;
+  } input_values;
+
+  // Audio state
+  GameAudioState audio;
+  int should_quit;    /* 1 if window closed or Escape pressed */
+  int should_restart; /* 1 if R pressed this frame */
+} GameState;
 
 /* ── Piece data ─────────────────────────────────────── */
 
@@ -211,8 +193,8 @@ void prepare_input_frame(GameInput *input);
 extern const char *TETROMINOES[7];
 
 /* Initialization */
-void game_init(GameState *state, GameInput *input);
-void prepare_input_frame(GameInput *input);
+void game_init(GameState *state);
+void prepare_input_frame(GameInput *old_input, GameInput *new_input);
 
 /* Game Logic */
 int tetromino_pos_value(int px, int py, TETROMINO_R_DIR r);

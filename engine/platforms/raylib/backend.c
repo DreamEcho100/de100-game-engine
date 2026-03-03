@@ -55,7 +55,7 @@ de100_file_scoped_fn inline void resize_back_buffer(GameBackBuffer *backbuffer,
   if (de100_memory_is_valid(backbuffer->memory) && old_width > 0 &&
       old_height > 0) {
     int buffer_size = width * height * backbuffer->bytes_per_pixel;
-    de100_memory_realloc(&backbuffer->memory, buffer_size, 0);
+    de100_memory_realloc(&backbuffer->memory, buffer_size, 1);
   }
 
   if (g_game_buffer_meta.has_texture) {

@@ -11,6 +11,7 @@ typedef struct {
   int width;
   int height;
   int pitch; /* Bytes per row (usually width * 4) */
+  int bytes_per_pixel;
 } Backbuffer;
 
 /* Color helper - pack RGBA into uint32 */

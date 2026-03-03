@@ -423,8 +423,8 @@ void platform_shutdown(void) {
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-void platform_get_input(GameInput *input,
-                        PlatformGameProps *platform_game_props) {
+static void platform_get_input(GameState *game_state, GameInput *input,
+                               PlatformGameProps *platform_game_props) {
   XEvent event;
 
   while (XPending(g_x11.display) > 0) {
@@ -438,36 +438,38 @@ void platform_get_input(GameInput *input,
       case XK_Q:
       case XK_Escape:
         platform_game_props->is_running = false;
-        input->quit = 1;
+        game_state->should_quit = 1;
         break;
       case XK_r:
       case XK_R:
-        input->restart = 1;
+        game_state->should_restart = 1;
         break;
       case XK_x:
       case XK_X:
-        UPDATE_BUTTON(input->rotate_x.button, 1);
-        input->rotate_x.value = TETROMINO_ROTATE_X_GO_RIGHT;
+        UPDATE_BUTTON(input->rotate_x, 1);
+        game_state->current_piece.next_rotate_x_value =
+            TETROMINO_ROTATE_X_GO_RIGHT;
         break;
       case XK_z:
       case XK_Z:
-        UPDATE_BUTTON(input->rotate_x.button, 1);
-        input->rotate_x.value = TETROMINO_ROTATE_X_GO_LEFT;
+        UPDATE_BUTTON(input->rotate_x, 1);
+        game_state->current_piece.next_rotate_x_value =
+            TETROMINO_ROTATE_X_GO_LEFT;
         break;
       case XK_Left:
       case XK_A:
       case XK_a:
-        UPDATE_BUTTON(input->move_left.button, 1);
+        UPDATE_BUTTON(input->move_left, 1);
         break;
       case XK_Right:
       case XK_D:
       case XK_d:
-        UPDATE_BUTTON(input->move_right.button, 1);
+        UPDATE_BUTTON(input->move_right, 1);
         break;
       case XK_Down:
       case XK_S:
       case XK_s:
-        UPDATE_BUTTON(input->move_down.button, 1);
+        UPDATE_BUTTON(input->move_down, 1);
         break;
       }
       break;
@@ -478,29 +480,29 @@ void platform_get_input(GameInput *input,
       switch (key) {
       case XK_r:
       case XK_R:
-        input->restart = 0;
+        game_state->should_restart = 0;
         break;
       case XK_x:
       case XK_X:
       case XK_z:
       case XK_Z:
-        UPDATE_BUTTON(input->rotate_x.button, 0);
-        input->rotate_x.value = TETROMINO_ROTATE_X_NONE;
+        UPDATE_BUTTON(input->rotate_x, 0);
+        game_state->current_piece.next_rotate_x_value = TETROMINO_ROTATE_X_NONE;
         break;
       case XK_Left:
       case XK_A:
       case XK_a:
-        UPDATE_BUTTON(input->move_left.button, 0);
+        UPDATE_BUTTON(input->move_left, 0);
         break;
       case XK_Right:
       case XK_D:
       case XK_d:
-        UPDATE_BUTTON(input->move_right.button, 0);
+        UPDATE_BUTTON(input->move_right, 0);
         break;
       case XK_Down:
       case XK_S:
       case XK_s:
-        UPDATE_BUTTON(input->move_down.button, 0);
+        UPDATE_BUTTON(input->move_down, 0);
         break;
       }
       break;
@@ -508,7 +510,7 @@ void platform_get_input(GameInput *input,
 
     case ClientMessage:
       platform_game_props->is_running = false;
-      input->quit = 1;
+      game_state->should_quit = 1;
       break;
 
     case ConfigureNotify:
@@ -533,23 +535,47 @@ void platform_get_input(GameInput *input,
  */
 
 static void platform_display_backbuffer(Backbuffer *bb) {
+  // glClear(GL_COLOR_BUFFER_BIT);
+
+  // glBindTexture(GL_TEXTURE_2D, g_x11.texture_id);
+  // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bb->width, bb->height, 0, GL_RGBA,
+  //              GL_UNSIGNED_BYTE, bb->pixels);
+
+  // glBegin(GL_QUADS);
+  // glTexCoord2f(0.0f, 0.0f);
+  // glVertex2f(0, 0);
+  // glTexCoord2f(1.0f, 0.0f);
+  // glVertex2f(bb->width, 0);
+  // glTexCoord2f(1.0f, 1.0f);
+  // glVertex2f(bb->width, bb->height);
+  // glTexCoord2f(0.0f, 1.0f);
+  // glVertex2f(0, bb->height);
+  // glEnd();
+
+  // glXSwapBuffers(g_x11.display, g_x11.window);
+
   glClear(GL_COLOR_BUFFER_BIT);
 
+  // Center backbuffer in window
+  int offset_x = (g_x11.width - bb->width) / 2;
+  int offset_y = (g_x11.height - bb->height) / 2;
+  if (offset_x < 0)
+    offset_x = 0;
+  if (offset_y < 0)
+    offset_y = 0;
   glBindTexture(GL_TEXTURE_2D, g_x11.texture_id);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bb->width, bb->height, 0, GL_RGBA,
                GL_UNSIGNED_BYTE, bb->pixels);
-
   glBegin(GL_QUADS);
   glTexCoord2f(0.0f, 0.0f);
-  glVertex2f(0, 0);
+  glVertex2f(offset_x, offset_y);
   glTexCoord2f(1.0f, 0.0f);
-  glVertex2f(bb->width, 0);
+  glVertex2f(offset_x + bb->width, offset_y);
   glTexCoord2f(1.0f, 1.0f);
-  glVertex2f(bb->width, bb->height);
+  glVertex2f(offset_x + bb->width, offset_y + bb->height);
   glTexCoord2f(0.0f, 1.0f);
-  glVertex2f(0, bb->height);
+  glVertex2f(offset_x, offset_y + bb->height);
   glEnd();
-
   glXSwapBuffers(g_x11.display, g_x11.window);
 }
 
@@ -568,9 +594,12 @@ int main(void) {
     return 1;
   }
 
-  GameInput game_input = {0};
+  GameInput inputs[2] = {0};
+  GameInput *current_input = &inputs[0];
+  GameInput *old_input = &inputs[1];
+
   GameState game_state = {0};
-  game_init(&game_state, &game_input);
+  game_init(&game_state);
 
   if (platform_game_props.audio.is_initialized) {
     game_audio_init(&game_state.audio,
@@ -585,14 +614,18 @@ int main(void) {
     float delta_time = (float)(current_time - g_last_frame_time);
     g_last_frame_time = current_time;
 
-    prepare_input_frame(&game_input);
-    platform_get_input(&game_input, &platform_game_props);
+    prepare_input_frame(old_input, current_input);
+    platform_get_input(&game_state, current_input, &platform_game_props);
 
-    if (game_input.quit) {
+    if (current_input->move_left.ended_down) {
+      printf("Move Left: %d\n", current_input->move_left.half_transition_count);
+    }
+
+    if (game_state.should_quit) {
       break;
     }
 
-    game_update(&game_state, &game_input, delta_time);
+    game_update(&game_state, current_input, delta_time);
     platform_audio_update(&game_state, &platform_game_props.audio);
     game_render(&platform_game_props.backbuffer, &game_state);
     platform_display_backbuffer(&platform_game_props.backbuffer);
@@ -603,6 +636,8 @@ int main(void) {
         sleep_ms((int)((g_target_frame_time - frame_time) * 1000.0));
       }
     }
+
+    platform_swap_input_buffers(old_input, current_input);
   }
 
   platform_game_props_free(&platform_game_props);

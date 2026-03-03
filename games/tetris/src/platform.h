@@ -50,8 +50,10 @@ static int platform_game_props_init(PlatformGameProps *platform_game_props) {
   /* Allocate backbuffer */
   platform_game_props->backbuffer.width = platform_game_props->width;
   platform_game_props->backbuffer.height = platform_game_props->height;
+  platform_game_props->backbuffer.bytes_per_pixel = 4;
   platform_game_props->backbuffer.pitch =
-      platform_game_props->width * sizeof(uint32_t);
+      platform_game_props->width *
+      platform_game_props->backbuffer.bytes_per_pixel;
   platform_game_props->backbuffer.pixels =
       (uint32_t *)malloc(platform_game_props->width *
                          platform_game_props->height * sizeof(uint32_t));
@@ -80,5 +82,14 @@ double platform_get_time(void);
 void platform_shutdown(void);
 int platform_audio_init(PlatformAudioConfig *config);
 void platform_audio_shutdown(void);
+
+static inline void platform_swap_input_buffers(GameInput *old_input,
+                                               GameInput *current_input) {
+  // Swap each frame
+  GameInput temp = *current_input;
+  *current_input = *old_input;
+  *old_input = temp;
+  return;
+}
 
 #endif /* PLATFORM_H */

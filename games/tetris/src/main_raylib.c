@@ -186,7 +186,6 @@ static void platform_audio_update(GameState *game_state,
 
   while (buffers_filled < max_buffers &&
          IsAudioStreamProcessed(g_raylib.stream)) {
-
     /* Generate exactly buffer_size_frames samples */
     AudioOutputBuffer buffer = {.samples = g_raylib.sample_buffer,
                                 .samples_per_second =
@@ -207,6 +206,7 @@ static void platform_audio_update(GameState *game_state,
  */
 
 int platform_init(PlatformGameProps *props) {
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
   InitWindow(props->width, props->height, props->title);
   SetTargetFPS(60);
 
@@ -243,9 +243,12 @@ int main(void) {
     return 1;
   }
 
-  GameInput input = {0};
+  GameInput inputs[2] = {0};
+  GameInput *current_input = &inputs[0];
+  GameInput *old_input = &inputs[1];
+
   GameState game_state = {0};
-  game_init(&game_state, &input);
+  game_init(&game_state);
 
   game_audio_init(&game_state.audio,
                   platform_game_props.audio.samples_per_second);
@@ -256,38 +259,57 @@ int main(void) {
 
     /* ═══════════════════════════════════════════════════════════════════
      * Input
-     * ═══════════════════════════════════════════════════════════════════ */
-    prepare_input_frame(&input);
+     * ═════════��═════════════════════════════════════════════════════════ */
+    prepare_input_frame(old_input, current_input);
 
     if (IsKeyPressed(KEY_Q) || IsKeyPressed(KEY_ESCAPE)) {
-      input.quit = 1;
+      game_state.should_quit = 1;
       break;
     }
 
-    input.restart = IsKeyPressed(KEY_R);
+    game_state.should_restart = IsKeyPressed(KEY_R);
 
     if (IsKeyPressed(KEY_X)) {
-      UPDATE_BUTTON(input.rotate_x.button, 1);
-      input.rotate_x.value = TETROMINO_ROTATE_X_GO_RIGHT;
+      UPDATE_BUTTON(current_input->rotate_x, 1);
+      game_state.current_piece.next_rotate_x_value =
+          TETROMINO_ROTATE_X_GO_RIGHT;
     } else if (IsKeyPressed(KEY_Z)) {
-      UPDATE_BUTTON(input.rotate_x.button, 1);
-      input.rotate_x.value = TETROMINO_ROTATE_X_GO_LEFT;
+      UPDATE_BUTTON(current_input->rotate_x, 1);
+      game_state.current_piece.next_rotate_x_value = TETROMINO_ROTATE_X_GO_LEFT;
     } else if (IsKeyReleased(KEY_X) || IsKeyReleased(KEY_Z)) {
-      UPDATE_BUTTON(input.rotate_x.button, 0);
-      input.rotate_x.value = TETROMINO_ROTATE_X_NONE;
+      UPDATE_BUTTON(current_input->rotate_x, 0);
+      game_state.current_piece.next_rotate_x_value = TETROMINO_ROTATE_X_NONE;
     }
 
-    UPDATE_BUTTON(input.move_left.button,
+    UPDATE_BUTTON(current_input->move_left,
                   IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT));
-    UPDATE_BUTTON(input.move_right.button,
+    // if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT)) {
+    //   printf("Is KeyPressed: LEFT\n");
+    //   UPDATE_BUTTON(current_input->move_left, true);
+    // } else if (IsKeyReleased(KEY_A) || IsKeyReleased(KEY_LEFT)) {
+    //   UPDATE_BUTTON(current_input->move_left, false);
+    // }
+    //
+    UPDATE_BUTTON(current_input->move_right,
                   IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT));
-    UPDATE_BUTTON(input.move_down.button,
+    // if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) {
+    //   UPDATE_BUTTON(current_input->move_right, true);
+    // } else if (IsKeyReleased(KEY_D) || IsKeyReleased(KEY_RIGHT)) {
+    //   UPDATE_BUTTON(current_input->move_right, false);
+    // }
+    //
+    UPDATE_BUTTON(current_input->move_down,
                   IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN));
+    // if (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN)) {
+    //   UPDATE_BUTTON(current_input->move_down, true);
+    // } else if (IsKeyReleased(KEY_S) || IsKeyReleased(KEY_DOWN)) {
+    //   UPDATE_BUTTON(current_input->move_down, false);
+    // }
 
     /* ═══════════════════════════════════════════════════════════════════
      * Update
      * ═══════════════════════════════════════════════════════════════════ */
-    game_update(&game_state, &input, delta_time);
+    game_update(&game_state, current_input, delta_time);
 
     /* Audio - fill any consumed buffers */
     platform_audio_update(&game_state, &platform_game_props.audio);
@@ -304,8 +326,20 @@ int main(void) {
 
     BeginDrawing();
     ClearBackground(BLACK);
-    DrawTexture(g_raylib.texture, 0, 0, WHITE);
+    if (IsWindowResized()) {
+      printf("Window resized: %d x %d\n", GetScreenWidth(), GetScreenHeight());
+      platform_game_props.width = GetScreenWidth();
+      platform_game_props.height = GetScreenHeight();
+    }
+    int offset_x =
+        (platform_game_props.width - platform_game_props.backbuffer.width) / 2;
+    int offset_y =
+        (platform_game_props.height - platform_game_props.backbuffer.height) /
+        2;
+    DrawTexture(g_raylib.texture, offset_x, offset_y, WHITE);
     EndDrawing();
+
+    platform_swap_input_buffers(old_input, current_input);
   }
 
   platform_game_props_free(&platform_game_props);
