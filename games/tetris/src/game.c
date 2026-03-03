@@ -186,7 +186,7 @@ void game_render(Backbuffer *backbuffer, GameState *state) {
   /* ═══════════════════════════════════════════════════════════════════
    * Game over overlay
    * ═══════════════════════════════════════════════════════════════════ */
-  if (state->game_over) {
+  if (state->is_game_over) {
     int cx = FIELD_WIDTH * CELL_SIZE / 2;
     int cy = FIELD_HEIGHT * CELL_SIZE / 2;
 
@@ -214,7 +214,7 @@ void game_render(Backbuffer *backbuffer, GameState *state) {
 
 void game_init(GameState *state, GameInput *input) {
   state->score = 0;
-  state->game_over = false;
+  state->is_game_over = false;
   state->pieces_count = 1;
   state->level = 0;
 
@@ -229,9 +229,9 @@ void game_init(GameState *state, GameInput *input) {
   state->tetromino_drop.interval = 0.8f; // 1 second between drops initially
 
   /* Configure auto-repeat intervals */
-  input->move_left.repeat.interval = 0.05f;
-  input->move_right.repeat.interval = 0.05f;
-  input->move_down.repeat.interval = 0.03f;
+  input->move_left.repeat.interval = 0.07f;
+  input->move_right.repeat.interval = 0.07f;
+  input->move_down.repeat.interval = 0.06f;
 
   /* Build the boundary walls. */
   for (int y = 0; y < FIELD_HEIGHT; y++) {
@@ -353,7 +353,35 @@ static void handle_action_with_repeat(GameActionWithRepeat *action,
   }
 }
 
+/* Calculate pan position based on piece X position */
+/* Returns -1.0 (left) to 1.0 (right) */
+static float calculate_piece_pan(int piece_x) {
+  /* Field is 12 wide (including walls)
+   * Playable area: columns 1-10 (walls at 0 and 11)
+   * Center column: ~5.5
+   *
+   * piece_x = 1 (far left)  → pan = -0.8
+   * piece_x = 5 (center)    → pan = 0.0
+   * piece_x = 10 (far right) → pan = 0.8
+   */
+  float center = (FIELD_WIDTH - 2) / 2.0f + 1.0f; /* ~6.0 */
+  float max_offset = (FIELD_WIDTH - 2) / 2.0f;    /* ~5.0 */
+
+  float offset = (float)piece_x - center;
+  float pan = (offset / max_offset) * 0.8f; /* Scale to ±0.8, not full ±1.0 */
+
+  /* Clamp to valid range */
+  if (pan < -1.0f)
+    pan = -1.0f;
+  if (pan > 1.0f)
+    pan = 1.0f;
+
+  return pan;
+}
+
 void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
+  /* Calculate current pan position based on piece location */
+  float pan = calculate_piece_pan(state->current_piece.x);
 
   /* Rotate clockwise: try rotation + 1. (% 4 wraps 3 back to 0.) */
   if (input->rotate_x.button.ended_down &&
@@ -398,6 +426,7 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
 
     if (does_piece_fit) {
       state->current_piece.rotation = new_rotation;
+      game_play_sound_at(&state->audio, SOUND_ROTATE, pan);
     }
 
     // input->rotate_x.value = 0;
@@ -416,6 +445,7 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
           state, state->current_piece.index, state->current_piece.rotation,
           state->current_piece.x - 1, state->current_piece.y)) {
     state->current_piece.x--;
+    game_play_sound_at(&state->audio, SOUND_MOVE, pan);
   }
 
   /* Move right: try current_piece.col + 1 */
@@ -424,6 +454,7 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
           state, state->current_piece.index, state->current_piece.rotation,
           state->current_piece.x + 1, state->current_piece.y)) {
     state->current_piece.x++;
+    game_play_sound_at(&state->audio, SOUND_MOVE, pan);
   }
 
   /* ── Soft drop: independent auto-repeat (faster interval) ── */
@@ -436,13 +467,22 @@ void tetris_apply_input(GameState *state, GameInput *input, float delta_time) {
           state, state->current_piece.index, state->current_piece.rotation,
           state->current_piece.x, state->current_piece.y + 1)) {
     state->current_piece.y++;
+    game_play_sound_at(&state->audio, SOUND_MOVE, pan);
   }
 }
 
 void game_update(GameState *state, GameInput *input, float delta_time) {
-  if (state->game_over) {
+  /* Update music sequencer with real delta_time (consistent across platforms)
+   */
+  game_audio_update(&state->audio, delta_time);
+
+  if (state->is_game_over) {
     if (input->restart) {
       game_init(state, input);
+      if (state->audio.samples_per_second > 0) {
+        game_music_play(&state->audio);
+        game_play_sound(&state->audio, SOUND_RESTART);
+      }
     }
     return;
   }
@@ -495,6 +535,12 @@ void game_update(GameState *state, GameInput *input, float delta_time) {
         }
       }
 
+      if (state->completed_lines.count == 4) {
+        game_play_sound(&state->audio, SOUND_TETRIS);
+      } else if (state->completed_lines.count > 0) {
+        game_play_sound(&state->audio, SOUND_LINE_CLEAR);
+      }
+
       state->completed_lines.count = 0;
     }
     return; /* freeze all game logic while flashing */
@@ -543,6 +589,8 @@ void game_update(GameState *state, GameInput *input, float delta_time) {
           }
         }
       }
+      float pan = calculate_piece_pan(state->current_piece.x);
+      game_play_sound_at(&state->audio, SOUND_DROP, pan);
 
       state->completed_lines.count = 0;
 
@@ -587,6 +635,7 @@ void game_update(GameState *state, GameInput *input, float delta_time) {
 
       if (state->pieces_count % 25 == 0) {
         state->level++; // Increment for display purposes
+        game_play_sound(&state->audio, SOUND_LEVEL_UP);
       }
 
       // reset drop-timer and current piece for next round
@@ -602,7 +651,9 @@ void game_update(GameState *state, GameInput *input, float delta_time) {
       if (!tetromino_does_piece_fit(
               state, state->current_piece.index, state->current_piece.rotation,
               state->current_piece.x, state->current_piece.y)) {
-        state->game_over = true;
+        state->is_game_over = true;
+        game_play_sound(&state->audio, SOUND_GAME_OVER);
+        game_music_stop(&state->audio); /* Stop music on game over */
       }
     }
     //

@@ -1,6 +1,7 @@
 #ifndef GAME_H
 #define GAME_H
 
+#include "utils/audio.h"
 #include "utils/backbuffer.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -85,7 +86,7 @@ typedef struct {
   CurrentPiece current_piece;
   int score;
   int pieces_count; /* total pieces locked — used for difficulty scaling */
-  bool game_over;
+  bool is_game_over;
   int level;
 
   struct {
@@ -98,6 +99,9 @@ typedef struct {
 
   // Replace speed/speed_count with time-based fields
   AutoRepeatInterval tetromino_drop;
+
+  // Audio state
+  GameAudioState audio;
 } GameState;
 
 /* ── Input System ─────────────────────────────────────── */
@@ -219,10 +223,22 @@ void game_update(GameState *state, GameInput *input, float delta_time);
 /* Rendering - Platform Independent! */
 void game_render(Backbuffer *backbuffer, GameState *state);
 
-/* Drawing Primitives (used by game_render, but can be used by platform too)
- */
-void draw_rect(Backbuffer *bb, int x, int y, int w, int h, uint32_t color);
-void draw_text(Backbuffer *bb, int x, int y, const char *text, uint32_t color,
-               int scale);
+/* Initialize audio state (call from game_init) */
+void game_audio_init(GameAudioState *audio, int samples_per_second);
+
+/* Queue a sound effect to play */
+void game_play_sound(GameAudioState *audio, SOUND_ID sound);
+/* Queue a sound effect with specific pan position */
+/* pan: -1.0 = full left, 0.0 = center, 1.0 = full right */
+void game_play_sound_at(GameAudioState *audio, SOUND_ID sound,
+                        float pan_position);
+
+/* Start/stop background music */
+void game_music_play(GameAudioState *audio);
+void game_music_stop(GameAudioState *audio);
+
+/* Platform calls this to get audio samples */
+void game_get_audio_samples(GameState *state, AudioOutputBuffer *buffer);
+void game_audio_update(GameAudioState *audio, float delta_time);
 
 #endif // GAMEH

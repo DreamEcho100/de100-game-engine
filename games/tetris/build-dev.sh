@@ -28,11 +28,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 DE100_BACKEND_LIBS="-lm"
-SOURCES="src/game.c src/utils/draw-shapes.c src/utils/draw-text.c"
+SOURCES="src/game.c src/audio.c src/utils/draw-shapes.c src/utils/draw-text.c"
 
 case "$BACKEND" in
     x11)
-        DE100_BACKEND_LIBS="$DE100_BACKEND_LIBS -lX11 -lxkbcommon -lGL -lGLX"
+        DE100_BACKEND_LIBS="$DE100_BACKEND_LIBS -lX11 -lxkbcommon -lGL -lGLX -lasound"
         SOURCES="$SOURCES src/main_x11.c"
     ;;
     raylib)

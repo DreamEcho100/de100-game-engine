@@ -10,6 +10,8 @@
 #include <X11/XKBlib.h>
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
+#include <alloca.h>
+#include <alsa/asoundlib.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +21,6 @@
 
 /* GLX extension for VSync */
 typedef void (*PFNGLXSWAPINTERVALEXTPROC)(Display *, GLXDrawable, int);
-// typedef int (*PFNGLXSWAPINTERVALMESAPROC)(int);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Platform State
@@ -35,12 +36,233 @@ typedef struct {
   int width;
   int height;
   bool vsync_enabled;
+
+  /* Audio (ALSA) */
+  snd_pcm_t *pcm_handle;
+  int16_t *sample_buffer;
+  int sample_buffer_size; /* Max samples we can generate */
+  int samples_per_second;
+  snd_pcm_uframes_t hw_buffer_size; /* Hardware buffer size in frames */
 } X11State;
 
 static X11State g_x11 = {0};
 static double g_start_time = 0.0;
 static double g_last_frame_time = 0.0;
 static const double g_target_frame_time = 1.0 / 60.0;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Audio Initialization (Casey's Latency Model)
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+int platform_audio_init(PlatformAudioConfig *config) {
+  int err;
+
+  config->samples_per_second = 48000;
+
+  /* Casey's latency calculations using config values */
+  config->samples_per_frame = config->samples_per_second / config->hz;
+  config->latency_samples =
+      config->samples_per_frame * config->frames_of_latency;
+  config->safety_samples = config->samples_per_frame / 3;
+  config->running_sample_index = 0;
+
+  printf("═══════════════════════════════════════════════════════════\n");
+  printf("🔊 ALSA AUDIO (Casey's Latency Model)\n");
+  printf("═══════════════════════════════════════════════════════════\n");
+  printf("  Sample rate:     %d Hz\n", config->samples_per_second);
+  printf("  Game update:     %d Hz\n", config->hz);
+  printf("  Samples/frame:   %d (%.1f ms)\n", config->samples_per_frame,
+         (float)config->samples_per_frame / config->samples_per_second *
+             1000.0f);
+  printf("  Target latency:  %d samples (%.1f ms, %d frames)\n",
+         config->latency_samples,
+         (float)config->latency_samples / config->samples_per_second * 1000.0f,
+         config->frames_of_latency);
+  printf("  Safety margin:   %d samples (%.1f ms)\n", config->safety_samples,
+         (float)config->safety_samples / config->samples_per_second * 1000.0f);
+
+  /* Open default PCM device */
+  err = snd_pcm_open(&g_x11.pcm_handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
+  if (err < 0) {
+    fprintf(stderr, "ALSA: Cannot open audio device: %s\n", snd_strerror(err));
+    config->is_initialized = 0;
+    return 1;
+  }
+
+  /* Set hardware parameters */
+  snd_pcm_hw_params_t *hw_params;
+  snd_pcm_hw_params_alloca(&hw_params);
+  snd_pcm_hw_params_any(g_x11.pcm_handle, hw_params);
+
+  snd_pcm_hw_params_set_access(g_x11.pcm_handle, hw_params,
+                               SND_PCM_ACCESS_RW_INTERLEAVED);
+  snd_pcm_hw_params_set_format(g_x11.pcm_handle, hw_params,
+                               SND_PCM_FORMAT_S16_LE);
+  snd_pcm_hw_params_set_channels(g_x11.pcm_handle, hw_params, 2);
+
+  unsigned int sample_rate = config->samples_per_second;
+  snd_pcm_hw_params_set_rate_near(g_x11.pcm_handle, hw_params, &sample_rate, 0);
+  config->samples_per_second = sample_rate;
+
+  /* Buffer size: enough for latency + safety + extra headroom */
+  snd_pcm_uframes_t buffer_frames =
+      config->latency_samples + config->safety_samples;
+  buffer_frames *= 2; /* Double for headroom */
+  snd_pcm_hw_params_set_buffer_size_near(g_x11.pcm_handle, hw_params,
+                                         &buffer_frames);
+  g_x11.hw_buffer_size = buffer_frames;
+
+  /* Period size: ~1/4 of buffer */
+  snd_pcm_uframes_t period_frames = buffer_frames / 4;
+  snd_pcm_hw_params_set_period_size_near(g_x11.pcm_handle, hw_params,
+                                         &period_frames, 0);
+
+  err = snd_pcm_hw_params(g_x11.pcm_handle, hw_params);
+  if (err < 0) {
+    fprintf(stderr, "ALSA: Cannot set hardware parameters: %s\n",
+            snd_strerror(err));
+    snd_pcm_close(g_x11.pcm_handle);
+    config->is_initialized = 0;
+    return 1;
+  }
+
+  /* Query actual values */
+  snd_pcm_hw_params_get_buffer_size(hw_params, &buffer_frames);
+  snd_pcm_hw_params_get_period_size(hw_params, &period_frames, 0);
+
+  config->buffer_size_samples = buffer_frames;
+  g_x11.hw_buffer_size = buffer_frames;
+
+  printf("  HW buffer:       %lu frames (%.1f ms)\n", buffer_frames,
+         (float)buffer_frames / config->samples_per_second * 1000.0f);
+  printf("  HW period:       %lu frames (%.1f ms)\n", period_frames,
+         (float)period_frames / config->samples_per_second * 1000.0f);
+
+  /* Allocate sample buffer (enough for several frames) */
+  g_x11.sample_buffer_size = config->samples_per_frame * 4;
+  g_x11.samples_per_second = config->samples_per_second;
+  g_x11.sample_buffer =
+      (int16_t *)malloc(g_x11.sample_buffer_size * 2 * sizeof(int16_t));
+
+  if (!g_x11.sample_buffer) {
+    fprintf(stderr, "ALSA: Cannot allocate sample buffer\n");
+    snd_pcm_close(g_x11.pcm_handle);
+    config->is_initialized = 0;
+    return 1;
+  }
+
+  /* Pre-fill buffer with silence to start playback */
+  memset(g_x11.sample_buffer, 0, config->latency_samples * 2 * sizeof(int16_t));
+  snd_pcm_writei(g_x11.pcm_handle, g_x11.sample_buffer,
+                 config->latency_samples);
+
+  snd_pcm_prepare(g_x11.pcm_handle);
+
+  config->is_initialized = 1;
+  printf("═══════════════════════════════════════════════════════════\n\n");
+
+  return 0;
+}
+
+void platform_audio_shutdown(void) {
+  if (g_x11.sample_buffer) {
+    free(g_x11.sample_buffer);
+    g_x11.sample_buffer = NULL;
+  }
+  if (g_x11.pcm_handle) {
+    snd_pcm_drain(g_x11.pcm_handle);
+    snd_pcm_close(g_x11.pcm_handle);
+    g_x11.pcm_handle = NULL;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Casey's Audio Latency Model
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+static int platform_audio_get_samples_to_write(PlatformAudioConfig *config) {
+  if (!config->is_initialized || !g_x11.pcm_handle)
+    return 0;
+
+  /* Get delay: how many frames are queued in ALSA buffer */
+  snd_pcm_sframes_t delay_frames = 0;
+  int err = snd_pcm_delay(g_x11.pcm_handle, &delay_frames);
+
+  if (err < 0) {
+    if (err == -EPIPE) {
+      fprintf(stderr, "ALSA: Underrun! Recovering...\n");
+      snd_pcm_prepare(g_x11.pcm_handle);
+      delay_frames = 0;
+    } else {
+      return 0;
+    }
+  }
+
+  /* Check available space */
+  snd_pcm_sframes_t avail_frames = snd_pcm_avail_update(g_x11.pcm_handle);
+  if (avail_frames < 0) {
+    if (avail_frames == -EPIPE) {
+      snd_pcm_prepare(g_x11.pcm_handle);
+      avail_frames = g_x11.hw_buffer_size;
+      delay_frames = 0;
+    } else {
+      return 0;
+    }
+  }
+
+  /* Casey's calculation */
+  int target_buffered = config->latency_samples + config->safety_samples;
+  int samples_to_write = target_buffered - (int)delay_frames;
+
+  /* Clamp to available space */
+  if (samples_to_write > (int)avail_frames) {
+    samples_to_write = (int)avail_frames;
+  }
+
+  /* Don't write tiny amounts */
+  if (samples_to_write < config->samples_per_frame / 4) {
+    samples_to_write = 0;
+  }
+
+  /* Clamp to buffer capacity */
+  if (samples_to_write > g_x11.sample_buffer_size) {
+    samples_to_write = g_x11.sample_buffer_size;
+  }
+
+  return samples_to_write;
+}
+
+static void platform_audio_update(GameState *game_state,
+                                  PlatformAudioConfig *config) {
+  if (!config->is_initialized || !g_x11.pcm_handle)
+    return;
+
+  int samples_to_write = platform_audio_get_samples_to_write(config);
+
+  if (samples_to_write <= 0)
+    return;
+
+  AudioOutputBuffer buffer = {.samples = g_x11.sample_buffer,
+                              .samples_per_second = g_x11.samples_per_second,
+                              .sample_count = samples_to_write};
+
+  game_get_audio_samples(game_state, &buffer);
+
+  snd_pcm_sframes_t frames_written =
+      snd_pcm_writei(g_x11.pcm_handle, g_x11.sample_buffer, samples_to_write);
+
+  if (frames_written < 0) {
+    frames_written = snd_pcm_recover(g_x11.pcm_handle, frames_written, 0);
+    if (frames_written < 0) {
+      fprintf(stderr, "ALSA: Write error: %s\n", snd_strerror(frames_written));
+      return;
+    }
+  }
+
+  config->running_sample_index += frames_written;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Timing
@@ -157,7 +379,6 @@ int platform_init(PlatformGameProps *platform_game_props) {
 
   glXMakeCurrent(g_x11.display, g_x11.window, g_x11.gl_context);
 
-  /* Setup OpenGL for 2D */
   glViewport(0, 0, g_x11.width, g_x11.height);
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
@@ -167,7 +388,6 @@ int platform_init(PlatformGameProps *platform_game_props) {
   glDisable(GL_DEPTH_TEST);
   glEnable(GL_TEXTURE_2D);
 
-  /* Create texture for backbuffer */
   glGenTextures(1, &g_x11.texture_id);
   glBindTexture(GL_TEXTURE_2D, g_x11.texture_id);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -176,10 +396,16 @@ int platform_init(PlatformGameProps *platform_game_props) {
   setup_vsync();
 
   printf("✓ OpenGL initialized: %s\n", glGetString(GL_VERSION));
+
+  if (platform_audio_init(&platform_game_props->audio) != 0) {
+    fprintf(stderr,
+            "Warning: Audio initialization failed, continuing without audio\n");
+  }
   return 0;
 }
 
 void platform_shutdown(void) {
+  platform_audio_shutdown();
   if (g_x11.texture_id)
     glDeleteTextures(1, &g_x11.texture_id);
   if (g_x11.gl_context) {
@@ -302,19 +528,17 @@ void platform_get_input(GameInput *input,
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Display Backbuffer via OpenGL Texture
+ * Display Backbuffer
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
 static void platform_display_backbuffer(Backbuffer *bb) {
   glClear(GL_COLOR_BUFFER_BIT);
 
-  /* Upload backbuffer to texture */
   glBindTexture(GL_TEXTURE_2D, g_x11.texture_id);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bb->width, bb->height, 0, GL_RGBA,
                GL_UNSIGNED_BYTE, bb->pixels);
 
-  /* Draw textured quad */
   glBegin(GL_QUADS);
   glTexCoord2f(0.0f, 0.0f);
   glVertex2f(0, 0);
@@ -348,6 +572,12 @@ int main(void) {
   GameState game_state = {0};
   game_init(&game_state, &game_input);
 
+  if (platform_game_props.audio.is_initialized) {
+    game_audio_init(&game_state.audio,
+                    platform_game_props.audio.samples_per_second);
+    game_music_play(&game_state.audio);
+  }
+
   g_last_frame_time = get_time();
 
   while (platform_game_props.is_running) {
@@ -363,14 +593,10 @@ int main(void) {
     }
 
     game_update(&game_state, &game_input, delta_time);
-
-    /* Game renders to backbuffer - platform independent! */
+    platform_audio_update(&game_state, &platform_game_props.audio);
     game_render(&platform_game_props.backbuffer, &game_state);
-
-    /* Platform displays the backbuffer */
     platform_display_backbuffer(&platform_game_props.backbuffer);
 
-    /* Frame limiting (only if no VSync) */
     if (!g_x11.vsync_enabled) {
       double frame_time = get_time() - current_time;
       if (frame_time < g_target_frame_time) {

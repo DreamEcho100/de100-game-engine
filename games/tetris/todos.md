@@ -11,3 +11,16 @@
 | **Sound effects**            | Play a sound when a piece locks, when lines clear, and on game over.                                       | Raylib: `PlaySound()`. X11: link against a sound library or use the PC speaker.                                              |
 | **SDL3 backend**             | Write `src/main_sdl3.c` implementing the same 6 functions.                                                 | SDL3 runs on Linux, macOS, and Windows. The game logic compiles unchanged.                                                   |
 | **DAS (Delayed Auto-Shift)** | When holding left/right, piece starts moving after a short delay, then moves repeatedly at a set interval. | Track how long the button has been held. After an initial delay (e.g. 200ms), start auto-moving every 50ms until released.   |
+
+## Optional: Further Improvements
+
+If you want to enhance the audio further in the future:
+
+| Improvement                 | Description                                  | Difficulty |
+| --------------------------- | -------------------------------------------- | ---------- |
+| **Pulse width modulation**  | Vary square wave duty cycle for richer sound | Easy       |
+| **Triangle/sawtooth waves** | More waveform variety                        | Easy       |
+| **ADSR envelopes**          | Attack-Decay-Sustain-Release for SFX         | Medium     |
+| **Vibrato**                 | Slight pitch oscillation on held notes       | Medium     |
+| **Reverb/delay**            | Echo effects                                 | Hard       |
+| **Multiple channels**       | Separate music tracks (bass, melody)         | Medium     |
