@@ -38,13 +38,13 @@ The system works on both Raylib (`UpdateAudioStream`) and X11/ALSA
 ```c
 /* src/game.h — SfxId enum */
 typedef enum {
-    SFX_TOWER_FIRE_PELLET  =  0,
+    SFX_TOWER_FIRE_PELLET  =  0,  /* 5 per-tower fire sounds */
     SFX_TOWER_FIRE_SQUIRT  =  1,
     SFX_TOWER_FIRE_DART    =  2,
     SFX_TOWER_FIRE_SNAP    =  3,
     SFX_TOWER_FIRE_SWARM   =  4,
-    SFX_TOWER_FIRE_FROST   =  5,
-    SFX_TOWER_FIRE_BASH    =  6,
+    SFX_FROST_PULSE        =  5,  /* AoE pulse — not a "fire" sound */
+    SFX_BASH_HIT           =  6,  /* AoE stun impact */
     SFX_CREEP_DEATH        =  7,
     SFX_BOSS_DEATH         =  8,
     SFX_LIFE_LOST          =  9,
@@ -53,48 +53,67 @@ typedef enum {
     SFX_WAVE_COMPLETE      = 12,
     SFX_GAME_OVER          = 13,
     SFX_VICTORY            = 14,
-    SFX_COUNT              = 15
+    SFX_WAVE_START         = 15,  /* plays when each wave begins */
+    SFX_INTEREST_EARN      = 16,  /* soft clink when interest gold is added */
+    SFX_EARLY_SEND         = 17,  /* chirp when player sends wave early */
+    SFX_COUNT              = 18
 } SfxId;
 ```
 
-Add the `SoundDef` struct and table to `audio.c`:
+> **Design note:** Frost and Bash do not use "fire" SFX because they trigger
+> an AoE pulse instead of launching a projectile.  They get distinct names
+> (`SFX_FROST_PULSE`, `SFX_BASH_HIT`) that reflect what actually happens.
+> `SFX_WAVE_START`, `SFX_INTEREST_EARN`, and `SFX_EARLY_SEND` were added to
+> provide audio feedback for every economy event — without them the game feels
+> unresponsive during the between-wave phase.
+
+Add the `SoundDef` struct and table to `audio.c`.  The struct has **four**
+fields — a frequency *slide* (start → end) allows descending or ascending
+tones without a second oscillator:
 
 ```c
-/* src/audio.c — SoundDef: frequency and duration for each sound effect */
+/* src/utils/audio.h — SoundDef */
 typedef struct {
-    float frequency;   /* Hz — fundamental pitch                    */
-    float duration;    /* seconds                                    */
-    float volume;      /* 0..1, mixed at this level                  */
+    float frequency;      /* start Hz                                */
+    float frequency_end;  /* end Hz (0 = constant pitch)            */
+    float duration_ms;    /* duration in milliseconds                */
+    float volume;         /* 0.0–1.0                                 */
 } SoundDef;
 
+/* src/audio.c — one entry per SfxId */
 static const SoundDef SOUND_DEFS[SFX_COUNT] = {
-/*  id                      freq     dur    vol  */
-  [SFX_TOWER_FIRE_PELLET] = { 880.0f, 0.05f, 0.25f },
-  [SFX_TOWER_FIRE_SQUIRT] = { 440.0f, 0.08f, 0.30f },
-  [SFX_TOWER_FIRE_DART]   = { 660.0f, 0.06f, 0.28f },
-  [SFX_TOWER_FIRE_SNAP]   = {1100.0f, 0.04f, 0.35f },
-  [SFX_TOWER_FIRE_SWARM]  = { 320.0f, 0.10f, 0.20f },
-  [SFX_TOWER_FIRE_FROST]  = { 220.0f, 0.12f, 0.30f },
-  [SFX_TOWER_FIRE_BASH]   = { 150.0f, 0.14f, 0.40f },
-  [SFX_CREEP_DEATH]       = { 500.0f, 0.08f, 0.40f },
-  [SFX_BOSS_DEATH]        = {  80.0f, 0.60f, 0.60f },
-  [SFX_LIFE_LOST]         = { 200.0f, 0.30f, 0.70f },
-  [SFX_TOWER_PLACE]       = { 740.0f, 0.07f, 0.35f },
-  [SFX_TOWER_SELL]        = { 370.0f, 0.10f, 0.30f },
-  [SFX_WAVE_COMPLETE]     = { 660.0f, 0.40f, 0.50f },
-  [SFX_GAME_OVER]         = { 100.0f, 1.20f, 0.60f },
-  [SFX_VICTORY]           = { 880.0f, 1.50f, 0.60f },
+    /* SFX_TOWER_FIRE_PELLET  */ { 800.0f,  400.0f,  50.0f,  0.3f },
+    /* SFX_TOWER_FIRE_SQUIRT  */ { 300.0f,  200.0f,  80.0f,  0.4f },
+    /* SFX_TOWER_FIRE_DART    */ { 600.0f,  900.0f,  40.0f,  0.4f },
+    /* SFX_TOWER_FIRE_SNAP    */ { 100.0f,   50.0f, 150.0f,  0.7f },
+    /* SFX_TOWER_FIRE_SWARM   */ { 400.0f,  200.0f, 100.0f,  0.5f },
+    /* SFX_FROST_PULSE        */ {1200.0f,  600.0f, 120.0f,  0.3f },
+    /* SFX_BASH_HIT           */ { 150.0f,   80.0f, 100.0f,  0.6f },
+    /* SFX_CREEP_DEATH        */ { 500.0f,  200.0f,  80.0f,  0.4f },
+    /* SFX_BOSS_DEATH         */ {  80.0f,   40.0f, 400.0f,  0.8f },
+    /* SFX_LIFE_LOST          */ { 200.0f,  100.0f, 250.0f,  0.7f },
+    /* SFX_TOWER_PLACE        */ { 900.0f,  700.0f,  60.0f,  0.3f },
+    /* SFX_TOWER_SELL         */ { 700.0f,  900.0f,  80.0f,  0.3f },
+    /* SFX_WAVE_COMPLETE      */ { 440.0f,  880.0f, 200.0f,  0.5f },
+    /* SFX_GAME_OVER          */ { 300.0f,  100.0f, 500.0f,  0.6f },
+    /* SFX_VICTORY            */ { 440.0f,  880.0f, 600.0f,  0.7f },
+    /* SFX_WAVE_START         */ { 350.0f,  550.0f, 120.0f,  0.4f },
+    /* SFX_INTEREST_EARN      */ { 660.0f,  880.0f,  80.0f,  0.25f},
+    /* SFX_EARLY_SEND         */ { 500.0f,  700.0f, 160.0f,  0.45f},
 };
 ```
 
 **What's happening:**
 
-- Tower fire sounds are short (40–140 ms) to avoid muddy overlapping; lower
-  frequencies are assigned to heavier towers (Bash at 150 Hz feels like an
-  impact).
-- `SFX_BOSS_DEATH` at 80 Hz with 0.6 s is a deep, satisfying boom.
+- Tower fire sounds slide downward (e.g., Pellet 800→400 Hz) for a "pew"
+  feel; Dart slides *up* (600→900 Hz) for a sharper effect.
+- `SFX_BOSS_DEATH` at 80 Hz with 0.4 s is a deep, satisfying boom.
 - `SFX_LIFE_LOST` at 200 Hz is loud (vol 0.70) so the player immediately
   notices it.
+- `SFX_INTEREST_EARN` is quiet (vol 0.25) — a soft metallic clink so it
+  doesn't interrupt gameplay concentration.
+- `SFX_WAVE_START` (350→550 Hz rising) signals the wave opening; `SFX_EARLY_SEND`
+  (500→700 Hz) is slightly higher-pitched to convey "bonus earned".
 
 ---
 
@@ -163,47 +182,59 @@ void game_play_sound(GameAudio *audio, SfxId id) {
 
 ## Step 4: Wire all audio call sites
 
-```c
-/* src/towers.c — tower_update(): fire sounds per tower type */
-static const SfxId TOWER_FIRE_SFX[TOWER_COUNT] = {
-    [TOWER_PELLET] = SFX_TOWER_FIRE_PELLET,
-    [TOWER_SQUIRT] = SFX_TOWER_FIRE_SQUIRT,
-    [TOWER_DART]   = SFX_TOWER_FIRE_DART,
-    [TOWER_SNAP]   = SFX_TOWER_FIRE_SNAP,
-    [TOWER_SWARM]  = SFX_TOWER_FIRE_SWARM,
-    [TOWER_FROST]  = SFX_TOWER_FIRE_FROST,
-    [TOWER_BASH]   = SFX_TOWER_FIRE_BASH,
-};
-
-/* Inside the fire section of tower_update(): */
-game_play_sound(state->audio, TOWER_FIRE_SFX[t->type]);
-```
+In `game.c`, every game event that should produce audio needs a single
+`game_play_sound()` call.  Here is the complete inventory:
 
 ```c
-/* src/creeps.c — kill_creep(): death sounds */
-game_play_sound(state->audio,
-                (c->type == CREEP_BOSS) ? SFX_BOSS_DEATH : SFX_CREEP_DEATH);
+/* src/game.c — tower fire (inside update_towers(), after projectile spawn) */
+SfxId sfx = SFX_TOWER_FIRE_PELLET;  /* default */
+switch (t->type) {
+    case TOWER_SQUIRT: sfx = SFX_TOWER_FIRE_SQUIRT; break;
+    case TOWER_DART:   sfx = SFX_TOWER_FIRE_DART;   break;
+    case TOWER_SNAP:   sfx = SFX_TOWER_FIRE_SNAP;   break;
+    case TOWER_SWARM:  sfx = SFX_TOWER_FIRE_SWARM;  break;
+    default: break;
+}
+game_play_sound(&s->audio, sfx);
+/* NOTE: Frost and Bash are AoE — they play SFX_FROST_PULSE / SFX_BASH_HIT
+ * in their own update branches, NOT via this table. */
 
-/* src/game.c — exit handler: life-lost sound */
-game_play_sound(state->audio, SFX_LIFE_LOST);
+/* src/game.c — Frost AoE pulse */
+game_play_sound(&s->audio, SFX_FROST_PULSE);
 
-/* src/game.c — place_tower(): placement sound */
-game_play_sound(state->audio, SFX_TOWER_PLACE);
+/* src/game.c — Bash AoE stun */
+game_play_sound(&s->audio, SFX_BASH_HIT);
 
-/* src/game.c — sell_tower(): sell sound */
-game_play_sound(state->audio, SFX_TOWER_SELL);
+/* src/game.c — creep death (kill_creep equivalent) */
+game_play_sound(&s->audio,
+    c->type == CREEP_BOSS ? SFX_BOSS_DEATH : SFX_CREEP_DEATH);
 
-/* src/game.c — check_wave_complete() → WAVE_CLEAR: wave complete sound */
-game_play_sound(state->audio, SFX_WAVE_COMPLETE);
+/* src/game.c — creep exits the grid (life lost) */
+game_play_sound(&s->audio, SFX_LIFE_LOST);
 
-/* src/game.c — change_phase() → GAME_OVER: game-over sound */
-if (new_phase == GAME_PHASE_GAME_OVER)
-    game_play_sound(state->audio, SFX_GAME_OVER);
+/* src/game.c — tower placement and sell */
+game_play_sound(&s->audio, SFX_TOWER_PLACE);
+game_play_sound(&s->audio, SFX_TOWER_SELL);
 
-/* src/game.c — change_phase() → VICTORY: victory sound */
-if (new_phase == GAME_PHASE_VICTORY)
-    game_play_sound(state->audio, SFX_VICTORY);
+/* src/game.c — change_phase(): phase-triggered sounds */
+case GAME_PHASE_WAVE:       game_play_sound(&s->audio, SFX_WAVE_START);    break;
+case GAME_PHASE_WAVE_CLEAR: game_play_sound(&s->audio, SFX_WAVE_COMPLETE); break;
+case GAME_PHASE_GAME_OVER:  game_play_sound(&s->audio, SFX_GAME_OVER);     break;
+case GAME_PHASE_VICTORY:    game_play_sound(&s->audio, SFX_VICTORY);       break;
+
+/* src/game.c — start_wave(): interest earned */
+if (interest > 0)
+    game_play_sound(&s->audio, SFX_INTEREST_EARN);
+
+/* src/game.c — send_wave_early(): early send bonus */
+game_play_sound(&s->audio, SFX_EARLY_SEND);
 ```
+
+> **Coverage check:** every distinct economy and combat event now has an
+> audio call.  The full set covers: 5 projectile towers, 2 AoE towers,
+> 2 creep deaths (normal + boss), 1 life-lost, 2 shop actions (place/sell),
+> 4 phase transitions, 2 economy events (interest + early send).
+> Total: **18 SFX** → matches `SFX_COUNT = 18`.
 
 ---
 
@@ -298,20 +329,92 @@ void game_get_audio_samples(GameAudio *audio, AudioChunk *out) {
 
 ---
 
-## Step 6: Background music volume ramp
+## ⚠️ Critical wiring: two calls you must not forget
+
+These two omissions produce **complete audio silence** — no error messages,
+no assertions, just nothing playing.  They are the most common audio bugs
+when first building this system.
+
+### Pitfall 1 — `game_audio_init()` must be called inside `game_init()`
+
+`game_init()` starts with `memset(s, 0, sizeof(*s))` which zeros *all* fields
+including `audio.master_volume` and `audio.music_tone`.  If you never call
+`game_audio_init()`, `master_volume` stays `0.0f` and every sample is
+multiplied by zero → silence.
 
 ```c
-/* src/audio.c — game_audio_update(): ramp music volume at game start */
-void game_audio_update(GameAudio *audio, float dt) {
-    /* Ramp from 0 → 0.15 over the first 2 seconds of play */
-    if (audio->music_volume < 0.15f) {
-        audio->music_volume += dt * (0.15f / 2.0f);
-        if (audio->music_volume > 0.15f) audio->music_volume = 0.15f;
+/* src/game.c — game_init(): MUST include this call */
+void game_init(GameState *s) {
+    memset(s, 0, sizeof(*s));
+    /* ... grid / economy setup ... */
+
+    /* CRITICAL: initialise audio AFTER memset or all volumes stay 0 */
+    game_audio_init(&s->audio);
+}
+```
+
+### Pitfall 2 — `game_audio_update()` must be called inside `game_update()`
+
+`game_audio_update()` advances the music sequencer and ramps
+`music_tone.current_volume` toward `target_volume`.  If it is never called
+the ambient drone's `current_volume` stays `0.0f` → no music.
+
+```c
+/* src/game.c — game_update(): call at the very top, before phase switch */
+void game_update(GameState *s, float dt) {
+    if (dt > 0.1f) dt = 0.1f;
+
+    /* CRITICAL: must be called every frame so the music volume ramps up */
+    game_audio_update(&s->audio, dt);
+
+    /* ... rest of update ... */
+}
+```
+
+> **How to diagnose silent audio:** add a temporary `printf` inside
+> `game_get_audio_samples()` to print `audio->master_volume` and
+> `audio->music_tone.current_volume`.  If either is `0.0f`, trace back to
+> whichever init/update call is missing.
+
+---
+
+## Step 6: Background music volume ramp
+
+`game_audio_init()` sets `music_tone.target_volume = 0.3f` and
+`music_tone.is_playing = 1` but leaves `current_volume = 0.0f`.
+`game_audio_update()` ramps `current_volume` toward `target_volume` each
+frame so the drone fades in smoothly instead of clicking to full volume:
+
+```c
+/* src/audio.c — game_audio_update(): ramp music volume + drift frequency */
+void game_audio_update(GameAudioState *audio, float dt) {
+    static float freq_timer = 0.0f;
+    ToneGenerator *t = &audio->music_tone;
+
+    /* Smooth volume ramp toward target (avoids mute clicks) */
+    float target = t->is_playing ? t->target_volume : 0.0f;
+    float step   = 0.1f * dt;
+    if      (t->current_volume < target) t->current_volume = MIN(t->current_volume + step, target);
+    else if (t->current_volume > target) t->current_volume = MAX(t->current_volume - step, target);
+
+    /* Drift frequency every ~2 s for a living, shifting drone */
+    if (t->is_playing) {
+        freq_timer += dt;
+        if (freq_timer >= 2.0f) {
+            freq_timer -= 2.0f;
+            static const float FREQ_OFFSETS[] = { 110.0f, 120.0f, 100.0f, 130.0f, 110.0f };
+            static int freq_step = 0;
+            freq_step   = (freq_step + 1) % 5;
+            t->frequency = FREQ_OFFSETS[freq_step];
+        }
     }
 }
 ```
 
-Call `game_audio_update(state->audio, dt)` each frame from `game_update()`.
+> **Signature:** takes `GameAudioState *` (not `GameAudio *`).  The struct
+> is defined in `src/utils/audio.h`.  `game_audio_update()` is called at
+> the top of `game_update()` each frame — see the Critical Wiring section
+> above for why this must not be skipped.
 
 ---
 
@@ -320,29 +423,52 @@ Call `game_audio_update(state->audio, dt)` each frame from `game_update()`.
 ```c
 /* src/main_raylib.c — platform_audio_init() */
 static AudioStream g_audio_stream;
-static AudioChunk  g_audio_chunk;
+static int16_t     g_sample_buffer[AUDIO_CHUNK_SIZE * 4]; /* stereo headroom */
+static int         g_audio_init = 0;
 
 void platform_audio_init(GameState *state, int samples_per_second) {
+    (void)state; /* game_audio_init() is called inside game_init() */
+
     InitAudioDevice();
-    g_audio_stream = LoadAudioStream(samples_per_second, 16, 2);
+    if (!IsAudioDeviceReady()) { g_audio_init = 0; return; }
+
+    /* CRITICAL: set buffer size BEFORE LoadAudioStream */
+    SetAudioStreamBufferSizeDefault(AUDIO_CHUNK_SIZE);
+
+    g_audio_stream = LoadAudioStream((unsigned int)samples_per_second, 16, 2);
+    if (!IsAudioStreamValid(g_audio_stream)) {
+        CloseAudioDevice();
+        g_audio_init = 0;
+        return;
+    }
     PlayAudioStream(g_audio_stream);
-    state->audio->sample_rate = samples_per_second;
+    g_audio_init = 1;
 }
 
 /* src/main_raylib.c — platform_audio_update() */
 void platform_audio_update(GameState *state) {
-    /* Only fill the buffer when Raylib has consumed the previous chunk */
-    if (IsAudioStreamProcessed(g_audio_stream)) {
-        game_get_audio_samples(state->audio, &g_audio_chunk);
-        UpdateAudioStream(g_audio_stream,
-                          g_audio_chunk.samples,
-                          AUDIO_CHUNK_SIZE);
-    }
+    if (!g_audio_init) return;
+    if (!IsAudioStreamProcessed(g_audio_stream)) return;
+
+    AudioOutputBuffer out = {
+        .samples            = g_sample_buffer,
+        .samples_per_second = AUDIO_SAMPLE_RATE,
+        .sample_count       = AUDIO_CHUNK_SIZE,
+    };
+    game_get_audio_samples(state, &out);
+    /* MUST pass exactly AUDIO_CHUNK_SIZE — a mismatch drifts the ring buffer */
+    UpdateAudioStream(g_audio_stream, g_sample_buffer, AUDIO_CHUNK_SIZE);
 }
 
 /* src/main_raylib.c — platform_audio_shutdown() */
 void platform_audio_shutdown(void) {
+    if (!g_audio_init) return;
     StopAudioStream(g_audio_stream);
+    UnloadAudioStream(g_audio_stream);
+    CloseAudioDevice();
+    g_audio_init = 0;
+}
+```
     UnloadAudioStream(g_audio_stream);
     CloseAudioDevice();
 }
@@ -391,10 +517,10 @@ void platform_audio_init(GameState *state, int samples_per_second) {
 }
 
 void platform_audio_update(GameState *state) {
-    game_get_audio_samples(state->audio, &g_audio_chunk);
+    game_get_audio_samples(state, &out);  /* takes full GameState* — not audio sub-struct */
 
     snd_pcm_sframes_t written =
-        snd_pcm_writei(g_pcm, g_audio_chunk.samples, AUDIO_CHUNK_SIZE);
+        snd_pcm_writei(g_pcm, out.samples, AUDIO_CHUNK_SIZE);
 
     /* Recover from underruns automatically */
     if (written == -EPIPE) {
@@ -431,39 +557,35 @@ void platform_audio_shutdown(void)              {}
 
 ## Build and run
 
+Use `build-dev.sh` (introduced in Lesson 01):
+
 ```bash
-mkdir -p build
-
 # Raylib (audio enabled automatically)
-clang -Wall -Wextra -std=c99 -O2 \
-      -o build/dtd \
-      src/main_raylib.c src/game.c src/render.c \
-      src/creeps.c src/towers.c src/levels.c src/bfs.c src/audio.c \
-      -lraylib -lm
-./build/dtd
+./build-dev.sh --backend=raylib -r
 
-# X11 without ALSA (silent)
-clang -Wall -Wextra -std=c99 -O2 \
-      -o build/dtd \
-      src/main_x11.c src/game.c src/render.c \
-      src/creeps.c src/towers.c src/levels.c src/bfs.c src/audio.c \
-      -lX11 -lm
-./build/dtd
+# X11 without ALSA (silent, no audio)
+./build-dev.sh --backend=x11 -r
 
-# X11 with ALSA
-clang -Wall -Wextra -std=c99 -O2 -DUSE_ALSA \
-      -o build/dtd \
-      src/main_x11.c src/game.c src/render.c \
-      src/creeps.c src/towers.c src/levels.c src/bfs.c src/audio.c \
+# X11 with ALSA (audio enabled)
+# Edit build-dev.sh to add -DALSA_AVAILABLE -lasound to the x11 branch,
+# or compile manually:
+clang -Wall -Wextra -std=c99 -O0 -g -DDEBUG -DALSA_AVAILABLE \
+      -o build/game \
+      src/main_x11.c src/game.c src/levels.c src/audio.c \
+      src/utils/draw-shapes.c src/utils/draw-text.c \
       -lX11 -lasound -lm
-./build/dtd
+./build/game
 ```
 
 **Expected:** Each tower type produces a distinct pitch when firing.  Creep
 deaths produce a short pop; boss death produces a deep extended boom.  Losing a
-life plays a loud low-frequency warning.  Wave-complete, game-over, and victory
-each play a clearly recognisable tone.  A quiet 110 Hz drone fades in over the
-first two seconds of gameplay.  No audio glitches or clicks on either platform.
+life plays a loud low-frequency warning.  A rising chirp plays when each new
+wave begins; a soft metallic clink plays when interest is added; a brighter
+chirp plays when you send a wave early for a gold bonus.  Wave-complete,
+game-over, and victory each play a clearly recognisable tone.  A quiet 110 Hz
+drone fades in over the first two seconds of gameplay (because
+`game_audio_init` is called and `game_audio_update` advances the volume ramp).
+No audio glitches or clicks on either platform.
 
 ---
 

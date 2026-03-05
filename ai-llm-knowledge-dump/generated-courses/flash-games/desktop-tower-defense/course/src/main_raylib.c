@@ -177,7 +177,7 @@ void platform_display_backbuffer(const Backbuffer *bb) {
  * write pointer, producing stutter and repeated audio.
  * ----------------------------------------------------------------------- */
 void platform_audio_init(GameState *state, int samples_per_second) {
-    (void)state; /* game_audio_init is called by game_init */
+    (void)state; /* game_audio_init() is called inside game_init() */
 
     InitAudioDevice();
     if (!IsAudioDeviceReady()) {

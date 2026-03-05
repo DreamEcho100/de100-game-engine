@@ -129,6 +129,10 @@ typedef enum {
     CELL_TOWER,
     CELL_ENTRY,
     CELL_EXIT,
+    /* Terrain types stored in GameState::terrain[] (MOD_TERRAIN) */
+    CELL_WATER,     /* creeps slowed 50%; towers cannot be placed here         */
+    CELL_MOUNTAIN,  /* impassable to creeps; towers get +20% range             */
+    CELL_SWAMP,     /* creeps slowed to 25% speed; towers cannot be placed     */
 } CellState;
 
 /* Tower types — TOWER_NONE = slot is inactive */
@@ -167,9 +171,20 @@ typedef enum {
     TARGET_COUNT,
 } TargetMode;
 
+/* Game mod — selected on the mod-select screen before play begins */
+typedef enum {
+    MOD_DEFAULT = 0,  /* standard BFS pathfinding */
+    MOD_TERRAIN,      /* water/mountain/swamp terrain affect movement & placement */
+    MOD_WEATHER,      /* rain/wind/storm events affect pathfinding & speed */
+    MOD_NIGHT,        /* reduced tower range; night-vision bonus for certain towers */
+    MOD_BOSS,         /* boss-heavy waves, bosses have unique abilities */
+    MOD_COUNT,
+} GameMod;
+
 /* Game phase (state machine) */
 typedef enum {
     GAME_PHASE_TITLE = 0,
+    GAME_PHASE_MOD_SELECT,    /* player chooses a game mod */
     GAME_PHASE_PLACING,       /* between waves: player builds */
     GAME_PHASE_WAVE,          /* wave in progress */
     GAME_PHASE_WAVE_CLEAR,    /* wave ended; brief pause */
@@ -195,6 +210,11 @@ typedef enum {
     SFX_WAVE_COMPLETE,
     SFX_GAME_OVER,
     SFX_VICTORY,
+    /* -- additional feedback sounds -- */
+    SFX_WAVE_START,    /* plays when a new wave begins */
+    SFX_INTEREST_EARN, /* plays when interest gold is added between waves */
+    SFX_EARLY_SEND,    /* plays when the player sends a wave early for a bonus */
+    SFX_TOWER_UPGRADE, /* plays when a tower is upgraded */
     SFX_COUNT,
 } SfxId;
 
@@ -212,6 +232,8 @@ typedef struct {
     uint32_t    color;
     int         is_aoe;        /* 1 = Swarm/Frost/Bash type */
     float       splash_radius; /* pixels; 0 = single target */
+    int         upgrade_cost[2];         /* [0]=lv0→1, [1]=lv1→2 */
+    float       upgrade_damage_mult[2];  /* damage multiplier at lv1, lv2 */
 } TowerDef;
 
 /* One entry in the static creep definition table */
@@ -255,6 +277,7 @@ typedef struct {
     int        active;          /* 0 = slot empty */
     int        sell_value;      /* gold returned on sell */
     float      place_flash;     /* brief flash timer on placement */
+    int        upgrade_level;   /* 0 = base, 1 = upgraded, 2 = max */
 } Tower;
 
 /* A creep moving toward the exit */
@@ -275,6 +298,9 @@ typedef struct {
     int       lives_cost;      /* lives lost if this creep exits */
     /* Flying creep direction (unit vector) */
     float     fly_dx, fly_dy;
+    /* MOD_BOSS fields */
+    float     shield_timer;    /* if > 0, immune to all damage (boss spawn shield) */
+    int       half_hp_spawned; /* 1 once the 50%-HP child-spawn has triggered */
 } Creep;
 
 /* A projectile in flight */
@@ -317,9 +343,27 @@ typedef struct {
     GamePhase  phase;
     float      phase_timer;        /* general-purpose phase countdown */
 
+    /* Active mod — set before game_init(), read throughout simulation */
+    GameMod    active_mod;
+    int        mod_hover_idx;    /* which mod button mouse is over (-1 = none) */
+
     /* Grid */
     uint8_t    grid[GRID_ROWS * GRID_COLS];
     int        dist[GRID_ROWS * GRID_COLS];  /* BFS distance from exit */
+
+    /* MOD_TERRAIN: per-cell terrain type and pre-computed slow multiplier */
+    uint8_t    terrain[GRID_ROWS * GRID_COLS];      /* CellState: CELL_WATER/MOUNTAIN/SWAMP */
+    float      terrain_slow[GRID_ROWS * GRID_COLS]; /* 0.5 water, 0.25 swamp, 1.0 otherwise */
+
+    /* MOD_WEATHER: 4-phase weather cycle (0=clear 1=rain 2=wind 3=storm).
+     * Cycle length: 20 s clear / 15 s rain / 15 s wind / 10 s storm = 60 s total.
+     * During RAIN or STORM, weather_flood[] cells become temporary BFS walls. */
+    int        weather_phase;                       /* 0-3 */
+    float      weather_timer;                       /* accumulates 0–60 s */
+    uint8_t    weather_flood[GRID_ROWS * GRID_COLS];/* 1 = flooded (rain/storm) */
+    int        prev_weather_phase;                  /* for detecting phase transitions */
+    float      lightning_timer;                     /* seconds until next lightning flash */
+    float      lightning_flash;                     /* 0-1 brightness (decays per frame) */
 
     /* Towers */
     Tower      towers[MAX_TOWERS];

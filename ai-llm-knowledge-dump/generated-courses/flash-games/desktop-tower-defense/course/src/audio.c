@@ -43,6 +43,10 @@ static const SoundDef SOUND_DEFS[SFX_COUNT] = {
     /* SFX_WAVE_COMPLETE      */ { 440.0f,  880.0f, 200.0f,  0.5f },
     /* SFX_GAME_OVER          */ { 300.0f,  100.0f, 500.0f,  0.6f },
     /* SFX_VICTORY            */ { 440.0f,  880.0f, 600.0f,  0.7f },
+    /* SFX_WAVE_START         */ { 350.0f,  550.0f, 120.0f,  0.4f }, /* rising blip */
+    /* SFX_INTEREST_EARN      */ { 660.0f,  880.0f,  80.0f,  0.25f },/* soft clink */
+    /* SFX_EARLY_SEND         */ { 500.0f,  700.0f, 160.0f,  0.45f },/* double chirp */
+    /* SFX_TOWER_UPGRADE      */ { 880.0f, 1200.0f, 100.0f,  0.35f },/* rising tone */
 };
 
 /* =========================================================================

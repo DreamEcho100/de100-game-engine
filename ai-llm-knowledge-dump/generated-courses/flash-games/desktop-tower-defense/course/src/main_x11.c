@@ -24,6 +24,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/keysym.h>  /* XK_Escape and other keysym constants */
 
 #include <time.h>    /* clock_gettime, nanosleep */
 #include <stdlib.h>  /* malloc, free             */
@@ -49,6 +50,10 @@ static int       g_pixel_h;
 
 /* Raw X11 left-button tracking (persists across frames) */
 static int g_mouse_left_down = 0;
+
+/* WM_DELETE_WINDOW atom — cached once in platform_init, used every frame.
+ * Re-interning every frame via XInternAtom() was an O(round-trip) per frame. */
+static Atom g_wm_delete = 0;
 
 /* ===================================================================
  * ALSA AUDIO GLOBALS (compiled out when ALSA_AVAILABLE is not defined)
@@ -94,18 +99,22 @@ void platform_init(const char *title, int width, int height) {
         XFree(hints);
     }
 
-    /* Register for events we care about */
+    /* Register for events we care about — KeyPressMask is required for
+     * keyboard input (Escape to quit); without it X11 never delivers KeyPress events. */
     XSelectInput(g_display, g_window,
                  ExposureMask        |
                  ButtonPressMask     |
                  ButtonReleaseMask   |
                  PointerMotionMask   |
                  Button1MotionMask   |
+                 KeyPressMask        |
+                 KeyReleaseMask      |
                  StructureNotifyMask);
 
-    /* Tell the window manager we want window-close events */
-    Atom wm_delete = XInternAtom(g_display, "WM_DELETE_WINDOW", False);
-    XSetWMProtocols(g_display, g_window, &wm_delete, 1);
+    /* Tell the window manager we want window-close events.
+     * Cache the atom — looking it up every frame was an unnecessary round-trip. */
+    g_wm_delete = XInternAtom(g_display, "WM_DELETE_WINDOW", False);
+    XSetWMProtocols(g_display, g_window, &g_wm_delete, 1);
 
     XStoreName(g_display, g_window, title);
     XMapWindow(g_display, g_window);
@@ -123,9 +132,12 @@ double platform_get_time(void) {
 }
 
 void platform_get_input(MouseState *mouse) {
-    Atom wm_delete = XInternAtom(g_display, "WM_DELETE_WINDOW", False);
-
-    /* Reset single-frame edge flags before processing new events */
+    /* Reset single-frame edge flags before processing new events.
+     * CRITICAL: left_pressed and left_released are edge-triggered — they must
+     * be cleared every frame so a click on one screen doesn't carry over
+     * into the next (e.g. PLAY button click must not auto-select a mod). */
+    mouse->left_pressed  = 0;
+    mouse->left_released = 0;
     mouse->right_pressed = 0;
 
     /* Save start-of-frame position so we capture full mouse path */
@@ -168,10 +180,17 @@ void platform_get_input(MouseState *mouse) {
             break;
 
         case ClientMessage:
-            /* Window close button (the ✕) */
-            if ((Atom)event.xclient.data.l[0] == wm_delete)
+            /* Window close button (the ✕) — uses the cached g_wm_delete atom */
+            if ((Atom)event.xclient.data.l[0] == g_wm_delete)
                 g_should_quit = 1;
             break;
+
+        case KeyPress: {
+            /* Escape key → quit immediately (works even mid-wave) */
+            KeySym ks = XLookupKeysym(&event.xkey, 0);
+            if (ks == XK_Escape) g_should_quit = 1;
+            break;
+        }
 
         case Expose:
         case ConfigureNotify:
@@ -273,6 +292,12 @@ void platform_audio_init(GameState *state, int hz) {
 void platform_audio_update(GameState *state) {
     if (!g_audio_init || !g_pcm) return;
 
+    /* Only write if the ALSA ring buffer has room for a full chunk.
+     * snd_pcm_writei() blocks by default — skipping when the buffer is
+     * nearly full prevents a ~46 ms stall that would delay window-close events. */
+    snd_pcm_sframes_t avail = snd_pcm_avail_update(g_pcm);
+    if (avail < (snd_pcm_sframes_t)AUDIO_CHUNK_SIZE) return;
+
     static int16_t buf[AUDIO_CHUNK_SIZE * 2]; /* stereo interleaved */
     AudioOutputBuffer out = {
         .samples            = buf,
@@ -290,7 +315,9 @@ void platform_audio_update(GameState *state) {
 
 void platform_audio_shutdown(void) {
     if (!g_audio_init || !g_pcm) return;
-    snd_pcm_drain(g_pcm);
+    /* snd_pcm_drop() discards buffered audio immediately.
+     * snd_pcm_drain() would block until all queued audio plays out (~seconds). */
+    snd_pcm_drop(g_pcm);
     snd_pcm_close(g_pcm);
     g_pcm = NULL;
     g_audio_init = 0;

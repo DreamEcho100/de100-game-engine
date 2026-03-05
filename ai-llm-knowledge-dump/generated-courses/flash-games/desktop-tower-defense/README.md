@@ -14,14 +14,16 @@ Asteroids, Frogger, and Sugar Sugar courses.
 | 30 × 20 tile grid, Y-down pixel coordinates | Flat-array grid, cell-state enum, coordinate system (grid exception) |
 | **BFS distance field** (the heart of DTD) | Backwards BFS from exit, flow field, O(600) pathfinding |
 | Tower placement legality check | Double-BFS-per-click, reachability enforcement |
-| 7 tower types (Pellet → Flying Fortress) | Data-driven `TowerDef` table, fire rate + cooldown |
+| 7 tower types (Pellet → Bash) | Data-driven `TowerDef` table, fire rate + cooldown |
+| **Tower upgrade system** (0→1→2) | `upgrade_cost[]`, `upgrade_damage_mult[]`, sell-value recalculation |
 | 5 targeting modes (First / Last / Strongest / Weakest / Closest) | Comparator pattern, type-driven `switch` |
 | 7 creep types including flying, armoured, spawn, boss | `CreepDef` table, straight-line movement for flyers, effective_damage armour |
 | 40-wave sequence with HP scaling | Designated initialisers in `levels.c`, `powf` HP formula |
 | Economy: kill gold, 70% sell, early-send bonus, interest | Data-driven economy, float-up text particles |
-| Fully procedural rendering (no sprites) | Coloured squares + rotating barrel lines + `draw_rect_blend` overlays |
-| 8 × 8 bitmap font HUD | Bit-test font rendering, `snprintf`, side-panel layout |
-| PCM audio mixer, per-tower fire SFX, ambient music | `AudioOutputBuffer`, phase accumulator, click prevention |
+| **Sprite placeholder system** | `SpriteAtlas`, placeholder→real-asset swap workflow, free asset sources |
+| **5 game mods** (Default / Terrain / Weather / Night / Boss) | Runtime behaviour switching via `GameMod` enum, BFS extensions, overlay effects |
+| Start menu, mod select, game-over, victory screens | `GAME_PHASE_MOD_SELECT`, FSM navigation, button hover states |
+| PCM audio mixer, 18 SFX, ambient music | `AudioOutputBuffer`, phase accumulator, click prevention |
 | Both X11 and Raylib backends | Letterbox centering, R↔B channel swap, ALSA + Raylib audio |
 
 ---
@@ -89,7 +91,15 @@ Binary output: `./build/game`
 | 18 | Send Wave Early and Interest | Early gold bonus, DTD 1.5 interest mechanic |
 | 19 | Side Panel UI and HUD | `draw_ui_panel()`, sell button, `ASSERT` macros |
 | 20 | Visual Polish and Particles | Particle pool, `spawn_explosion()`, `draw_rect_blend` overlays |
-| 21 | Audio System | `SfxId`/`SoundDef`, PCM mixer, platform audio integration |
+| 21 | Audio System | `SfxId`/`SoundDef`, PCM mixer, 18 SFX, critical wiring pitfalls |
+| 22 | Tower Upgrade System | `TowerDef.upgrade_cost[]`, upgrade button UI, sell-value recalculation |
+| 23 | Menus and Screens | `GAME_PHASE_MOD_SELECT`, start screen, game-over restart, victory |
+| 24 | Sprite System | `SpriteAtlas` placeholder pattern, `draw_sprite()`, asset swap workflow |
+| 25 | Mod Architecture | `GameMod` enum, `active_mod` runtime branching, default mod baseline |
+| 26 | Terrain Mod | `CELL_WATER`/`CELL_MOUNTAIN`, terrain-aware BFS, speed multipliers |
+| 27 | Weather Mod | Time-based event cycles, speed modifiers, weather particles |
+| 28 | Night Mod | Global range reduction, per-tower bonuses, dark grid overlay |
+| 29 | Boss Mod | Wave frequency override, damage-immune shield, mid-HP spawn trigger |
 
 ---
 

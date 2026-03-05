@@ -93,7 +93,95 @@
 
 ---
 
-## Phase 4 — Meta
+## Phase 4 — Improvements (post-launch)
+
+### Audio fixes
+- [x] **Bug fix**: `game_audio_init()` was never called in `game_init()` → `master_volume` was 0 → complete silence
+- [x] **Bug fix**: `game_audio_update()` was never called in `game_update()` → music drone never ramped up
+- [x] **Missing SFX**: added `SFX_WAVE_START`, `SFX_INTEREST_EARN`, `SFX_EARLY_SEND` (was 15 SFX, now 18)
+- [x] **Lesson 21 updated**: corrected SFX enum names (SFX_FROST_PULSE/SFX_BASH_HIT not SFX_TOWER_FIRE_FROST/BASH), added "Critical Wiring" pitfalls section, fixed SoundDef struct, fixed build commands, added coverage table
+
+### Tower upgrade system
+- [x] `TowerDef.upgrade_cost[2]` and `TowerDef.upgrade_damage_mult[2]` fields
+- [x] `Tower.upgrade_level` (0–2) — affects damage and sell value
+- [x] Upgrade button in side panel when tower selected; max-level shows "MAX"
+- [x] `SFX_TOWER_UPGRADE` sound effect
+- [x] `lessons/lesson-22-tower-upgrade-system.md`
+
+### Start menu + screens
+- [x] `GAME_PHASE_MOD_SELECT` phase added to `GamePhase` enum
+- [x] Proper start screen with PLAY button (not just "click anywhere")
+- [x] Mod selection screen: 5 mod buttons with descriptions
+- [x] Improved game-over screen with current wave + restart click
+- [x] Improved victory screen with click-to-restart
+- [x] `lessons/lesson-23-menus-and-screens.md`
+
+### Sprite / animation system
+- [x] `src/sprites.h` — `SpriteId` enum (+ `SPR_MISSING`), `SpriteDef`, `SpriteAtlas`, `draw_sprite()` API
+- [x] `src/sprites.c` — placeholder mode (colored rect + label); real atlas when PNG loaded
+- [x] `course/assets/README.md` — free asset sources, atlas format, ImageMagick workflow
+- [x] `build-dev.sh` updated: `sprites.c` added to SHARED_SRCS
+- [x] `lessons/lesson-24-sprite-system.md`
+- [x] **Update**: `SpriteLoadState` enum (IDLE/LOADING/READY/ERROR) and `error_msg` in `SpriteAtlas`
+- [x] **Update**: `sprites_load_async()` + `sprites_is_ready()` with `pthread_create` background loading
+- [x] **Update**: `SPR_MISSING` → magenta checkerboard with `"???"` text (Source Engine style)
+- [x] **Update**: Error logging to `stderr` via `fprintf(stderr, "[SPRITES] ...")`
+- [x] **Update**: `STB_IMAGE_STATIC` + pragma to avoid Raylib/stb_image symbol conflict; no-warning build
+- [x] **Update**: `vendor/stb_image.h` downloaded (public domain); `STBI_ONLY_PNG` to minimize code
+- [x] **Update**: `course/assets/sprites/` folder structure (towers/ creeps/ tiles/ effects/ README.md)
+- [x] **Update**: `build-dev.sh` X11 build now links `-lpthread`
+- [x] **Lesson 24 updated**: Section 10 "Production upgrades" covering SPR_MISSING, SpriteLoadState, async loading, error logging, STB_IMAGE_STATIC, folder structure
+
+### Game mods (5 total)
+- [x] `GameMod` enum in `game.h`: DEFAULT, TERRAIN, WEATHER, NIGHT, BOSS
+- [x] `GameState.active_mod` field
+
+#### MOD_TERRAIN
+- [x] `CELL_WATER` / `CELL_MOUNTAIN` added to `CellState`
+- [x] `terrain[]` array in GameState; BFS treats mountains as walls
+- [x] Creeps slow on water; towers get +range on mountains; towers rejected on water
+- [x] Terrain rendered: water = blue tint, mountain = dark brown
+- [x] `lessons/lesson-26-terrain-mod.md`
+
+#### MOD_WEATHER
+- [x] `weather_phase` / `weather_timer` cycling in game_update
+- [x] Rain: 0.8× creep speed; Wind: 1.3× creep speed
+- [x] Visual: rain dots / wind streak particles; HUD weather status
+- [x] `lessons/lesson-27-weather-mod.md`
+
+#### MOD_NIGHT
+- [x] Dark grid overlay via `draw_rect_blend`
+- [x] Global 0.75× tower range; Dart 1.2× and Pellet 1.5× fire rate bonuses
+- [x] Yellow glow ring on towers in night mode
+- [x] `lessons/lesson-28-night-mod.md`
+
+#### MOD_BOSS
+- [x] Boss waves every 5 waves (not 10)
+- [x] Boss: 5 s damage-immune shield on spawn; spawns children at 50% HP; 1.3× speed / 1.5× HP
+- [x] Shield rendered as yellow `draw_circle_outline`
+- [x] `lessons/lesson-29-boss-mod.md`
+
+#### Architecture lesson
+- [x] `lessons/lesson-25-mod-default-and-architecture.md`
+- [x] **Update**: "Critical bug fix: init_mod_state()" appendix documents the sequencing bug and fix
+
+### X11 platform bug fixes
+- [x] **Bug fix**: `XSelectInput` was missing `KeyPressMask` → Escape key never worked
+- [x] **Bug fix**: `wm_delete` atom was re-interned every frame (O(round-trip) per frame) → cached as `static Atom g_wm_delete`
+- [x] **Bug fix**: `snd_pcm_writei` could block up to 46 ms when ALSA buffer full → added `snd_pcm_avail_update()` guard
+- [x] **Bug fix**: `snd_pcm_drain()` in shutdown blocks until all queued audio plays → replaced with `snd_pcm_drop()`
+- [x] `#include <X11/keysym.h>` added; `KeyPress` case with `XLookupKeysym` → `XK_Escape` → `g_should_quit = 1`
+- [x] **Lesson 01 updated**: "X11 platform pitfalls" appendix covering all three bugs with code examples
+
+### Terrain/weather mod initialization bug fix
+- [x] **Bug fix**: terrain setup in `game_init()` was dead code (checked `active_mod` before it was set)
+- [x] **Fix**: extracted `static void init_mod_state(GameState *s)` — called immediately after player picks mod
+- [x] `game_init()` now only fills `terrain_slow[]` with baseline 1.0; `init_mod_state()` overwrites for MOD_TERRAIN
+- [x] **Lesson 25 updated**: "Critical bug fix: init_mod_state()" appendix
+
+---
+
+## Phase 5 — Meta
 
 - [ ] `COURSE-BUILDER-IMPROVEMENTS.md` — document any patterns or issues discovered while building this course that should feed back into `course-builder.md`
 
@@ -109,7 +197,14 @@
 - **Mouse only** — no keyboard gameplay input; `MouseState` replaces `GameButtonState` for core gameplay
 - `left_pressed` / `left_released` are edge-detection fields, reset each frame in `platform_get_input`
 
-### Audio tier
+### Audio bugs discovered post-build
+Two critical wiring bugs were found when testing audio:
+1. **`game_audio_init()` not called in `game_init()`** — `memset` zeroed `master_volume` → no audio ever produced
+2. **`game_audio_update()` not called in `game_update()`** — music drone volume never ramped up → no background music
+Both fixed in `src/game.c`. Lesson 21 updated with a "⚠️ Critical Wiring" section.
+Three missing SFX also added: `SFX_WAVE_START`, `SFX_INTEREST_EARN`, `SFX_EARLY_SEND` (total now 18).
+
+
 - **Custom PCM mixer** (`AudioStream` loop + `game_get_audio_samples`) — all DTD sounds are one-shot; no `PlaySound()` calls
 - Background music: `ToneGenerator` ambient loop via `game_audio_update()` sequencer
 

@@ -689,3 +689,102 @@ In Lesson 02 we introduce the grid system: a flat `uint8_t` array of `CellState`
 values, the `draw_rect` drawing primitive with clipping, and the math utility macros
 (`MIN`, `MAX`, `CLAMP`, `ABS`).  By the end you'll see a 30×20 checkerboard grid
 with a green entry cell and a red exit cell.
+
+---
+
+## ⚠️ X11 platform pitfalls (and their fixes)
+
+Three subtle bugs affect the X11 backend that do **not** affect Raylib.  This
+appendix explains each one and the exact fix, so you know what to watch for when
+porting to other X11 programs.
+
+### Pitfall 1 — Escape key never works
+
+**Symptom:** Pressing Escape does nothing in the X11 build.
+
+**Root cause:** `XSelectInput` must include `KeyPressMask` to receive keyboard
+events.  Without it, X11 silently discards all key events.  Even if the mask is
+present, you need a `KeyPress` case in the event switch and a call to
+`XLookupKeysym` to convert the raw event to a named key constant.
+
+**Fix in `main_x11.c`:**
+
+```c
+#include <X11/keysym.h>   /* XK_Escape, XK_Return, etc. */
+
+/* In platform_init() — add the two keyboard masks: */
+XSelectInput(g_display, g_window,
+             ExposureMask | ButtonPressMask | ButtonReleaseMask |
+             PointerMotionMask | Button1MotionMask |
+             KeyPressMask | KeyReleaseMask |           /* ← required */
+             StructureNotifyMask);
+
+/* In platform_get_input() event switch: */
+case KeyPress: {
+    KeySym ks = XLookupKeysym(&event.xkey, 0);
+    if (ks == XK_Escape) g_should_quit = 1;
+    break;
+}
+```
+
+### Pitfall 2 — Window close button hangs mid-game (ALSA blocking)
+
+**Symptom:** Clicking the × button closes the window instantly when the game
+is on the title screen, but hangs for several seconds (or indefinitely) once
+a wave is running.
+
+**Root cause (three sub-causes):**
+
+1. `wm_delete` atom was re-interned every frame via `XInternAtom()`.  This is
+   an X11 round-trip per frame — expensive, and can delay close detection.
+
+2. `snd_pcm_writei()` blocks when the ALSA ring buffer is full.  We write
+   2048 frames per call at 44100 Hz ≈ 46 ms of audio every 16.7 ms frame —
+   the buffer fills up quickly.  When `g_should_quit = 1` is set, the loop
+   tries to call `platform_audio_update()` once more before checking the quit
+   flag, blocking the main thread for ~46 ms.
+
+3. `snd_pcm_drain()` in `platform_audio_shutdown()` waits for ALL buffered
+   audio to play out — this can block for seconds.
+
+**Fix in `main_x11.c`:**
+
+```c
+/* Cache the WM_DELETE_WINDOW atom once at startup — never call XInternAtom
+ * inside the main loop (each call is an X11 round-trip). */
+static Atom g_wm_delete = 0;  /* global */
+
+/* In platform_init(): */
+g_wm_delete = XInternAtom(g_display, "WM_DELETE_WINDOW", False);
+XSetWMProtocols(g_display, g_window, &g_wm_delete, 1);
+
+/* In platform_audio_update() — skip write if buffer is full: */
+snd_pcm_sframes_t avail = snd_pcm_avail_update(g_pcm);
+if (avail < (snd_pcm_sframes_t)AUDIO_CHUNK_SIZE) return; /* don't block */
+
+/* In platform_audio_shutdown() — discard instead of draining: */
+snd_pcm_drop(g_pcm);   /* immediate discard — never use snd_pcm_drain() */
+snd_pcm_close(g_pcm);
+```
+
+### Pitfall 3 — XDestroyImage double-free
+
+**Symptom:** Crash or heap corruption when the game exits.
+
+**Root cause:** `g_ximage` was created via `XCreateImage` with
+`(char *)bb->pixels` as its data pointer.  `XDestroyImage` tries to call
+`free()` on that pointer — but we allocated `bb->pixels` with `malloc` in
+`main()` and free it there too.  Double-free → undefined behavior.
+
+**Fix:** Set `g_ximage->data = NULL` before calling `XDestroyImage`:
+
+```c
+if (g_ximage) {
+    g_ximage->data = NULL;   /* prevent XDestroyImage from freeing bb->pixels */
+    XDestroyImage(g_ximage);
+}
+free(bb.pixels);             /* only one free, in main() */
+```
+
+This is already applied in our codebase and is documented here so you
+remember it if you write your own `XCreateImage` code.

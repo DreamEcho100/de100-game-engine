@@ -86,7 +86,7 @@ OUT="build/game"
 # --------------------------------------------------------------------------
 # Source files (shared for both backends)
 # --------------------------------------------------------------------------
-SHARED_SRCS="src/game.c src/levels.c src/audio.c src/utils/draw-shapes.c src/utils/draw-text.c"
+SHARED_SRCS="src/game.c src/levels.c src/audio.c src/sprites.c src/utils/draw-shapes.c src/utils/draw-text.c"
 
 # --------------------------------------------------------------------------
 # Backend-specific settings
@@ -96,7 +96,7 @@ if [ "$BACKEND" = "x11" ]; then
     # -lX11:    Xlib window management and event handling
     # -lm:      math library (sinf, fminf, etc.)
     # -lasound: ALSA audio (procedural synthesis pushed to hardware each frame)
-    LIBS="-lX11 -lm -lasound"
+    LIBS="-lX11 -lm -lasound -lpthread"
     COMMON_FLAGS="$COMMON_FLAGS -DALSA_AVAILABLE"
 else
     SRCS="src/main_raylib.c $SHARED_SRCS"
