@@ -105,34 +105,27 @@ update_window_from_backbuffer(GameBackBuffer *backbuffer) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 de100_file_scoped_fn inline void
-audio_generate_and_send(EnginePlatformState *platform, EngineGameState *game) {
+audio_generate_and_send(EngineGameState *game, GameMainCode *game_main_code) {
 
   // Fill ALL available buffers (Raylib double-buffers internally)
   for (int i = 0; i < 4; i++) {
-    u32 samples_to_generate =
-        raylib_get_samples_to_write(&platform->config.audio, &game->audio);
+    u32 samples_to_generate = raylib_get_samples_to_write(&game->audio);
 #if DE100_INTERNAL
     if (FRAME_LOG_EVERY_THREE_SECONDS_CHECK) {
-      printf("[AUDIO] samples_to_generate=%d, RSI=%ld\n", samples_to_generate,
-             (long)platform->config.audio.running_sample_index);
+      printf("[AUDIO] samples_to_generate=%d\n", samples_to_generate);
     }
 #endif
 
     if (samples_to_generate == 0)
       break;
 
-    if (samples_to_generate > platform->config.audio.max_samples_per_call) {
-      samples_to_generate = platform->config.audio.max_samples_per_call;
+    if (samples_to_generate > (u32)game->audio.max_sample_count) {
+      samples_to_generate = (u32)game->audio.max_sample_count;
     }
 
-    GameAudioOutputBuffer audio_buffer = {
-        .samples_per_second = game->audio.samples_per_second,
-        .sample_count = samples_to_generate,
-        .samples = (i16 *)game->audio.samples};
-
-    platform->game_main_code.functions.get_audio_samples(&game->memory,
-                                                         &audio_buffer);
-    raylib_send_samples(&platform->config.audio, &audio_buffer);
+    game->audio.sample_count = (i32)samples_to_generate;
+    game_main_code->functions.get_audio_samples(&game->memory, &game->audio);
+    raylib_send_samples(&game->audio);
   }
 }
 
@@ -153,10 +146,9 @@ de100_file_scoped_fn inline int raylib_init(EngineState *engine) {
   raylib_game_initpad(engine->platform.old_inputs->controllers,
                       engine->game.inputs->controllers);
 
-  bool audio_initialized =
-      raylib_init_audio(&engine->platform.config.audio,
-                        engine->game.config.initial_audio_sample_rate,
-                        engine->game.config.audio_game_update_hz);
+  bool audio_initialized = raylib_init_audio(
+      &engine->game.audio, engine->game.config.initial_audio_sample_rate,
+      engine->game.config.audio_game_update_hz);
 
   if (!audio_initialized) {
     fprintf(stderr,
@@ -221,7 +213,7 @@ int platform_main(void) {
         &engine.game.thread_context, &engine.game.memory, engine.game.inputs,
         &engine.game.backbuffer);
 
-    audio_generate_and_send(&engine.platform, &engine.game);
+    audio_generate_and_send(&engine.game, &engine.platform.game_main_code);
 
     BeginDrawing();
     ClearBackground(BLACK);
@@ -276,7 +268,7 @@ int platform_main(void) {
   if (g_game_buffer_meta.has_texture) {
     UnloadTexture(g_game_buffer_meta.texture);
   }
-  raylib_shutdown_audio(&engine.game.audio, &engine.platform.config.audio);
+  raylib_shutdown_audio(&engine.game.audio);
   CloseWindow();
 
 #endif

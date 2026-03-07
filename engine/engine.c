@@ -171,15 +171,22 @@ int engine_init(EngineState *engine) {
   // ─────────────────────────────────────────────────────────────────────
   // ALLOCATE AUDIO BUFFER
   // ─────────────────────────────────────────────────────────────────────
+  //
+  // Buffer capacity is 3 frames — enough headroom for both ALSA (ring-buffer
+  // model) and Raylib (fixed-chunk model). Each backend caps its per-call
+  // request to game->audio.max_sample_count at call time.
+  //
+  // Backend-specific timing state (latency_samples, running_sample_index,
+  // etc.) lives in each backend's private config struct, NOT here.
 
-  int bytes_per_sample = sizeof(i16) * 2;
-  // TODO: should it be on the `game->audio` instead?
-  platform->config.audio.bytes_per_sample = bytes_per_sample;
-  int samples_per_frame = game->config.initial_audio_sample_rate /
-                          game->config.audio_game_update_hz;
-  platform->config.audio.max_samples_per_call = samples_per_frame * 3;
-  int audio_size =
-      platform->config.audio.max_samples_per_call * bytes_per_sample;
+  const int bytes_per_sample = (int)(sizeof(i16) * 2); // 16-bit stereo
+  const u32 audio_hz = game->config.audio_game_update_hz != 0
+                           ? game->config.audio_game_update_hz
+                           : 60;
+  const int samples_per_frame =
+      (int)game->config.initial_audio_sample_rate / (int)audio_hz;
+  const int max_sample_count = samples_per_frame * 3;
+  const int audio_size = max_sample_count * bytes_per_sample;
 
   allocations->audio_samples =
       de100_memory_alloc(NULL, audio_size, De100_MEMORY_FLAG_RW_ZEROED);
@@ -189,11 +196,12 @@ int engine_init(EngineState *engine) {
     return 1;
   }
 
-  game->audio.samples_per_second = game->config.initial_audio_sample_rate;
+  game->audio.samples_per_second = (i32)game->config.initial_audio_sample_rate;
+  game->audio.max_sample_count = max_sample_count;
   game->audio.samples = allocations->audio_samples.base;
+  game->audio.is_initialized = false; // backend sets true after its init
 
-  printf("✅ Audio buffer: %d samples max\n",
-         platform->config.audio.max_samples_per_call);
+  printf("✅ Audio buffer: %d samples max\n", max_sample_count);
 
   // ─────────────────────────────────────────────────────────────────────
   // RECORDING STATE

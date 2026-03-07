@@ -58,6 +58,8 @@ typedef struct {
   bool window_is_active;
   int last_width;
   int last_height;
+  LinuxAudioConfig
+      audio_config; /* ALSA-specific state, invisible outside X11 */
 } X11PlatformState;
 
 de100_file_scoped_global_var OpenGLState g_gl = {0};
@@ -276,30 +278,26 @@ x11_process_pending_events(Display *display, EnginePlatformState *platform,
 // ═══════════════════════════════════════════════════════════════════════════
 
 de100_file_scoped_fn inline void
-audio_generate_and_send(EnginePlatformState *platform, EngineGameState *game) {
+audio_generate_and_send(LinuxAudioConfig *audio_config, EngineGameState *game,
+                        GameMainCode *game_main_code) {
   u32 samples_to_generate =
-      linux_get_samples_to_write(&platform->config.audio, &game->audio);
+      linux_get_samples_to_write(audio_config, &game->audio);
 
 #if DE100_INTERNAL
   if (FRAME_LOG_EVERY_THREE_SECONDS_CHECK) {
     printf("[AUDIO] samples_to_generate=%d, RSI=%ld\n", samples_to_generate,
-           (long)platform->config.audio.running_sample_index);
+           (long)audio_config->running_sample_index);
   }
 #endif
 
   if (samples_to_generate > 0) {
-    if (samples_to_generate > platform->config.audio.max_samples_per_call) {
-      samples_to_generate = platform->config.audio.max_samples_per_call;
+    if (samples_to_generate > (u32)game->audio.max_sample_count) {
+      samples_to_generate = (u32)game->audio.max_sample_count;
     }
 
-    GameAudioOutputBuffer audio_buffer = {
-        .samples_per_second = game->audio.samples_per_second,
-        .sample_count = samples_to_generate,
-        .samples = (i16 *)game->audio.samples};
-
-    platform->game_main_code.functions.get_audio_samples(&game->memory,
-                                                         &audio_buffer);
-    linux_send_samples_to_alsa(&platform->config.audio, &audio_buffer);
+    game->audio.sample_count = (i32)samples_to_generate;
+    game_main_code->functions.get_audio_samples(&game->memory, &game->audio);
+    linux_send_samples_to_alsa(audio_config, &game->audio);
   }
 }
 
@@ -373,9 +371,13 @@ de100_file_scoped_fn inline int x11_init(EngineState *engine) {
   }
 
   linux_load_alsa();
-  linux_init_audio(&engine->platform.config.audio,
-                   engine->game.config.initial_audio_sample_rate,
-                   engine->game.config.audio_game_update_hz);
+  // init hz + latency before calling audio init
+  x11->audio_config.game_update_hz =
+      (i32)engine->game.config.audio_game_update_hz;
+  x11->audio_config.bytes_per_sample = (i32)(sizeof(i16) * 2);
+  linux_init_audio(&x11->audio_config, &engine->game.audio,
+                   (i32)engine->game.config.initial_audio_sample_rate,
+                   (i32)engine->game.config.audio_game_update_hz);
 
   linux_init_joystick(engine->platform.old_inputs->controllers,
                       engine->game.inputs->controllers);
@@ -405,7 +407,7 @@ de100_file_scoped_fn inline void x11_shutdown(EngineState *engine) {
     return;
 
   linux_close_joysticks();
-  linux_unload_alsa(&engine->platform.config.audio);
+  linux_unload_alsa(&x11->audio_config);
 
   if (x11->gl_context) {
     glXMakeCurrent(x11->display, None, NULL);
@@ -450,8 +452,7 @@ int platform_main(void) {
 #if DE100_INTERNAL
     if (FRAME_LOG_EVERY_TEN_SECONDS_CHECK) {
       printf("[HEALTH CHECK] frame=%u, RSI=%lld, marker_idx=%d\n",
-             g_frame_counter,
-             (long long)engine.platform.config.audio.running_sample_index,
+             g_frame_counter, (long long)x11->audio_config.running_sample_index,
              g_debug_marker_index);
     }
 #endif
@@ -482,7 +483,8 @@ int platform_main(void) {
         &engine.game.thread_context, &engine.game.memory, engine.game.inputs,
         &engine.game.backbuffer);
 
-    audio_generate_and_send(&engine.platform, &engine.game);
+    audio_generate_and_send(&x11->audio_config, &engine.game,
+                            &engine.platform.game_main_code);
 
     x11_process_pending_events(x11->display, &engine.platform, &engine.game);
 
@@ -491,9 +493,8 @@ int platform_main(void) {
         (g_debug_marker_index - 1 + MAX_DEBUG_AUDIO_MARKERS) %
         MAX_DEBUG_AUDIO_MARKERS;
     linux_debug_sync_display(&engine.game.backbuffer, &engine.game.audio,
-                             &engine.platform.config.audio,
-                             g_debug_audio_markers, MAX_DEBUG_AUDIO_MARKERS,
-                             display_marker_index);
+                             &x11->audio_config, g_debug_audio_markers,
+                             MAX_DEBUG_AUDIO_MARKERS, display_marker_index);
 #endif
 
     opengl_display_buffer(&engine.game.backbuffer, g_last_window_width,
@@ -501,7 +502,7 @@ int platform_main(void) {
     XSync(x11->display, False);
 
 #if DE100_INTERNAL
-    linux_debug_capture_flip_state(&engine.platform.config.audio);
+    linux_debug_capture_flip_state(&x11->audio_config);
 #endif
 
     frame_timing_mark_work_done();

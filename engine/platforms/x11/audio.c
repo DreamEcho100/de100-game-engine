@@ -39,7 +39,6 @@
 #include "../../_common/base.h"
 #include "../../_common/memory.h"
 #include "../../game/audio.h"
-#include "../_common/config.h"
 
 #include <dlfcn.h>
 #include <stdio.h>
@@ -348,8 +347,9 @@ void linux_load_alsa(void) {
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
-bool linux_init_audio(PlatformAudioConfig *audio_config, i32 samples_per_second,
-                      i32 game_update_hz) {
+bool linux_init_audio(LinuxAudioConfig *audio_config,
+                      GameAudioOutputBuffer *audio_output,
+                      i32 samples_per_second, i32 game_update_hz) {
 
   printf("═══════════════════════════════════════════════════════════\n");
   printf("🔊 ALSA AUDIO INITIALIZATION\n");
@@ -360,8 +360,10 @@ bool linux_init_audio(PlatformAudioConfig *audio_config, i32 samples_per_second,
   // ─────────────────────────────────────────────────────────────────────
 
   if (!g_linux_audio_output.alsa_library) {
-    fprintf(stderr, "❌ Audio: ALSA library not loaded\n");
+    fprintf(stderr, "\u274c Audio: ALSA library not loaded\n");
     audio_config->is_initialized = false;
+    if (audio_output)
+      audio_output->is_initialized = false;
     return false;
   }
 
@@ -517,9 +519,12 @@ bool linux_init_audio(PlatformAudioConfig *audio_config, i32 samples_per_second,
   //
   // ─────────────────────────────────────────────────────────────────────
 
-  // Allocate enough for max_samples_per_call
+  // Allocate enough for max samples per call
   u32 sample_buffer_size =
-      audio_config->max_samples_per_call * audio_config->bytes_per_sample;
+      (audio_output && audio_output->max_sample_count > 0)
+          ? (u32)audio_output->max_sample_count * (u32)(sizeof(i16) * 2)
+          : (u32)(samples_per_second / game_update_hz * 3) *
+                (u32)(sizeof(i16) * 2);
 
   g_linux_audio_output.sample_buffer =
       de100_memory_alloc(NULL, sample_buffer_size,
@@ -527,7 +532,8 @@ bool linux_init_audio(PlatformAudioConfig *audio_config, i32 samples_per_second,
                              De100_MEMORY_FLAG_ZEROED);
 
   if (!de100_memory_is_valid(g_linux_audio_output.sample_buffer)) {
-    fprintf(stderr, "❌ Audio: Failed to allocate sample buffer (%d bytes)\n",
+    fprintf(stderr,
+            "\u274c Audio: Failed to allocate sample buffer (%d bytes)\n",
             sample_buffer_size);
     fprintf(
         stderr, "   Error: %s\n",
@@ -535,6 +541,8 @@ bool linux_init_audio(PlatformAudioConfig *audio_config, i32 samples_per_second,
     SndPcmClose(g_linux_audio_output.pcm_handle);
     g_linux_audio_output.pcm_handle = NULL;
     audio_config->is_initialized = false;
+    if (audio_output)
+      audio_output->is_initialized = false;
     return false;
   }
 
@@ -578,10 +586,23 @@ bool linux_init_audio(PlatformAudioConfig *audio_config, i32 samples_per_second,
   }
 
   audio_config->is_initialized = true;
+  if (audio_output)
+    audio_output->is_initialized = true;
 
-  printf("═══════════════════════════════════════════════════════════\n");
-  printf("🔊 AUDIO SYSTEM INITIALIZED\n");
-  printf("═══════════════════════════════════════════════════════════\n\n");
+  printf(
+      "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+      "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+      "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+      "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+      "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+      "\u2550\u2550\u2550\n🔊 AUDIO SYSTEM INITIALIZED\n",
+      stderr);
+  printf("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+         "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+         "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+         "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+         "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+         "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\n");
 
   return true;
 }
@@ -621,7 +642,7 @@ bool linux_init_audio(PlatformAudioConfig *audio_config, i32 samples_per_second,
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
-u32 linux_get_samples_to_write(PlatformAudioConfig *audio_config,
+u32 linux_get_samples_to_write(LinuxAudioConfig *audio_config,
                                GameAudioOutputBuffer *audio_output) {
   (void)audio_output;
 
@@ -792,7 +813,7 @@ u32 linux_get_samples_to_write(PlatformAudioConfig *audio_config,
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
-void linux_send_samples_to_alsa(PlatformAudioConfig *audio_config,
+void linux_send_samples_to_alsa(LinuxAudioConfig *audio_config,
                                 GameAudioOutputBuffer *source) {
   if (!audio_config->is_initialized || !g_linux_audio_output.pcm_handle) {
     return;
@@ -849,7 +870,7 @@ void linux_send_samples_to_alsa(PlatformAudioConfig *audio_config,
 // 🔊 CLEAR AUDIO BUFFER (Send Silence)
 // ═══════════════════════════════════════════════════════════════════════════
 
-void linux_clear_audio_buffer(PlatformAudioConfig *audio_config) {
+void linux_clear_audio_buffer(LinuxAudioConfig *audio_config) {
   if (!audio_config->is_initialized || !g_linux_audio_output.pcm_handle) {
     return;
   }
@@ -872,7 +893,7 @@ void linux_clear_audio_buffer(PlatformAudioConfig *audio_config) {
 // 🔊 DEBUG AUDIO LATENCY
 // ═══════════════════════════════════════════════════════════════════════════
 
-void linux_debug_audio_latency(PlatformAudioConfig *audio_config) {
+void linux_debug_audio_latency(LinuxAudioConfig *audio_config) {
   if (!audio_config->is_initialized) {
     printf("❌ Audio: Not initialized\n");
     return;
@@ -930,7 +951,7 @@ void linux_debug_audio_latency(PlatformAudioConfig *audio_config) {
 // 🔊 UNLOAD ALSA
 // ═══════════════════════════════════════════════════════════════════════════
 
-void linux_unload_alsa(PlatformAudioConfig *audio_config) {
+void linux_unload_alsa(LinuxAudioConfig *audio_config) {
   printf("🔊 Shutting down ALSA audio...\n");
 
   // Close PCM device
@@ -981,7 +1002,7 @@ void linux_unload_alsa(PlatformAudioConfig *audio_config) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void linux_audio_fps_change_handling(GameAudioOutputBuffer *audio_output,
-                                     PlatformAudioConfig *audio_config) {
+                                     LinuxAudioConfig *audio_config) {
   (void)audio_output;
 
   if (!audio_config->is_initialized) {
@@ -1016,7 +1037,7 @@ void linux_audio_fps_change_handling(GameAudioOutputBuffer *audio_output,
 
 #if DE100_INTERNAL
 
-void linux_debug_capture_flip_state(PlatformAudioConfig *audio_config) {
+void linux_debug_capture_flip_state(LinuxAudioConfig *audio_config) {
   if (!audio_config->is_initialized || !g_linux_audio_output.pcm_handle) {
     return;
   }
@@ -1151,7 +1172,7 @@ de100_file_scoped_fn void linux_debug_draw_bar(GameBackBuffer *buffer, i32 x1,
 
 void linux_debug_sync_display(GameBackBuffer *buffer,
                               GameAudioOutputBuffer *audio_output,
-                              PlatformAudioConfig *audio_config,
+                              LinuxAudioConfig *audio_config,
                               LinuxDebugAudioMarker *markers, int marker_count,
                               int current_marker_index) {
   (void)audio_output;

@@ -3,9 +3,7 @@
 
 #include "../../_common/base.h"
 #include "../../_common/memory.h"
-#include "../../engine.h"
 #include "../../game/audio.h"
-#include "../_common/config.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -115,8 +113,27 @@ extern alsa_snd_pcm_drop *SndPcmDrop_;
 #define SndPcmStart SndPcmStart_
 #define SndPcmDrop SndPcmDrop_
 
-// ═══════════════════════════════════════════════════════════════
-// 🔊 LINUX SOUND OUTPUT STATE
+// ═══════════════════════════════════════════════════════════════// 🔊 LINUX /
+// ALSA PRIVATE AUDIO CONFIG
+//
+// Owned entirely by the X11 backend. Not visible to shared engine/ layer.
+// Compare with PlatformAudioConfig (removed): all fields below are
+// ALSA-specific ring-buffer accounting that means nothing to Raylib or any
+// other backend.
+// ══════════════════════════════════════════════════════════════
+
+typedef struct {
+  i32 samples_per_second;   /* Hardware sample rate (e.g. 48000) */
+  i32 bytes_per_sample;     /* 4 for 16-bit stereo */
+  i32 game_update_hz;       /* Game loop rate used to size latency (e.g. 60) */
+  i32 latency_samples;      /* Write-ahead target: samples_per_frame * 2 */
+  i32 safety_samples;       /* Guard margin: ~1/3 frame */
+  i64 running_sample_index; /* Total samples written to ALSA — write cursor */
+  bool is_initialized;      /* True after successful ALSA init */
+} LinuxAudioConfig;
+
+// ══════════════════════════════════════════════════════════════// 🔊 LINUX
+// SOUND OUTPUT STATE
 // ═══════════════════════════════════════════════════════════════
 
 typedef struct {
@@ -216,14 +233,12 @@ extern LinuxDebugAudioMarker g_debug_audio_markers[MAX_DEBUG_AUDIO_MARKERS];
 extern int g_debug_marker_index;
 
 // Capture flip state (called after frame display)
-void linux_debug_capture_flip_state(
-    // GameAudioOutputBuffer *audio_output,
-    PlatformAudioConfig *audio_config);
+void linux_debug_capture_flip_state(LinuxAudioConfig *audio_config);
 
 // Draw debug visualization (called every frame)
 void linux_debug_sync_display(GameBackBuffer *buffer,
                               GameAudioOutputBuffer *audio_output,
-                              PlatformAudioConfig *audio_config,
+                              LinuxAudioConfig *audio_config,
                               LinuxDebugAudioMarker *markers, int marker_count,
                               int current_marker_index);
 
@@ -235,22 +250,23 @@ void linux_debug_sync_display(GameBackBuffer *buffer,
 
 void linux_load_alsa(void);
 
-bool linux_init_audio(PlatformAudioConfig *audio_config, i32 samples_per_second,
-                      i32 game_update_hz);
+/**
+ * Initialize ALSA audio. On success sets audio_config->is_initialized = true
+ * AND audio_output->is_initialized = true so the game can optionally check.
+ */
+bool linux_init_audio(LinuxAudioConfig *audio_config,
+                      GameAudioOutputBuffer *audio_output,
+                      i32 samples_per_second, i32 game_update_hz);
 
-u32 linux_get_samples_to_write(PlatformAudioConfig *audio_config,
+u32 linux_get_samples_to_write(LinuxAudioConfig *audio_config,
                                GameAudioOutputBuffer *audio_output);
-void linux_debug_audio_latency(
-    // GameAudioOutputBuffer *audio_output,
-    PlatformAudioConfig *audio_config
-    //  GameAudioState *game_audio_state
-);
-void linux_unload_alsa(PlatformAudioConfig *audio_config);
+void linux_debug_audio_latency(LinuxAudioConfig *audio_config);
+void linux_unload_alsa(LinuxAudioConfig *audio_config);
 void linux_audio_fps_change_handling(GameAudioOutputBuffer *audio_output,
-                                     PlatformAudioConfig *audio_config);
+                                     LinuxAudioConfig *audio_config);
 
-void linux_send_samples_to_alsa(PlatformAudioConfig *audio_config,
+void linux_send_samples_to_alsa(LinuxAudioConfig *audio_config,
                                 GameAudioOutputBuffer *source);
-void linux_clear_audio_buffer(PlatformAudioConfig *audio_config);
+void linux_clear_audio_buffer(LinuxAudioConfig *audio_config);
 
 #endif // DE100_PLATFORMS_X11_AUDIO_H

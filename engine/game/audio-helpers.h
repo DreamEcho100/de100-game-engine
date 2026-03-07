@@ -30,6 +30,21 @@ de100_file_scoped_fn inline f32 de100_audio_midi_to_freq(i32 midi_note) {
   return 440.0f * powf(2.0f, (f32)(midi_note - 69) / 12.0f);
 }
 
+/* Common MIDI note constants */
+#define DE100_MIDI_C4 60
+#define DE100_MIDI_D4 62
+#define DE100_MIDI_E4 64
+#define DE100_MIDI_F4 65
+#define DE100_MIDI_G4 67
+#define DE100_MIDI_A4 69
+#define DE100_MIDI_B4 71
+#define DE100_MIDI_C5 72
+#define DE100_MIDI_D5 74
+#define DE100_MIDI_E5 76
+#define DE100_MIDI_G5 79
+#define DE100_MIDI_A5 81
+#define DE100_MIDI_REST 0
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Sample Clamping
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,6 +114,8 @@ de100_file_scoped_fn inline f32 de100_audio_ramp_volume(f32 current, f32 target,
   return current;
 }
 
+#define DE100_AUDIO_VOLUME_RAMP_SPEED 0.002f
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Waveform Generators
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,6 +153,60 @@ de100_file_scoped_fn inline f32 de100_audio_wave_sawtooth(f32 phase) {
 // Pulse wave with variable duty cycle (0.0 to 1.0)
 de100_file_scoped_fn inline f32 de100_audio_wave_pulse(f32 phase, f32 duty) {
   return (phase < duty) ? 1.0f : -1.0f;
+}
+
+/* ─── Sequencer Step Timing ─────────────────────────────────────────────────
+ */
+
+/* Returns true when step should advance, handles timer internally */
+de100_file_scoped_fn inline bool
+de100_sequencer_should_advance(f32 *step_timer, f32 step_duration,
+                               f32 delta_time) {
+  *step_timer += delta_time;
+  if (*step_timer >= step_duration) {
+    *step_timer -= step_duration;
+    return true;
+  }
+  return false;
+}
+
+/* Calculate step duration from BPM and steps per beat */
+de100_file_scoped_fn inline f32
+de100_sequencer_bpm_to_step_duration(f32 bpm, i32 steps_per_beat) {
+  /* BPM = beats per minute
+   * steps_per_beat = how many sequencer steps per beat (typically 4 for 16th
+   * notes) step_duration = seconds per step */
+  return 60.0f / (bpm * (f32)steps_per_beat);
+}
+
+/* ─── Oscillator State ──────────────────────────────────────────────────────
+ */
+
+/* Generic oscillator that games can embed in their own structures */
+typedef struct {
+  f32 phase;          /* 0.0 to 1.0, wraps */
+  f32 frequency;      /* Hz */
+  f32 volume;         /* Target volume */
+  f32 current_volume; /* Smoothed volume (for click-free) */
+} De100Oscillator;
+
+/* Advance oscillator phase, returns current phase before advance */
+de100_file_scoped_fn inline f32 de100_oscillator_advance(De100Oscillator *osc,
+                                                         f32 inv_sample_rate) {
+  f32 current_phase = osc->phase;
+  osc->phase += osc->frequency * inv_sample_rate;
+  if (osc->phase >= 1.0f)
+    osc->phase -= 1.0f;
+  return current_phase;
+}
+
+/* Update oscillator volume with ramping */
+de100_file_scoped_fn inline void
+de100_oscillator_update_volume(De100Oscillator *osc, bool is_playing,
+                               f32 ramp_speed) {
+  f32 target = is_playing ? osc->volume : 0.0f;
+  osc->current_volume =
+      de100_audio_ramp_volume(osc->current_volume, target, ramp_speed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
