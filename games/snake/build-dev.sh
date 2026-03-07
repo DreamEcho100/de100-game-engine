@@ -28,8 +28,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 BACKEND_LIBS="-lm"
-SOURCES="src/game.c src/utils/draw-shapes.c src/utils/draw-text.c"
-
+UTILS_SOURCES="src/utils/draw-shapes.c src/utils/draw-text.c"
+GAME_SOURCES="src/game/audio.c src/game/main.c"
+SOURCES="$UTILS_SOURCES $GAME_SOURCES"
 
 DETECTED_OS=""
 case "$(uname -s)" in
@@ -45,8 +46,8 @@ esac
 
 case "$BACKEND" in
     x11)
-        BACKEND_LIBS="$BACKEND_LIBS -lX11 -lxkbcommon -lGL -lGLX"
-        SOURCES="$SOURCES src/main_x11.c"
+        BACKEND_LIBS="$BACKEND_LIBS -lX11 -lxkbcommon -lasound -lGL -lGLX"
+        SOURCES="$SOURCES src/platforms/x11/audio.c src/platforms/x11/base.c src/platforms/x11/main.c"
     ;;
     raylib)
         case "$DETECTED_OS" in
@@ -54,7 +55,7 @@ case "$BACKEND" in
             macos)   BACKEND_LIBS="$BACKEND_LIBS -lraylib -lpthread -framework Cocoa -framework IOKit" ;;
             *)       BACKEND_LIBS="$BACKEND_LIBS -lraylib -lpthread -ldl" ;;
         esac
-        SOURCES="$SOURCES src/main_raylib.c"
+        SOURCES="$SOURCES src/platforms/raylib/main.c"
     ;;
     *)
         echo "Error: Unknown backend '$BACKEND'" >&2

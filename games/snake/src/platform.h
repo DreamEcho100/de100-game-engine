@@ -1,69 +1,109 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
-#include "game.h"
 
-/* ── Platform functions ──────────────────────────────── */
-/* These are declared here and implemented in main_x11.c / main_raylib.c */
+#include "./game/base.h"
+#include "./utils/audio.h" /* AudioOutputBuffer */
+#include "./utils/backbuffer.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Platform Configuration
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+typedef struct {
+  Backbuffer backbuffer;
+  AudioOutputBuffer audio;
+} GameProps;
 
 typedef struct {
   const char *title;
   int width;
   int height;
-  Backbuffer backbuffer;
+  GameProps game;
   bool is_running;
 } PlatformGameProps;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Platform Game Props Init/Free
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
-#define TITLE ("Snake (" STRINGIFY(BACKEND) ") - yt/@javidx9")
+#define TITLE ("Snake (" TOSTRING(BACKEND) ") - yt/@javidx9")
 
-static int platform_game_props_init(PlatformGameProps *platform_game_props) {
-  printf("Initializing platform game properties...\n");
-  platform_game_props->title = TITLE;
-  platform_game_props->width = SCREEN_INITIAL_WIDTH;
-  platform_game_props->height = SCREEN_INITIAL_HEIGHT;
+static inline int platform_game_props_init(PlatformGameProps *props) {
+  printf("═══════════════════════════════════════════════════════════\n");
+  printf("🐍 SNAKE GAME INITIALIZATION\n");
+  printf("═══════════════════════════════════════════════════════════\n");
 
-  platform_game_props->is_running = true;
+  /* Window config */
+  props->title = TITLE;
+  props->width = SCREEN_INITIAL_WIDTH;
+  props->height = SCREEN_INITIAL_HEIGHT;
+  props->is_running = true;
 
-  printf("Initializing backbuffer...\n");
+  /* Backbuffer allocation */
+  props->game.backbuffer.width = props->width;
+  props->game.backbuffer.height = props->height;
+  props->game.backbuffer.bytes_per_pixel = 4;
+  props->game.backbuffer.pitch = props->width * 4;
+  props->game.backbuffer.pixels =
+      (uint32_t *)malloc(props->width * props->height * sizeof(uint32_t));
 
-  /* Allocate backbuffer */
-  platform_game_props->backbuffer.width = platform_game_props->width;
-  platform_game_props->backbuffer.height = platform_game_props->height;
-  platform_game_props->backbuffer.pitch =
-      platform_game_props->width * sizeof(uint32_t);
-  printf("Allocating backbuffer pixels...\n");
-  platform_game_props->backbuffer.pixels =
-      (uint32_t *)malloc(platform_game_props->width *
-                         platform_game_props->height * sizeof(uint32_t));
-
-  printf("Backbuffer initialized successfully.\n");
-
-  if (!platform_game_props->backbuffer.pixels) {
-    fprintf(stderr, "Failed to allocate backbuffer\n");
+  if (!props->game.backbuffer.pixels) {
+    fprintf(stderr, "❌ Failed to allocate backbuffer\n");
     return 1;
   }
+  printf("✓ Backbuffer: %dx%d\n", props->width, props->height);
 
-  printf("✓ Platform game properties initialized successfully.\n");
+  props->game.audio.samples_per_second = 48000;
+  props->game.audio.sample_count = 0; /* Set by platform */
+  props->game.audio.is_initialized = false;
 
+  /* Audio buffer - must fit the largest single platform write.
+   * Raylib uses a 4096-sample stream buffer, so allocate 8 frames (~6400)
+   * to cover any reasonable backend with headroom to spare. */
+  int max_samples = (props->game.audio.samples_per_second / 60) * 8;
+  props->game.audio.samples =
+      (int16_t *)malloc(max_samples * sizeof(int16_t) * 2); /* Stereo */
+
+  if (!props->game.audio.samples) {
+    fprintf(stderr, "❌ Failed to allocate audio buffer\n");
+    free(props->game.backbuffer.pixels);
+    return 1;
+  }
+  printf("✓ Audio buffer: %d max samples\n", max_samples);
+
+  printf("═══════════════════════════════════════════════════════════\n\n");
   return 0;
 }
 
-static void platform_game_props_free(PlatformGameProps *platform_game_props) {
-  free(platform_game_props->backbuffer.pixels);
+static inline void platform_game_props_free(PlatformGameProps *props) {
+  if (props->game.backbuffer.pixels) {
+    free(props->game.backbuffer.pixels);
+    props->game.backbuffer.pixels = NULL;
+  }
+  if (props->game.audio.samples) {
+    free(props->game.audio.samples);
+    props->game.audio.samples = NULL;
+  }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Platform API (implemented by backend)
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 int platform_init(PlatformGameProps *props);
-void platform_render(GameState *state);
-// void platform_sleep_ms(int ms);
-// int platform_should_quit(void);
-/* Get current time in seconds since program start.
- * Used for delta time calculations. */
-double platform_get_time(void);
 void platform_shutdown(void);
+void platform_get_input(GameInput *input, PlatformGameProps *props);
+double platform_get_time(void);
 
 #endif /* PLATFORM_H */

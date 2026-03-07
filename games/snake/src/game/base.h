@@ -1,9 +1,8 @@
-#ifndef GAME_SNAKE_H
-#define GAME_SNAKE_H
+#ifndef GAME_BASE_H
+#define GAME_BASE_H
 
-#include "utils/backbuffer.h"
+#include "audio.h"
 #include <stdbool.h>
-#include <stdint.h>
 
 #define GRID_WIDTH 60
 #define GRID_HEIGHT 20
@@ -107,12 +106,7 @@ typedef struct {
   bool is_game_over;
   int score;
   int best_score;
+  GameAudioState audio;
 } GameState;
 
-void prepare_input_frame(GameInput *input);
-
-void game_init(GameState *game_state);
-void game_update(GameState *game_state, GameInput *input, float delta_time);
-void game_render(GameState *game_state, Backbuffer *backbuffer);
-
-#endif // GAME_SNAKE_H
+#endif // GAME_BASE_H
