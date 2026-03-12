@@ -2,7 +2,70 @@
 
 Use this file with the Copilot CLI agent to convert a source file or project into a build-along course.
 
-**Reference Implementation:** `games/tetris/` — A complete example following these patterns.
+**Primary Reference — Platform source & structure:** `ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — canonical source layout, build scripts, utils, platform backends, and base headers. Always check here first before looking anywhere else.
+**Secondary Reference — Complete game course (Tetris):** `games/tetris/` — a full game course built on top of the platform template; reference for game-layer patterns (`GameState`, `game_update`, `game_render`, `game_audio_update`, level data).
+**Secondary Reference — Subdirectory backend layout (Snake):** `games/snake/` — same as Tetris but uses the `platforms/` subdirectory structure; use when verifying backend layout conventions.
+
+---
+
+## Three-phase workflow — the golden rule
+
+> ⚠ **This agent works in exactly three phases, in strict order. Never skip or mix them.**
+>
+> **Phase 0 — Plan: build `PLAN.md`, `PLAN-TRACKER.md`, and `README.md`.**
+> Analyse the source, understand the student profile, and produce:
+>
+> - `PLAN.md` — full topic inventory, lesson breakdown, skill table, planned file structure,
+>   dependency order, and any divergence notes. See _Step 1 — Analyze & Plan_ below for the
+>   required content.
+> - `PLAN-TRACKER.md` — a checklist mirror of PLAN.md used to track completion status of every
+>   lesson and every planned source file. Each row starts as `[ ]` and is checked as work is done.
+> - `README.md` — student-facing course overview: what the course builds, prerequisites, how to
+>   run the finished program, and a lesson index with one-line descriptions.
+>
+> This phase is done when all three files exist, are internally consistent, and the skill
+> inventory table in PLAN.md accounts for every item in the topic inventory.
+>
+> **Phase 1 — Build the complete, fully working source code — iteratively.**
+> Write all source files (`game/`, `utils/`, `platforms/`, `build-dev.sh`, headers) guided by the
+> plan produced in Phase 0. **Build and run after every logical milestone** — do not batch-write
+> files and compile only at the end. The required inner loop for each milestone is:
+>
+> 1. Write or extend the next file(s) for that milestone.
+> 2. Run `./build-dev.sh --backend=x11` (or `--backend=raylib`) and observe the output.
+> 3. If the build fails or the runtime behaviour is wrong, **fix it now** before continuing to
+>    the next milestone. Do not carry broken code forward.
+> 4. Once both backends pass, mark the milestone done in `PLAN-TRACKER.md` and move on.
+>
+> A "logical milestone" is the smallest unit of new behaviour that can be compiled and
+> visually or functionally verified — examples: window opens, backbuffer clears to a colour,
+> a rect appears at a fixed position, input moves the rect, audio plays a tone. Small milestones
+> make regressions easy to pinpoint and keep the debuggable surface area minimal.
+>
+> This phase is done when:
+>
+> - `./build-dev.sh --backend=x11` exits 0 and the program behaves as designed, AND
+> - `./build-dev.sh --backend=raylib` exits 0 and the program behaves as designed.
+>
+> Update `PLAN-TRACKER.md` as each source file is completed.
+>
+> **Phase 2 — Build the course lessons from the verified source code.**
+> Write every lesson file by walking through the _already-correct_ source code produced in
+> Phase 1. The source code is frozen during this phase — lessons describe _what was built_, not
+> _what might be built_. A lesson must never reference a code path that does not exist in the
+> Phase 1 output.
+>
+> Update `PLAN-TRACKER.md` as each lesson is completed.
+>
+> **Why this order matters:**
+>
+> - Planning first prevents lessons from contradicting each other or introducing concepts out of
+>   dependency order.
+> - Source-first lessons guarantee that every code snippet the student types actually compiles.
+>   Lessons derived from incomplete source produce step-by-step instructions that fail on the
+>   student's machine with errors that have nothing to do with the lesson topic.
+> - Iterative build-test-debug during Phase 1 means every lesson is grounded in code that has
+>   already run correctly — not code that was written and assumed to work.
 
 ---
 
@@ -11,6 +74,92 @@ Use this file with the Copilot CLI agent to convert a source file or project int
 Attach this file + the source file(s) or directory you want to convert, then say:
 
 > "Build a course from @path/to/source based on @ai-llm-knowledge-dump/prompt/course-builder.md and output it to @path/to/course/"
+>
+> The agent will complete **Phase 0** (planning documents) before touching source code, and
+> **Phase 1** (working source code — built, run, and debugged incrementally) before writing any
+> lesson file. During Phase 1 the agent must compile and run both backends after every logical
+> milestone and fix any errors before moving on.
+> Do not ask for lesson output until Phase 1 passes a clean build on both backends.
+
+---
+
+## Companion References
+
+Before building any course, internalize both reference documents:
+
+| Document                     | Path                                                                                       | Purpose                                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Platform Foundation Course   | `ai-llm-knowledge-dump/generated-courses/platform-backend/`                                | Reusable OS/backend infrastructure taught once; copied into every game course                            |
+| Modern C Practices Reference | `@ai-llm-knowledge-dump/modern-c-programming-safe,-performant,-and-practical-practices.md` | 20 engineering pillars (UB avoidance, ownership, DOD, assertions, etc.) that all source code must follow |
+
+Course lessons must _apply_ the practices from the Modern C Practices Reference without re-explaining them — link to the relevant pillar number instead (e.g., "See **Pillar 2 — Ownership and Lifetimes**").
+
+---
+
+## Platform Course Prerequisite
+
+> ⚠ **Complete the Platform Foundation Course before starting any game course.**
+>
+> **Platform Foundation Course:** `ai-llm-knowledge-dump/generated-courses/platform-backend/`
+
+All game courses in this series build on top of reusable platform/backend infrastructure. Rather than rebuilding it from scratch in every course (producing 4–6 near-identical lessons each time), the infrastructure is taught once in the Platform Foundation Course. Game courses copy the template output and focus their lessons entirely on game-specific code.
+
+### What the Platform Foundation Course provides
+
+| Infrastructure        | Files provided                                                                                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Build system          | `build-dev.sh` with `--backend=x11\|raylib`                                                                                                    |
+| Pixel buffer pipeline | `utils/backbuffer.h`, `GAME_RGB/RGBA`, pixel addressing                                                                                        |
+| Drawing utilities     | `utils/draw-shapes.c/.h`, `utils/draw-text.c/.h`, `utils/math.h`                                                                               |
+| Platform contract     | `platform.h` with `PlatformGameProps`, 4-function API                                                                                          |
+| X11/GLX backend       | `platforms/x11/main.c` (window, input, VSync, letterbox)                                                                                       |
+| ALSA audio            | `platforms/x11/audio.c` (hw_params, latency model, per-frame write)                                                                            |
+| Raylib backend        | `platforms/raylib/main.c` (window, input, audio stream, letterbox)                                                                             |
+| Input system          | `game/base.h` with `GameButtonState`, `GameInput` union, `UPDATE_BUTTON`, `prepare_input_frame`                                                |
+| Audio system          | `utils/audio.h` — `AudioOutputBuffer`, `SoundDef`, `SoundInstance`, `GameAudioState`, `ToneGenerator`, `MusicSequencer`, `PlatformAudioConfig` |
+| Debug tools           | `ASSERT`, `DEBUG_TRAP`, `ASSERT_MSG` in `game/base.h`                                                                                          |
+
+### What game courses do differently
+
+When building a game course, the platform code is **copied from the Platform Foundation Course** and **adapted** — not rebuilt from scratch. The following table shows what changes and what stays the same:
+
+| File                      | Platform course provides      | Game course adapts                                                                              |
+| ------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------- |
+| `build-dev.sh`            | Complete script               | Game name in binary output; optional title                                                      |
+| `platform.h`              | Full contract + `TITLE` macro | `TITLE` string; window dimensions (`GAME_W`, `GAME_H`)                                          |
+| `platforms/x11/main.c`    | Full backend                  | Key bindings in `platform_get_input` to match new `GameInput` button names                      |
+| `platforms/x11/audio.c`   | Full ALSA driver              | Usually copied as-is                                                                            |
+| `platforms/raylib/main.c` | Full backend                  | Same key binding adaptation as X11                                                              |
+| `utils/*.{c,h}`           | All drawing + audio types     | Usually copied as-is                                                                            |
+| `game/base.h`             | `GameInput` union template    | `BUTTON_COUNT`; rename button fields for this game (e.g., `turn_left` → `move_left` + `rotate`) |
+| `game/main.h`             | — (not provided)              | Fully new: `GameState`, `GAME_PHASE`, game-specific types                                       |
+| `game/main.c`             | — (not provided)              | Fully new: `game_init`, `game_update`, `game_render`                                            |
+| `game/audio.c`            | Demo only (removed)           | Fully new: `SOUND_DEFS`, `game_play_sound_at`, `game_get_audio_samples`, `game_audio_update`    |
+| `game/levels.c`           | — (not provided)              | Optional: level/wave data tables                                                                |
+
+### How game course lessons reference platform code
+
+When a lesson requires a platform-layer change (e.g., adding a new key binding, changing window dimensions), the lesson shows **only the changed lines** and includes a note:
+
+```markdown
+> **Platform change:** This is a platform-layer adaptation. The `GameInput` struct and
+> `UPDATE_BUTTON` macro are explained fully in
+> **Platform Foundation Course — Lesson 07 (Double-Buffered Input)**. Here we only show
+> the lines that differ from the template: [changed lines].
+```
+
+Students who completed the Platform Foundation Course will recognize the surrounding code and understand it without re-explanation. Students starting with a game course should complete the Platform Foundation Course first.
+
+### Checklist before writing Lesson 1 of a game course
+
+- [ ] Platform Foundation Course completed (or student is familiar with the template)
+- [ ] Platform template copied to `game-name/course/src/`
+- [ ] `platform.h` `TITLE` macro updated
+- [ ] `GAME_W` and `GAME_H` set in both backends
+- [ ] `GameInput` button names updated for this game in `game/base.h`
+- [ ] Key bindings updated in both `platforms/x11/main.c` and `platforms/raylib/main.c`
+- [ ] `game/audio_demo.c` removed from build (it was for the platform course only)
+- [ ] Clean build verified on both backends before writing any lesson
 
 ---
 
@@ -51,15 +200,18 @@ The target student is a JavaScript/web developer learning C and low-level game p
    - For each file, list every function, struct, macro, constant, and algorithm it contains.
    - Mark each item with its conceptual category (e.g., _platform init_, _input_, _audio_, _rendering_, _game logic_, _state machine_).
    - This inventory is the raw material. **Every item in it must appear in at least one lesson.** Nothing is omitted because it seems obvious.
+   - **Game course note:** Items that belong to the platform layer (backbuffer, draw_rect, platform_init, GameInput, AudioOutputBuffer, platform backends) are **covered by the Platform Foundation Course** and must not be re-taught. Mark them `[PLATFORM — copied from template]` in the inventory. They still belong in the inventory (so the student knows they exist), but they map to a note row in the skill table — not a new-content lesson. Only game-specific items get their own lessons.
 4. Determine lesson count from the inventory, not from a preset number:
    - Group related items from the inventory into **lesson candidates** following concept dependencies (nothing can be used before it is taught).
    - Each candidate that introduces more than 3 new concepts must be **split**.
    - Each candidate that is too small to produce a visible result must be **merged** with an adjacent candidate.
    - The resulting list of candidates is the lesson plan. The count is whatever the material requires — 5 lessons and 40 lessons are both valid outcomes. Do not compress lessons to meet a target count; do not pad them to reach one.
+   - **Game course note:** The `[PLATFORM — copied from template]` items from above do not produce lesson candidates. They produce a single introductory note at the start of the first lesson: _"Platform code is copied from the Platform Foundation Course. See that course for full explanations."_ The first game lesson is the first game-specific topic.
 5. Identify the natural **build progression**: what is the smallest runnable first step? What do you add next? What are the logical milestones?
+   - **Game course note:** The smallest runnable first step for a game course is typically: copy platform template + add `GameState` stub + add stub `game_update`/`game_render` + open window. The canvas will be blank. From there, each lesson adds one layer of game-specific behavior.
 6. Write a `PLAN.md` next to the source file(s) covering:
    - What the program does overall
-   - The full topic inventory (source file → function/struct/concept list)
+   - The full topic inventory (source file → function/struct/concept list), with platform items marked `[PLATFORM — copied from template]`
    - The proposed lesson sequence — for **each lesson**, include all of the following:
      - Lesson number and title
      - What gets built (one sentence stating the concrete addition)
@@ -80,7 +232,57 @@ The target student is a JavaScript/web developer learning C and low-level game p
 
 ---
 
+### Plan divergence policy
+
+The plan is a contract. If reality diverges from it while you are writing lessons, the plan — not the lesson — wins.
+
+**When divergence is detected** (mid-lesson, you realise a concept needs splitting, a dependency is missing, or a concept belongs in an earlier lesson), follow this exact sequence:
+
+1. **Stop writing the lesson immediately.** Do not finish the lesson in a way that contradicts the plan.
+2. **Open `PLAN.md`.** Make all necessary edits:
+   - Update the affected lesson rows in the per-lesson skill inventory table.
+   - Update the concept dependency map if a new dependency edge is discovered.
+   - Update the lesson list (renumber if a lesson was split; merge rows if lessons were combined).
+   - Update the planned file structure if new files appear or disappear.
+3. **Verify table consistency** before resuming: check that every inventory item still maps to exactly one "New concepts" cell, and that no lesson's "New concepts" row references a concept that hasn't appeared in a prior row's "New concepts" or "Re-used" columns.
+4. **Resume writing** only after the plan is consistent.
+
+**Common divergence scenarios and how to handle them:**
+
+| Scenario                                                  | Wrong response                                               | Correct response                                                                               |
+| --------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| A lesson would introduce 4+ new concepts                  | Write it as one big lesson                                   | Stop → split into two lessons in PLAN.md → resume                                              |
+| A concept needed in lesson 5 wasn't taught until lesson 8 | Add a quick note in lesson 5 saying "we'll cover this later" | Stop → move the concept forward in PLAN.md → verify all downstream lessons still hold → resume |
+| A new file is needed that wasn't in the plan              | Create the file and mention it in the lesson                 | Stop → add the file to the planned file structure in PLAN.md → resume                          |
+| A platform file needs more changes than expected          | Explain the extra changes inline without updating the plan   | Stop → add the new platform-level changes to the lesson row in PLAN.md → resume                |
+| Two planned lessons turn out to cover the same concept    | Write both lessons, noting the overlap                       | Stop → merge the lesson rows in PLAN.md, renumber downstream lessons → resume                  |
+
+**Never silently diverge.** A plan that drifts from the lessons by lesson 3 is useless by lesson 8. The skill inventory table is the primary artefact — keep it accurate at all times.
+
+---
+
 ### Step 2 — Build the course files (Recommended file layout)
+
+> ⚠ **Before writing any lesson file, complete the [Checklist before writing Lesson 1](#checklist-before-writing-lesson-1-of-a-game-course) above.** The platform template must be copied to `course/src/`, adapted (title, dimensions, key bindings), and must produce a **clean build on both backends** before any lesson content is written. A lesson written against a broken or incomplete build is invalid — when the student follows it step by step they will hit build errors that have nothing to do with the lesson content.
+>
+> Common failures when this is skipped:
+>
+> - Lesson 1 shows a `GAME_W`/`GAME_H` that doesn't match the actual backend — student gets a mismatched window size.
+> - `GameInput` button names in the lesson differ from those in the copied `game/base.h` — compile errors on the first build.
+> - `game/audio_demo.c` is still in the build — linker errors or wrong audio output from lesson 1.
+> - A backend hasn't been tested — the lesson works on Raylib but not X11, discovered only by a student.
+
+> **Game courses:** Before building any game course files, verify the platform template has been copied and adapted per the checklist in the **Platform Course Prerequisite** section above. The platform files are your starting point — they do not need to be built in the game course.
+
+> **Layer ownership summary — enforce this at every lesson:**
+>
+> | Directory                                               | What belongs here                                                                                   | What does NOT belong here                                   |
+> | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+> | `src/utils/`                                            | Reusable systems, components, helpers: backbuffer, draw-shapes, draw-text, math, audio buffer types | Game state, game rules, anything that imports `game/main.h` |
+> | `src/game/`                                             | All game-specific code: `GameState`, update/render/audio logic, input definitions, level data       | OS APIs, windowing, any `#include <X11/…>` or Raylib calls  |
+> | `src/platforms/` (Stage B) or root `main_*.c` (Stage A) | OS/backend code: window creation, input polling, audio hardware, GPU upload                         | Game logic, reusable utilities                              |
+>
+> When in doubt: _can this code be dropped unchanged into the next game?_ → `utils/`. _Does it know about this game's rules or state?_ → `game/`. _Does it talk to the OS or a graphics API?_ → platform layer.
 
 The layout is described in two stages. Start with Stage A; migrate to Stage B when the trigger conditions are met. Document any deviation in `PLAN.md`.
 
@@ -98,14 +300,14 @@ game-name/
 │   │   ├── draw-text.h
 │   │   ├── audio.h           # AudioOutputBuffer; SoundInstance; ToneGenerator
 │   │   ├── math.h            # MIN, MAX, CLAMP macros
-│   │   └── ...               # any other reusable helper
+│   │   └── ...               # any other reusable systems, components, or helpers (e.g., particle system, physics, etc)
 │   ├── game/
 │   │   ├── main.c            # game_init(), game_update(), game_render()
 │   │   ├── main.h            # Game types, state, public API
 │   │   ├── audio.c           # game_get_audio_samples(), game_audio_update()
 │   │   ├── audio.h           # GameAudioState, SOUND_ID enum
 │   │   ├── base.h            # Shared game types (GameInput, GameState, etc.)
-│   │   └── levels.c          # Level/map data (omit if no levels)
+│   │   └── ...               # any other game-specific code (levels, entities, etc.)
 │   ├── platform.h            # Platform contract (visible to all layers)
 │   ├── main_x11.c            # X11/OpenGL backend
 │   └── main_raylib.c         # Raylib backend
@@ -120,22 +322,25 @@ When a backend grows beyond a single file — e.g., it needs its own audio drive
 game-name/
 ├── build-dev.sh
 ├── src/
-│   ├── utils/                # (same as Stage A)
+│   ├── utils/                # (same as Stage A), and any other reusable systems, components, or helpers (e.g., particle system, physics, etc)
 │   ├── game/
 │   │   ├── main.c            # game_init(), game_update(), game_render()
 │   │   ├── main.h
 │   │   ├── audio.c
 │   │   ├── audio.h
-│   │   └── base.h
+│   │   ├── base.h
+│   │   └── ...               # (same as Stage A), and any other game-specific code (levels, entities, etc.)
 │   ├── platforms/
 │   │   ├── x11/
 │   │   │   ├── main.c        # platform_init(), main loop, input, display
 │   │   │   ├── audio.c       # ALSA init, write, shutdown
 │   │   │   ├── audio.h       # X11-private audio API (not in platform.h)
 │   │   │   ├── base.c        # Definition: X11State g_x11 = {0};
-│   │   │   └── base.h        # X11State struct + extern declaration
+│   │   │   ├── base.h        # X11State struct + extern declaration
+│   │   │   └── ...           # any other X11-specific code (e.g., helper functions, input mapping, etc.)
 │   │   └── raylib/
-│   │       └── main.c        # platform_init(), main loop, audio stream
+│   │       ├─── main.c        # platform_init(), main loop, audio stream
+│   │       └── ...           # any other Raylib-specific code (e.g., helper functions, input mapping, etc.)
 │   └── platform.h            # Shared platform contract
 └── build/
 ```
@@ -146,9 +351,44 @@ game-name/
 - A backend needs a private global state struct that must not be visible to the game layer
 - A backend file exceeds ~300 lines and has a clean subsystem boundary (e.g., audio vs. windowing)
 
-**Why `utils/`?** Drawing primitives and math helpers are reusable across games. Keep them separate from game-specific logic.
+**Why `utils/`?** This is the home for every **reusable system, component, or helper** that is not specific to any one game: drawing primitives, math macros, the backbuffer type, audio buffer types, and any other cross-game building block. Code in `utils/` must have **zero knowledge of game state** — it must be usable in a different game without modification. If a piece of code would be equally at home in Tetris and Snake and a platformer, it belongs in `utils/`. If it knows about `GameState`, piece types, or any other game-specific concept, it does not.
 
-**Why `game/` subdirectory?** Groups all game-logic files — state, audio, rendering — away from platform and utility code. As the game grows this boundary prevents accidental coupling.
+> **The parameter test.** Before placing any function in `utils/`, inspect every parameter it takes:
+>
+> - If **all parameters are generic** (`Backbuffer*`, `int`, `uint32_t`, `float`, `const char*`) → `utils/`.
+> - If **any parameter is a game-specific type** (`Tetromino*`, `SnakeSegment*`, `Player*`, `BulletPool*`) → `game/`, regardless of how simple the function body looks. It carries knowledge of game types.
+> - If a function takes **both generic and game-specific parameters** — e.g., `draw_health_bar(Backbuffer*, Player*, int x, int y)` — do **not** split it into two functions just to salvage a `utils/` home. It is a game function that calls `utils/` primitives. Keep it in `game/`.
+> - If a function takes a type that appears generic but contains game-specific fields inside (e.g., a `ParticleSystem` that has a `BULLET_TYPE` enum field) → `game/`. The test applies to the full type graph, not just the surface type name.
+>
+> | Function signature                                                         | Where it belongs | Reason                                                                                                               |
+> | -------------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------- |
+> | `draw_rect(Backbuffer*, int x, int y, int w, int h, uint32_t c)`           | `utils/` ✅      | All generic parameters; usable in any game                                                                           |
+> | `draw_text(Backbuffer*, int x, int y, const char*, uint32_t c, int scale)` | `utils/` ✅      | All generic parameters                                                                                               |
+> | `draw_grid(Backbuffer*, int cols, int rows, int cell_size, uint32_t c)`    | `utils/` ✅      | All generic — usable in Tetris, Snake, or any tile game                                                              |
+> | `draw_tetromino(Backbuffer*, const Tetromino*, int cx, int cy)`            | `game/` ✅       | Takes `Tetromino*` — knows this game's types                                                                         |
+> | `draw_snake_segment(Backbuffer*, const SnakeSegment*)`                     | `game/` ✅       | Takes `SnakeSegment*`                                                                                                |
+> | `draw_health_bar(Backbuffer*, const Player*, int x, int y)`                | `game/` ✅       | Takes `Player*` — even though it only calls `draw_rect`                                                              |
+> | `draw_explosion(Backbuffer*, const ParticleSystem*, int x, int y)`         | depends          | If `ParticleSystem` contains no game-specific types → `utils/`; if it references game enums/structs inside → `game/` |
+>
+> **The correct split pattern:**
+>
+> ```c
+> /* utils/draw-shapes.c — generic, reusable in any game */
+> void draw_rect(Backbuffer *bb, int x, int y, int w, int h, uint32_t color);
+>
+> /* game/render.c — game-specific; calls utils primitives */
+> static void draw_piece(Backbuffer *bb, const Tetromino *piece) {
+>     for (int i = 0; i < 4; i++) {
+>         int cx = (piece->x + piece->cells[i].dx) * CELL_SIZE;
+>         int cy = (piece->y + piece->cells[i].dy) * CELL_SIZE;
+>         draw_rect(bb, cx, cy, CELL_SIZE - 1, CELL_SIZE - 1, piece->color);
+>     }
+> }
+> ```
+>
+> The common mistake: `draw_piece` ends up in `utils/` because _"it's a drawing function."_ It is not — it is a game function that uses a drawing primitive. The distinction is not what the function does; it is what the function **knows about**.
+
+**Why `game/` subdirectory?** All game-specific code lives here — state machines, rules, level data, input handling, audio triggers, and all rendering logic. Nothing in `game/` should call OS-specific or windowing APIs directly; that boundary is enforced by `platform.h`. As the game grows, keeping this boundary intact prevents the platform and utility layers from being accidentally contaminated with game-specific assumptions.
 
 **Platform-private state.** Each backend owns a single file-scope global struct that is never included by the game layer or `platform.h`. The game layer communicates with it only through functions declared in `platform.h`.
 
@@ -177,9 +417,9 @@ The Raylib backend follows the same pattern with `RaylibState g_raylib`. Neither
 
 > ⚠ **Never re-export a platform-private header from `platform.h`.** If `platform.h` includes `platforms/x11/base.h`, the game layer gains sight of X11 types — a layer violation. Keep each backend's `base.h` strictly within its own subdirectory.
 
-> ⚠ **Only one rule is non-negotiable about layout:** reusable helpers (drawing, math, audio types) belong in `utils/`; never at `src/` root or inside `game/`. Everything else — file names, subdirectory depth, splitting criteria — is a judgement call. Document your choices in `PLAN.md`.
+> ⚠ **Only one rule is non-negotiable about layout:** reusable systems, components, and helpers (drawing, math, audio buffer types, backbuffer) belong in `src/utils/` — never at `src/` root, never inside `src/game/`. Game-specific state, rules, and logic belong in `src/game/` — never in `utils/`. Platform and backend code belongs in `platforms/` (Stage B) or as `main_x11.c`/`main_raylib.c` at `src/` root (Stage A) — never mixed into `game/` or `utils/`. Everything else — file names, subdirectory depth, splitting criteria — is a judgement call. Document your choices in `PLAN.md`.
 
-**Reference implementations:** `games/tetris/` uses Stage A; `games/snake/` uses Stage B. Both are valid; choose based on your game's complexity.
+**Reference implementations:** `ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` is the canonical layout reference — check it first. `games/tetris/` uses Stage A and `games/snake/` uses Stage B as game-layer examples; consult them only for game-specific patterns not present in the platform course.
 
 **Game header evolution:** `main.h` (or `game.h` in Stage A) will grow substantially across lessons — from ~10 lines in lesson 1 to 300+ by the final lesson. Strategy:
 
@@ -193,11 +433,173 @@ Never ask the student to mentally merge two partial listings. If a header change
 
 ---
 
+## Lesson file naming and structure
+
+### File naming convention
+
+All lesson files go under `course/lessons/`. The course root holds only `PLAN.md` and `README.md`.
+
+**Naming rule:** `lesson-NN-slug.md`
+
+- `NN` — zero-padded two-digit number (`01`, `02`, … `15`). Use three digits (`001`) only if the course exceeds 99 lessons.
+- `slug` — short kebab-case phrase (2–5 words) describing what is **built** in this lesson, not just the topic. Prefer action-oriented slugs: `open-window`, `draw-first-rect`, `add-game-state`, `move-piece-on-input`. Avoid vague placeholders like `intro`, `setup`, `basics`, `part1`.
+- The slug must be **unique within the course**. If two lessons feel like they need the same slug, they are probably the same lesson — merge them or differentiate them.
+- Slugs should remain stable once written. Do not rename lesson files after publishing; it breaks links. Plan the slugs in `PLAN.md` before writing any lesson.
+
+```
+course/
+├── PLAN.md
+├── README.md
+└── lessons/
+    ├── lesson-01-open-window.md
+    ├── lesson-02-draw-background.md
+    ├── lesson-03-add-game-state.md
+    ├── lesson-04-move-piece-on-input.md
+    └── lesson-05-collision-detection.md
+```
+
+**Valid names:** `lesson-01-open-window.md`, `lesson-12-score-display.md`, `lesson-07-alsa-audio.md`, `lesson-09-line-clear-animation.md`
+
+**Invalid names and why:**
+
+| Invalid                                                           | Why                                                                       |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `01.md`                                                           | No slug — impossible to identify content from the filename                |
+| `Lesson1.md`                                                      | Not kebab-case; no zero-padding; capital letter                           |
+| `lesson_01_intro.md`                                              | Underscores instead of hyphens; `intro` is too vague                      |
+| `lesson-01-setup-and-window-and-input.md`                         | Slug too long — split the lesson or shorten the slug to the primary topic |
+| `lesson-01-open-window.md` repeated at `lesson-05-open-window.md` | Duplicate slug — rename the second                                        |
+| `01-open-window.md`                                               | Missing `lesson-` prefix — harder to glob, sort, and reference            |
+| `lesson-1-open-window.md`                                         | Missing zero-padding — `lesson-1` sorts after `lesson-10` in string sort  |
+
+---
+
+### Lesson file template
+
+Every lesson file must follow this skeleton. Sections marked **required** must always be present. Sections marked **optional** are included only when the lesson content warrants them — never add an optional section just to fill space, and never omit a required section because the lesson feels simple.
+
+The template is a minimum — add extra sub-sections wherever the lesson content demands them (e.g., a "Memory layout diagram" sub-section inside the code walkthrough, or a "Timing diagram" for an input lesson). The structure must serve the student, not constrain you.
+
+````markdown
+# Lesson NN — Title
+
+> **What you'll build:** One concrete sentence stating the visible or audible result this lesson produces. Not a topic name — a result. Example: _"By the end of this lesson, a piece appears on the board, falls one row per second, and locks in place when it hits the bottom."_
+
+## Observable outcome (required)
+
+Describe exactly what the student sees or hears when this lesson's code compiles and runs correctly. Be specific enough that the student can verify success without reading your explanation:
+
+- _"A white rectangle appears centred on a black canvas."_
+- _"Pressing Left/Right moves the piece; pressing Down accelerates the fall. The piece stops at the bottom edge — it does not pass through yet."_
+- _"A short tone plays on every piece lock. A different tone plays on line clear. No music yet."_
+
+If nothing visible changes (e.g., a refactor or test lesson), say so explicitly and describe what the student can now verify via `printf`, `ASSERT`, or a debugger watch.
+
+## New concepts (required)
+
+List every C or architecture concept introduced for the first time in this lesson. **Maximum 3.** If more are needed, the lesson must be split before it is written — stop and update `PLAN.md` first.
+
+- `concept_name` — one-line plain-English description anchored to what it does in this lesson
+- `concept_name` — one-line plain-English description
+- `concept_name` — one-line plain-English description
+
+Do not list concepts introduced in earlier lessons (reference them by lesson number in the walkthrough if needed). Do not list platform concepts already covered by the Platform Foundation Course.
+
+## Files changed (required)
+
+| File                      | Change type          | Summary                                           |
+| ------------------------- | -------------------- | ------------------------------------------------- |
+| `game/main.c`             | Modified             | Added `piece_fall()`; wired into `game_update()`  |
+| `game/main.h`             | Modified             | Added `fall_timer` field to `GameState`           |
+| `game/base.h`             | Modified             | Added `move_down` button to `GameInput` union     |
+| `platforms/x11/main.c`    | Modified             | Mapped `XK_Down` / `XK_s` to `move_down`          |
+| `platforms/raylib/main.c` | Modified             | Mapped `KEY_DOWN` / `KEY_S` to `move_down`        |
+| `utils/math.h`            | Copied from template | Unchanged — listed so the student knows it exists |
+
+Change types: `Created` / `Modified` / `Deleted` / `Copied from template` / `Unchanged (listed for reference)`.
+
+List **every** file the student must touch or be aware of. A file omitted here that later causes a compile error will confuse the student — they will search the lesson for guidance that isn't there.
+
+---
+
+## Background — why this works (required)
+
+Explain the new concepts at the level of _why_, not just _what_. Anchor each concept to the nearest JavaScript/web equivalent the student already knows, then explain what C or this architecture does differently and why that trade-off was made.
+
+Suggested structure:
+
+- **JS analogy:** _"In JS you'd use `setInterval(drop, 1000)` — the browser calls your function for you. In C you own the loop, so you track elapsed time yourself each frame."_
+- **How it works in C:** describe the data structure, algorithm, or pattern being introduced — with a small focused example if the concept isn't already in the code walkthrough.
+- **Why this design:** explain the architectural reason for the choice (e.g., why `fall_timer` lives in `GameState` and not in `GameInput`; why the accumulator subtracts the interval rather than resetting to zero).
+
+Keep this section focused on the 1–3 new concepts. Do not re-explain concepts from earlier lessons beyond a one-line reminder with a lesson reference.
+
+## Code walkthrough (required)
+
+Present the complete, final state of every changed code block. For each block:
+
+1. Show the **full function or struct** — never a partial listing with `...` gaps the student must mentally fill. If a function is unchanged, do not show it; if it is changed, show the whole function.
+2. Annotate every non-obvious line with a `/* why */` comment inline. Comments should explain the reasoning, not restate what the code does.
+3. After each code block, add **2–4 key-line call-outs** identifying what the student should study most carefully:
+   - _"Line 14: `fall_timer += delta_time` — this is the accumulation pattern; the timer grows by the actual elapsed frame time, not a fixed step."_
+   - _"Line 19: `fall_timer -= FALL_INTERVAL` not `= 0` — subtracting preserves the remainder so fast frames don't silently lose time."_
+   - _"Line 23: the `if` guard prevents movement while `game_phase != PHASE_PLAYING` — add phase checks early; retrofitting them later breaks many call sites."_
+
+If a file is copied unchanged from the platform template, say so in one line and do not reproduce its content. If only 1–2 lines changed in a large file, show only the surrounding function with the changed lines clearly marked.
+
+**Platform changes** — whenever a platform file (`platforms/*/main.c`, `platforms/*/audio.c`, `game/base.h`) is modified, always begin that block with:
+
+```markdown
+> **Platform change:** Only the lines below differ from the Platform Foundation Course template.
+> See **Platform Foundation Course — Lesson NN (Title)** for the surrounding context.
+```
+
+This gives students who took the Platform Foundation Course enough orientation to locate the change themselves.
+
+## Common mistakes (required)
+
+List the 2–5 most likely errors a student will make implementing this lesson. Base this on the actual failure modes introduced by the new concepts — not invented scenarios.
+
+| Symptom                       | Cause                                                                               | Fix                                                                            |
+| ----------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Piece never falls             | `fall_timer += delta_time` placed inside `game_render()` instead of `game_update()` | Move the accumulation into `game_update()` — render must not advance game time |
+| Piece falls through the floor | Collision check not added                                                           | `piece_can_fall()` is introduced in Lesson NN — add that check before moving   |
+| Fall speed ignores level      | `FALL_INTERVAL` is a compile-time constant                                          | Make it `state->fall_interval` and decrease it in `on_level_up()`              |
+
+If you cannot identify at least 2 plausible mistakes for this lesson, the lesson is likely too small — merge it with an adjacent one.
+
+## Exercise (optional)
+
+Include only when the lesson introduces a concept the student should practise independently before the next lesson builds on it. Omit if the lesson is a necessary stepping stone with no meaningful variation to explore.
+
+A good exercise:
+
+- Has a specific, verifiable observable outcome the student can check without reading your answer.
+- Requires applying the new concept — not just copying the walkthrough with a value changed.
+- Does not require any concept from a future lesson.
+- Includes a **hint** that names the technique without giving the solution.
+
+Example:
+
+> **Exercise:** Make the piece fall twice as fast when the player holds Down, and return to normal speed on release. Hint: check `input->move_down.ended_down` in `game_update()` and select between two interval values.
+
+## JS ↔ C concept map (optional)
+
+Include only for lessons introducing a C concept with no obvious JS equivalent, or where the JS mental model is actively misleading. Omit for lessons where the analogy is already made clear in the Background section.
+
+| JS / Web concept       | C equivalent in this lesson                | Key difference                                                       |
+| ---------------------- | ------------------------------------------ | -------------------------------------------------------------------- |
+| `setInterval(fn, ms)`  | `fall_timer` accumulator + threshold check | C has no scheduler — you accumulate elapsed time yourself each frame |
+| `array.splice(row, 1)` | `memmove()` + decrement count              | No GC; you shift memory manually and track the new size              |
+````
+
+---
+
 ## Build script
 
 Use a build script with backend selection and run flags.
 
-**Reference:** `games/tetris/build-dev.sh`
+**Reference:** `ai-llm-knowledge-dump/generated-courses/platform-backend/course/build-dev.sh` (canonical) — adapt the game name, binary output, and any game-specific flags. Consult `games/tetris/build-dev.sh` only for game-specific additions not covered by the platform template.
 
 **Key features to include:**
 
@@ -257,13 +659,26 @@ LoadTexture(ASSETS_DIR "/frog.png");
 
 ## Source file rules
 
+> 📖 All source code in every course must follow the practices defined in
+> **`@ai-llm-knowledge-dump/modern-c-programming-safe,-performant,-and-practical-practices.md`**
+> (the **Modern C Practices Reference**). That document provides the full rationale, JS analogies,
+> Casey-philosophy alignment, code examples, and common-mistake callouts for each rule listed
+> below. Do not re-explain these rules inside lesson files — link to the relevant pillar instead.
+>
+> 🏷 **Naming & namespace rule (see `## Style guide → Namespace strategy` for full details):**
+> Game-course code (`game/`, `utils/`, `platforms/`) uses **no prefix** — plain `PascalCase`
+> types, `snake_case` functions, `SCREAMING_SNAKE` enums/macros. The `De100`/`de100_`/`DE100_`
+> prefix belongs exclusively to engine-layer code (`engine/*`) and must **never** appear in
+> course source files.
+
 The source code must be:
 
 - Written in **C** (not C++), even if the original is C++
 - Split into three layers:
-  - **Game logic** (`game/main.c`, `game/audio.c`, etc.) — all update, render, and draw calls; never calls OS-specific or windowing APIs
-  - **Shared header** (`game/main.h` / `game/base.h`) — types, structs, enums, public function declarations
-  - **Platform backends** (`platforms/x11/`, `platforms/raylib/`, or `main_x11.c` / `main_raylib.c`) — one compilation unit per platform; owns all OS-specific code
+  - **Reusable systems & helpers** (`utils/`) — backbuffer, drawing primitives, math, audio buffer types; zero knowledge of game state; reusable across games
+  - **Game logic** (`game/main.c`, `game/audio.c`, etc.) — all game-specific update, render, and audio logic; never calls OS-specific or windowing APIs directly
+  - **Shared game header** (`game/main.h` / `game/base.h`) — game types, structs, enums, public function declarations
+  - **Platform backends** (`platforms/x11/`, `platforms/raylib/`, or `main_x11.c` / `main_raylib.c`) — derived from the **Platform Foundation Course** (`ai-llm-knowledge-dump/generated-courses/platform-backend/`) and adapted for this game's specific requirements (title, dimensions, key bindings); one compilation unit per platform; owns all OS-specific code
 - Connected via a **`platform.h` contract**
 - Uses a **backbuffer pipeline**: game writes ARGB pixels into a `uint32_t *` array; platform uploads that array to the GPU each frame
 - Buildable with `clang` using the provided build scripts
@@ -299,7 +714,7 @@ Unexplained debug includes confuse students about what is "needed" vs. "leftover
 
 ### Platform contract
 
-**Reference:** `games/tetris/src/platform.h`, `games/snake/src/platform.h`
+**Reference:** `ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/platform.h` (canonical). Consult `games/tetris/src/platform.h` or `games/snake/src/platform.h` only for game-specific extensions not present in the platform template.
 
 The minimal contract requires these functions:
 
@@ -363,7 +778,7 @@ The Raylib backend mirrors this pattern with its own `RaylibState g_raylib`. Nei
 
 ### Backbuffer architecture (mandatory)
 
-**Reference:** `games/tetris/src/utils/backbuffer.h`
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/utils/backbuffer.h` (canonical). Consult `@games/tetris/src/utils/backbuffer.h` only if the platform version is absent or insufficient.
 
 ```
 ┌──────────────────────────────────────────┐
@@ -409,7 +824,7 @@ In our simple games `pitch = width * 4` always, but teaching the formula now mea
 
 ### Color system (mandatory)
 
-**Reference:** `games/tetris/src/utils/backbuffer.h` for macros, `games/tetris/src/game.h` for constants
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/utils/backbuffer.h` for macros (canonical). Consult `@games/tetris/src/utils/backbuffer.h` or `@games/tetris/src/game.h` only for game-specific color constants not defined in the platform template.
 
 **Pattern:**
 
@@ -457,7 +872,7 @@ Pre-define named color constants in `game.h`:
 
 ### Delta-time game loop (mandatory)
 
-**Reference:** `games/tetris/src/main_x11.c` (main loop), `games/tetris/src/main_raylib.c` (main loop)
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — the platform backends there contain the canonical main loop implementation; analyze the full source and follow from it.
 
 **Pattern:**
 
@@ -488,7 +903,7 @@ while (running) {
 
 ### VSync with manual fallback
 
-**Reference:** `games/tetris/src/main_x11.c` — `setup_vsync()` function
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — the X11 backend there contains the canonical `setup_vsync()` implementation; analyze the full source and follow from it.
 
 **Look for:**
 
@@ -602,13 +1017,13 @@ Both Raylib options are correct; pick one per course and stay consistent.
 
 ## Input System (mandatory)
 
-**Reference:** `games/tetris/src/game.h` (input types), `games/tetris/src/game.c` (`prepare_input_frame`, `handle_action_with_repeat`), `games/tetris/src/platform.h` (`platform_swap_input_buffers`)
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — `game/base.h` there defines the canonical input types (`GameButtonState`, `GameInput`, `UPDATE_BUTTON`, `prepare_input_frame`); `handle_action_with_repeat` is game-specific and not in the platform source. Analyze the full source and follow from it.
 
 ### Double-Buffered Input
 
 Why double-buffer? We need to know what happened **last frame** to detect transitions (pressed → held, held → released). A single buffer loses this history.
 
-**Reference:** `games/tetris/src/main_raylib.c` (main loop), `games/tetris/src/main_x11.c` (main loop)
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — the platform backends there contain the canonical double-buffered input swap pattern; analyze the full source and follow from it.
 
 **Pattern (index-based swap):**
 
@@ -659,7 +1074,7 @@ GameInput temp = *current_input;  /* Copy CONTENTS to stack */
 
 ### Core Types
 
-**Reference:** `games/tetris/src/game.h`
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — `game/base.h` there defines the canonical input core types; analyze the full source and follow from it.
 
 ```c
 typedef struct {
@@ -712,7 +1127,7 @@ typedef struct {
 
 ### Preparing Each Frame
 
-**Reference:** `games/tetris/src/game.c` — `prepare_input_frame()`
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — `game/base.h` there contains `prepare_input_frame()`; analyze the full source and follow from it.
 
 ```c
 void prepare_input_frame(GameInput *old_input, GameInput *current_input) {
@@ -732,7 +1147,7 @@ void prepare_input_frame(GameInput *old_input, GameInput *current_input) {
 
 ### Event-Based vs Polling Input
 
-**Reference:** `games/tetris/src/main_x11.c` (event-based), `games/tetris/src/main_raylib.c` (polling)
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — the platform backends there implement both event-based (X11) and polling (Raylib) input; analyze the full source and follow from it.
 
 | Platform | Model       | How it works                                                 |
 | -------- | ----------- | ------------------------------------------------------------ |
@@ -812,7 +1227,7 @@ UPDATE_BUTTON(current_input->move_down, IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN))
 
 ### Auto-Repeat (DAS/ARR)
 
-**Reference:** `games/tetris/src/game.h` — `RepeatInterval`, `games/tetris/src/game.c` — `handle_action_with_repeat()`
+**Reference (game-specific):** `RepeatInterval` and `handle_action_with_repeat()` are game-layer code you write for this course. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/` for how game-layer files are structured, then build your game's DAS/ARR implementation.
 
 DAS = Delayed Auto Shift (initial delay before repeating starts)
 ARR = Auto Repeat Rate (speed of repeating after DAS)
@@ -827,7 +1242,7 @@ typedef struct {
 } RepeatInterval;
 ```
 
-> ⚠ **Reference implementation warning:** The `games/tetris/` source mutates `repeat->initial_delay = 0.0f` to signal "entered ARR mode". This destroys the configuration value and prevents DAS from being reset correctly on key release. Use the `passed_initial_delay` bool flag instead — it records the phase transition without touching the config, so DAS behaviour is fully restored on release. Do not copy the mutation pattern.
+> ⚠ **Implementation warning:** Some DAS implementations mutate `repeat->initial_delay = 0.0f` to signal "entered ARR mode". This destroys the configuration value and prevents DAS from being reset correctly on key release. Use the `passed_initial_delay` bool flag instead — it records the phase transition without touching the config, so DAS behaviour is fully restored on release. Do not use the mutation pattern.
 
 **Key insight:** Repeat state lives in `GameState`, NOT in `GameInput`:
 
@@ -844,7 +1259,7 @@ struct {
 
 ### Handle Action With Repeat
 
-**Reference:** `games/tetris/src/game.c` — `handle_action_with_repeat()`
+**Reference (game-specific):** `handle_action_with_repeat()` is game-layer code you write for this course. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/` for how the game layer is structured, then build your game's implementation.
 
 ```c
 static void handle_action_with_repeat(GameButtonState *button,
@@ -911,7 +1326,7 @@ if (should_move_left && piece_can_move_left(state)) {
 
 ### Initialize Repeat Intervals
 
-**Reference:** `games/tetris/src/game.c` — `game_init()`
+**Reference (game-specific):** `game_init()` is game-layer code you write for this course. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/demo.c` for how game initialization is structured, then build your game's equivalent.
 
 ```c
 void game_init(GameState *state, GameInput *input) {
@@ -989,7 +1404,7 @@ void game_init(GameState *state, GameInput *input) {
 
 ## Typed enums (mandatory)
 
-**Reference:** `games/tetris/src/game.h` — all `typedef enum` declarations
+**Reference (game-specific):** Game enums are defined in your `game/main.h`. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/demo.h` for how game-layer types are organized, then define enums appropriate to your game.
 
 **Pattern:**
 
@@ -1145,7 +1560,7 @@ draw_rect(bb, px, py, pw, ph, color);
 
 **Grid-based exception:** For pure grid games (Tetris, tile maps) the cell is the logical unit. Using `CELL_SIZE` directly in pixels is correct and simpler — no conversion layer needed.
 
-**Reference:** `games/tetris/src/game.h` — `CELL_SIZE`, `FIELD_WIDTH`, `FIELD_HEIGHT` (grid exception)
+**Reference (game-specific):** Grid constants like `CELL_SIZE`, `FIELD_WIDTH`, `FIELD_HEIGHT` belong in your game's `game/main.h`. Define them based on your game's requirements.
 
 ---
 
@@ -1153,7 +1568,7 @@ draw_rect(bb, px, py, pw, ph, color);
 
 ### Rectangle drawing
 
-**Reference:** `games/tetris/src/utils/draw-shapes.c`
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — `utils/draw-shapes.c` there contains the canonical rectangle drawing implementation; analyze the full source and follow from it.
 
 **Solid rectangle:**
 
@@ -1221,7 +1636,7 @@ draw_rect_blend(bb, 0, 0, bb->width, bb->height, GAME_RGBA(0, 0, 0, 128));
 
 ### Bitmap font rendering
 
-**Reference:** `games/tetris/src/utils/draw-text.c`, `games/tetris/src/utils/draw-text.h`
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — `utils/draw-text.c` and `utils/draw-text.h` there contain the canonical bitmap font implementation; analyze the full source and follow from it.
 
 **Bit-endianness — document this before writing a single line of font code:**
 
@@ -1301,7 +1716,7 @@ draw_text(bb, 10, 30, score_buf, COLOR_YELLOW, 2);
 
 ## Audio system
 
-**Reference:** `games/tetris/src/utils/audio.h`, `games/tetris/src/audio.c`
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — `utils/audio.h` there defines the canonical audio types (`AudioOutputBuffer`, `SoundDef`, `SoundInstance`, `GameAudioState`, `ToneGenerator`, `MusicSequencer`); `game/audio_demo.c` shows a complete game-layer audio example. Analyze the full source and follow from it. Game-specific audio functions (`game_play_sound_at`, `game_audio_update`, `game_get_audio_samples`) are game-layer code you write for this course.
 
 > **Planning note:** For games with non-trivial audio, this section expands into **at minimum two lessons**, and often more: (1) `AudioOutputBuffer` + `SoundInstance` pool + `game_play_sound_at()` + the per-sample loop; (2) `MusicSequencer` + `ToneGenerator` + `game_audio_update()` + MIDI-to-Hz; (3) if the game has sustained/looping sounds: `game_sustain_sound_update()` + `WAVE_TRIANGLE` + `ENVELOPE_TRAPEZOID`; (4) if multiple music tracks: `MusicCrossfade` + `audio_ramp_music_volume()`. Each of these is a separate lesson candidate in the topic inventory — none may be merged into a single lesson if doing so would introduce more than 3 new concepts. Treat the patterns below as the minimum; expect to add 150–200 lines of explanation per audio lesson. Do not mark audio as "optional" in the lesson plan — it is a core feature of most games and is consistently underestimated.
 
@@ -1406,9 +1821,7 @@ static const SoundDef SOUND_DEFS[SOUND_COUNT] = {
 >
 > `game_sustain_sound` should: (1) play the sound if not already playing → attack ramp ("spool up"); (2) pin `samples_remaining ≥ total/4` while called → keeps volume at full; (3) when calls stop, remaining samples drain through the decay zone → natural fade. Use `ENVELOPE_TRAPEZOID` (10% attack + 80% sustain + 10% decay) for all looping/held sounds.
 
-**Reference:** `games/tetris/src/utils/audio.h` — `SoundInstance`, `ToneGenerator`, `MusicSequencer`, `MAX_SIMULTANEOUS_SOUNDS`
-
-This is the **canonical** `SoundInstance` used by the Tetris game. Do not strip fields — they are all used:
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — `utils/audio.h` there defines the canonical `SoundInstance`, `ToneGenerator`, `MusicSequencer`, and `MAX_SIMULTANEOUS_SOUNDS`; analyze the full source. Do not strip fields — they are all used:
 
 ```c
 /* Size from your game's BUSIEST moment: count every looping sound as always-active.
@@ -1442,7 +1855,7 @@ typedef struct {
 } GameAudioState;
 ```
 
-**Reference:** `games/tetris/src/utils/audio.h` lines 84–144 for the full declaration.
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — analyze `utils/audio.h` there for the full `GameAudioState` declaration.
 
 ### Signal shaping in game code — never the backend
 
@@ -1457,7 +1870,7 @@ typedef struct {
 
 ### Playing sounds
 
-**Reference:** `games/tetris/src/audio.c` — `game_play_sound_at()`, `game_play_sound()`
+**Reference (game-specific):** `game_play_sound_at()` and `game_play_sound()` are game-layer audio functions you write for this course. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/audio_demo.c` for how game-layer audio is structured, then build your game's equivalent.
 
 The primary API is `game_play_sound_at()` which accepts a pan position from the caller. `game_play_sound()` is a convenience wrapper for centered (non-spatial) sounds:
 
@@ -1511,12 +1924,12 @@ void game_play_sound(GameAudioState *audio, SOUND_ID sound) {
 **Spatial trigger example — pan from piece position:**
 
 ```c
-/* In tetris_apply_input(), after a successful move: */
+/* In your input handler, after a successful move: */
 game_play_sound_at(&state->audio, SOUND_MOVE,
                    calculate_piece_pan(state->current_piece.x));
 ```
 
-**Reference:** `games/tetris/src/audio.c` — `calculate_piece_pan()`, `game_play_sound_at()`
+**Reference (game-specific):** `calculate_piece_pan()` and `game_play_sound_at()` are game-layer functions you write for this course. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/audio_demo.c` for structural patterns.
 
 ### Audio variety and dynamics
 
@@ -1628,9 +2041,7 @@ Call `music_crossfade_to()` from `change_phase()` — never directly in `game_up
 
 ### Generating samples
 
-**Reference:** `games/tetris/src/audio.c` — `game_get_audio_samples()`
-
-This is the **complete** sample loop as used by the Tetris game. It incorporates:
+**Reference (game-specific):** `game_get_audio_samples()` is game-layer code you write for this course. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/audio_demo.c` for how the sample loop is structured. The pattern below shows the key architectural elements to implement:
 
 - Click prevention (fade-in / fade-out envelope)
 - Stereo panning (per-channel volume)
@@ -1698,8 +2109,8 @@ void game_get_audio_samples(GameState *state, AudioOutputBuffer *buffer) {
     }
 
     /* ── Music tone (ToneGenerator) ──────────────────────────── */
-    /* Follow games/tetris/src/audio.c — game_get_audio_samples() */
-    /* for the full tone mixing code (current_volume ramping).     */
+    /* Analyze @ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/ */
+    /* game/audio_demo.c for the tone mixing code (current_volume ramping). */
 
     /* ── Master volume + clamp + write stereo pair ───────────── */
     float scale = audio->master_volume * 16000.0f;
@@ -1722,9 +2133,9 @@ void game_get_audio_samples(GameState *state, AudioOutputBuffer *buffer) {
 
 ### Platform audio integration
 
-**Reference:** `games/tetris/src/main_raylib.c` — `platform_audio_init()`, `platform_audio_update()` and `games/tetris/src/main_x11.c` — `platform_audio_init()`, `platform_audio_get_samples_to_write()`, `platform_audio_update()`
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — both platform backends there contain the canonical `platform_audio_init()`, `platform_audio_update()`, and `platform_audio_get_samples_to_write()` implementations; analyze the full source and follow from it.
 
-Always follow the actual Tetris files rather than this summary — they contain the full ALSA hardware parameter setup, VSync-safe buffer sizing, and pre-fill sequences.
+Always analyze the platform-backend source fully rather than relying on this summary — it contains the full ALSA hardware parameter setup, VSync-safe buffer sizing, and pre-fill sequences.
 
 **Raylib pattern:**
 
@@ -1775,7 +2186,7 @@ while (IsAudioStreamProcessed(g_raylib.stream)) {
 
 **X11/ALSA pattern:**
 
-> ⚠ **Use `snd_pcm_hw_params` — never `snd_pcm_set_params`.** `snd_pcm_set_params(latency_hint_46ms)` is a convenience wrapper that creates an unpredictably-sized hardware buffer. At a 46 ms hint it may allocate only ~2028 samples; if your pre-fill is 2048 samples and you require `avail ≥ 2048` before each write, `avail` will almost always be below the threshold → permanent silence after startup. Use `snd_pcm_hw_params` (the explicit API) and follow `games/tetris/src/main_x11.c` — `platform_audio_init()` as the canonical reference.
+> ⚠ **Use `snd_pcm_hw_params` — never `snd_pcm_set_params`.** `snd_pcm_set_params(latency_hint_46ms)` is a convenience wrapper that creates an unpredictably-sized hardware buffer. At a 46 ms hint it may allocate only ~2028 samples; if your pre-fill is 2048 samples and you require `avail ≥ 2048` before each write, `avail` will almost always be below the threshold → permanent silence after startup. Use `snd_pcm_hw_params` (the explicit API) — analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` fully; `platforms/x11/main.c` there contains the canonical `platform_audio_init()` reference.
 
 Calculate the per-frame write amount using `snd_pcm_delay` (Casey's model — see §Latency model). Write only the samples needed to reach the latency target:
 
@@ -1804,7 +2215,7 @@ if (to_write > 0) {
 }
 ```
 
-**Follow:** `games/tetris/src/main_x11.c` — `platform_audio_init()` for full ALSA hw_params setup and `hw_buffer_size` query. `games/tetris/src/main_raylib.c` — `platform_audio_init()` for pre-fill loop.
+**Follow:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — analyze `platforms/x11/main.c` there for the full ALSA hw_params setup and `hw_buffer_size` query, and `platforms/raylib/main.c` for the pre-fill loop pattern.
 
 > ⚠ **`game_audio_init` resets audio state — music triggered by `game_init` will be silently erased.** `game_init` typically calls `change_phase()` which sets `seq.is_playing = 1` to start title music. But `platform_audio_init` calls `game_audio_init` immediately afterwards; `game_audio_init` begins with `memset(audio, 0, sizeof(*audio))` — erasing `is_playing`. The audio hardware starts with the sequencer stopped → no title music on launch.
 >
@@ -1820,7 +2231,7 @@ if (to_write > 0) {
 
 ### Latency model (Casey's approach)
 
-**Reference:** `games/tetris/src/platform.h` — `PlatformAudioConfig`, `games/tetris/src/main_x11.c` — `platform_audio_init()`, `platform_audio_get_samples_to_write()`
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — `platform.h` there defines `PlatformAudioConfig`; the platform backends implement `platform_audio_init()` and `platform_audio_get_samples_to_write()`; analyze the full source and follow from it.
 
 The goal is to keep the audio hardware buffer filled just enough ahead of playback — too little causes underruns (silence/glitches), too much causes perceptible audio lag.
 
@@ -1878,7 +2289,7 @@ static int platform_audio_get_samples_to_write(PlatformAudioConfig *config) {
 }
 ```
 
-**Raylib note:** Raylib has no equivalent of `snd_pcm_avail_update`. Use `IsAudioStreamProcessed()` as the trigger and set `buffer_size_samples = samples_per_frame * 2` for a safe double-buffer. Follow `games/tetris/src/main_raylib.c` — `platform_audio_update()` for the full implementation.
+**Raylib note:** Raylib has no equivalent of `snd_pcm_avail_update`. Use `IsAudioStreamProcessed()` as the trigger and set `buffer_size_samples = samples_per_frame * 2` for a safe double-buffer. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` fully — `platforms/raylib/main.c` there contains the canonical `platform_audio_update()` implementation; follow from it.
 
 > ⚠ **Raylib frame count must match registered buffer size.** The `sample_count` you pass to `game_get_audio_samples()` must equal the value used to register the stream with Raylib (i.e., `buffer_size_frames`). Passing a different count causes Raylib to misalign its internal ring buffer — you hear repeated or skipped audio every second. Store `buffer_size_frames` once at init and use it everywhere the audio buffer is filled.
 
@@ -1950,7 +2361,7 @@ if      (tone->current_volume < tone->target_volume) tone->current_volume += ram
 else if (tone->current_volume > tone->target_volume) tone->current_volume -= ramp_speed;
 ```
 
-**Reference:** `games/tetris/src/utils/audio.h` — `ToneGenerator`
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — `utils/audio.h` there defines `ToneGenerator`; analyze the full source and follow from it.
 
 ### Two-loop audio architecture
 
@@ -1971,11 +2382,11 @@ platform audio callback
 
 **Critical:** `game_audio_update` is called once per frame. `game_get_audio_samples` is called by the platform audio layer on its own schedule. They communicate only through `GameAudioState` — no direct calls between them.
 
-**Reference:** `games/tetris/src/audio.c` — `game_audio_update()` and `game_get_audio_samples()`
+**Reference (game-specific):** `game_audio_update()` and `game_get_audio_samples()` are game-layer functions you write for this course. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/audio_demo.c` for a structural example.
 
 ### Music sequencer (optional)
 
-**Reference:** `games/tetris/src/audio.c` — `MusicSequencer`, `game_audio_update()`
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — `utils/audio.h` there defines the `MusicSequencer` struct; analyze the full source. `game_audio_update()` is game-layer code you write for this course.
 
 ```c
 #define MUSIC_PATTERN_LENGTH 16
@@ -2028,7 +2439,7 @@ static inline float midi_to_freq(int note) {
 
 ### State struct pattern
 
-**Reference:** `games/tetris/src/game.h` — `GameState`
+**Reference (game-specific):** `GameState` is the core game-layer struct you define in `game/main.h`. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/demo.h` for how game-layer types are organized, then define your game's state.
 
 ```c
 typedef struct {
@@ -2093,7 +2504,7 @@ typedef struct {
 
 ### Initialization
 
-**Reference:** `games/tetris/src/game.c` — `game_init()`
+**Reference (game-specific):** `game_init()` is game-layer code you write for this course. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/demo.c` for how game initialization is structured, then build your game's equivalent.
 
 ```c
 void game_init(GameState *state, GameInput *input) {
@@ -2257,7 +2668,7 @@ if (state->phase == GAME_PHASE_GAME_OVER) {
 
 ## Game update pattern
 
-**Reference:** `games/tetris/src/game.c` — `game_update()`
+**Reference (game-specific):** `game_update()` is game-layer code you write for this course. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/demo.c` for how game update is structured, then build your game's equivalent.
 
 ```c
 void game_update(GameState *state, GameInput *input, float delta_time) {
@@ -2306,7 +2717,7 @@ void game_update(GameState *state, GameInput *input, float delta_time) {
 
 ## Rendering pattern
 
-**Reference:** `games/tetris/src/game.c` — `game_render()`
+**Reference (game-specific):** `game_render()` is game-layer code you write for this course. Analyze `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/game/demo.c` for how game rendering is structured, then build your game's equivalent.
 
 ```c
 void game_render(Backbuffer *bb, GameState *state) {
@@ -2488,7 +2899,7 @@ Declare the array `extern const` in the header and `const` (no `extern`) in the 
 
 ### Math utilities
 
-**Reference:** `games/tetris/src/utils/math.h`
+**Reference:** `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — `utils/math.h` there defines the canonical math macros; analyze the full source and follow from it.
 
 ```c
 #define MIN(a, b)        ((a) < (b) ? (a) : (b))
@@ -2497,7 +2908,7 @@ Declare the array `extern const` in the header and `const` (no `extern`) in the 
 #define ABS(a)           ((a) < 0 ? -(a) : (a))
 ```
 
-Tetris's `math.h` only defines `MIN`/`MAX`. Add `CLAMP` and `ABS` when your game needs them; keep it minimal and avoid a dumping-ground header.
+The platform-backend `utils/math.h` defines `MIN`/`MAX`. Add `CLAMP` and `ABS` when your game needs them; keep it minimal and avoid a dumping-ground header.
 
 ---
 
@@ -3720,22 +4131,34 @@ int current_index = 0;
 float delta_time = 0.016f;
 ```
 
+### Namespace strategy
+
+Engine code uses the `De100` / `de100_` / `DE100_` prefix to avoid symbol collisions when integrated into game projects. Game code (everything under `game/`, `utils/`, `platforms/`) uses **no prefix**.
+
+| Code location                   | Types             | Functions               | Enums / Macros          |
+| ------------------------------- | ----------------- | ----------------------- | ----------------------- |
+| `engine/*`                      | `De100PascalCase` | `de100_module_action()` | `DE100_SCREAMING_SNAKE` |
+| `game/`, `utils/`, `platforms/` | `PascalCase`      | `snake_case()`          | `SCREAMING_SNAKE`       |
+
+> **Rule:** Never add `De100`/`de100_`/`DE100_` prefixes to game-course code. Those prefixes belong exclusively to the engine layer. Course students write game code, not engine code.
+
 ### Naming conventions
 
-| Kind               | Convention      | Example                                     |
-| ------------------ | --------------- | ------------------------------------------- |
-| Structs            | `PascalCase`    | `GameState`, `RepeatInterval`, `Backbuffer` |
-| Enum type names    | `UPPER_SNAKE`   | `SOUND_ID`, `TETROMINO_R_DIR`, `GAME_PHASE` |
-| Enum values        | `UPPER_SNAKE`   | `SOUND_MOVE`, `GAME_PHASE_PLAYING`          |
-| Functions          | `snake_case`    | `game_update`, `draw_rect`, `game_init`     |
-| Local variables    | `snake_case`    | `delta_time`, `current_index`               |
-| Macros / constants | `UPPER_SNAKE`   | `CELL_SIZE`, `MAX_BULLETS`, `BUTTON_COUNT`  |
-| Global state       | `g_` prefix     | `g_x11`, `g_raylib`                         |
-| Boolean fields     | `is_` prefix    | `is_running`, `is_game_over`, `is_active`   |
-| Count fields       | `_count` suffix | `sample_count`, `pieces_count`              |
-| One-shot flags     | plain `int`     | `quit`, `restart`                           |
+| Kind               | Convention      | Example                                          |
+| ------------------ | --------------- | ------------------------------------------------ |
+| Structs            | `PascalCase`    | `GameState`, `RepeatInterval`, `Backbuffer`      |
+| Enum type names    | `UPPER_SNAKE`   | `SOUND_ID`, `TETROMINO_R_DIR`, `GAME_PHASE`      |
+| Enum values        | `UPPER_SNAKE`   | `SOUND_MOVE`, `GAME_PHASE_PLAYING`               |
+| Functions          | `snake_case`    | `game_update`, `draw_rect`, `game_init`          |
+| Local variables    | `snake_case`    | `delta_time`, `current_index`                    |
+| Macros / constants | `UPPER_SNAKE`   | `CELL_SIZE`, `MAX_BULLETS`, `BUTTON_COUNT`       |
+| Global state       | `g_` prefix     | `g_x11`, `g_raylib`                              |
+| Boolean fields     | `is_` prefix    | `is_running`, `is_game_over`, `is_active`        |
+| Count fields       | `_count` suffix | `sample_count`, `pieces_count`                   |
+| One-shot flags     | plain `int`     | `quit`, `restart`                                |
+| Files              | `kebab-case`    | `draw-shapes.c`, `game-loader.h`, `build-dev.sh` |
 
-**Consistency matters most.** Generated course code should look identical to `games/tetris/` — students copy patterns, not just concepts.
+**Consistency matters most.** Generated course code must follow the patterns established by fully analyzing `@ai-llm-knowledge-dump/generated-courses/platform-backend/course/src/` — students copy patterns, not just concepts. Internalize that source before writing any lesson.
 
 ### Comment style
 
